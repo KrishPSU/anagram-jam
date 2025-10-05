@@ -9,6 +9,8 @@ const errorMessage = document.getElementById('errorMessage');
 const errorClose = document.getElementById('errorClose');
 let selectedMode = null;
 
+playerNameInput.value = localStorage.getItem('name') || '';
+
 // Error Alert Functions
 function showError(message) {
   errorMessage.textContent = message;

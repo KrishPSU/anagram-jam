@@ -177,13 +177,26 @@ socket.on('playerLeft', (leavingPlayer, remainingPlayers, leaderId) => {
 socket.on('new-player', (roomCode, playerName, playerId) => {
 
   if (roomCode !== state.roomCode) return; // Ignore if not for this room
-  if (playerId == myId) return;
+  if (playerId == myId) {
+    const inGame = localStorage.getItem('inGame');
+    console.log(state);
+    if (inGame && inGame.roomCode === state.roomCode) {
+      state.started = true;
+      waitingEl.innerText = "Game in progress, joining...";
+      socket.emit('rejoin-game', state.roomCode, myId);
+    } else {
+      state.started = false;
+      waitingEl.innerText = "Waiting for leader to start";
+      waitingEl.style.display = "block";
+      localStorage.removeItem('inGame');
+    }
+    return;
+  }
 
   console.log('New player joined: ', playerName, playerId);
   state.players.push({ 
     id: playerId, 
     name: playerName, 
-    ready: false, 
     isYou: false 
   });
 
@@ -267,4 +280,5 @@ function startGame(roomCode) {
   document.getElementById('lobbyWrapper').style.display = "none";
   document.getElementById('gameState').classList.add("show");
   socket.emit('startGame', roomCode);
+  localStorage.setItem('inGame', { roomCode: state.roomCode, level: currentLevel });
 }

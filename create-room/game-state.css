@@ -189,3 +189,6 @@
 .completed {
   background-color: #34d399;
 }
+.skipped {
+  background-color: #f87171;
+}

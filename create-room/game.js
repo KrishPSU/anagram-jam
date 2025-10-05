@@ -20,7 +20,7 @@ const timer = createCountdownTimer(
       // console.log('Timer complete!');
       showAlert("Time's up! Moving to next level.", 'warning');
       currentLevel++;
-      loadLevel(currentLevel);
+      loadLevel(currentLevel, true);
     }
   );
 
@@ -28,15 +28,20 @@ const timer = createCountdownTimer(
 socket.on('gameWords', (wordData) => {
   console.log('Received game words:', wordData);
   currentWords = wordData;
-  currentLevel = 0;
+  currentLevel = localStorage.getItem('inGame')?.level || 0;
+  if (state.started === true) {
+    document.getElementById('lobbyWrapper').style.display = "none";
+    document.getElementById('gameState').classList.add("show");
+  }
   loadLevel(currentLevel);
   currentLeaderEl.textContent = `No leader yet`;
 });
 
 
-function loadLevel(level) {
+function loadLevel(level, timerUp=false) {
   timer.reset();
   timer.start();
+  localStorage.setItem('inGame', { roomCode: state.roomCode, level: currentLevel });
   if (level >= currentWords.length) {
     showAlert("Congratulations! You've completed all levels!", 'success');
     console.log("Game Over you win!");
@@ -51,8 +56,13 @@ function loadLevel(level) {
   const levelData = currentWords[level];
   levelList[level].classList.add('active');
   if (level > 0) {
-    levelList[level - 1].classList.remove('active');
-    levelList[level - 1].classList.add('completed');
+    if (timerUp) {
+      levelList[level - 1].classList.remove('active');
+      levelList[level - 1].classList.add('skipped');
+    } else {
+      levelList[level - 1].classList.remove('active');
+      levelList[level - 1].classList.add('completed');
+    }
   }
   anagramDisplay.textContent = currentWords[level];
   inputAnswer.value = "";

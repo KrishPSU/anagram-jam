@@ -204,15 +204,29 @@ io.on('connection', (socket) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
     room.gameStarted = true;
+    room.currentHighestLevel = 0;
+    room.currentHighestLevelHolder = '';
     console.log(`Game started in room: ${roomCode}`);
 
     // Generate words for the game
     let levels = 10; // Default to 10 levels
     let words = getRandomElements(wordsDB, levels);
     console.log(words);
-    room.words = words;
+    room.words = { regular: words, jumbled: jumbleWords(words) };
     console.log(`Words for room ${roomCode}:`, words);
-    io.to(roomCode).emit('gameWords', jumbleWords(words));
+    io.to(roomCode).emit('gameWords', room.words.jumbled);
+  });
+
+
+
+
+  socket.on('rejoin-game', (roomCode, myId) => {
+    const room = rooms.find(room => room.roomCode === roomCode);
+    if (!room) return;
+    if (!room.gameStarted) return;
+    console.log(`Player ${myId} rejoining game in room: ${roomCode}`);
+    socket.join(roomCode);
+    socket.emit('gameWords', room.words.jumbled);
   });
 
 
@@ -222,7 +236,7 @@ io.on('connection', (socket) => {
     console.log(`Player ${data.name} answered level ${data.level} in room ${data.roomCode}: ${data.answer}`);
     const room = rooms.find(room => room.roomCode === data.roomCode);
     if (!room) return;
-    const correctAnswer = room.words[data.level].toLowerCase();
+    const correctAnswer = room.words.regular[data.level].toLowerCase();
     const isCorrect = data.answer === correctAnswer;
     socket.emit('answerResult', isCorrect, data.level);
   });
