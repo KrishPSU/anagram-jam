@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Lobby</title>
+  <link rel="stylesheet" href="game.css">
+  <link rel="stylesheet" href="game-state.css">
+
+  <script src="/socket.io/socket.io.js"></script>
+
+</head>
+<body>
+
+  <div class="alert" id="alert">
+    <div class="alert-content">
+      <span class="alert-icon" id="alertIcon">⚠️</span>
+      <span class="alert-message" id="alertMessage">Something went wrong!</span>
+      <button class="alert-close" id="alertClose">&times;</button>
+    </div>
+  </div>
+
+  <div class="lobby-wrapper" id="lobbyWrapper">
+    <div class="floating-shapes">
+      <div class="shape"></div>
+      <div class="shape"></div>
+      <div class="shape"></div>
+    </div>
+    <buton id="leave">Leave</buton>
+    <p id="waiting">Waiting for others</p>
+    <div class="lobby">
+      <div class="topbar">
+        <div class="room-code">
+          <span class="room-code-label">ROOM CODE</span>
+          <span class="room-code-value" id="roomCode"></span>
+        </div>
+        <button id="readyBtn" class="ready-button" type="button">Start</button>
+      </div>
+
+      <div class="players" id="players"></div>
+    </div>
+  </div>
+
+
+  <div class="game-state" id="gameState">
+    <div class="floating-shapes">
+      <div class="shape"></div>
+      <div class="shape"></div>
+      <div class="shape"></div>
+    </div>
+
+    <div class="game-ui">
+      <header class="game-header">
+        <div class="leader">Leader: <span id="currentLeader">—</span></div>
+        <div class="timer" id="gameTimer">00:00</div>
+      </header>
+
+      <main class="game-content">
+        <div class="anagram" id="anagramDisplay"></div>
+
+        <input class="answer-input" id="answerInput" type="text" placeholder="Type your answer" autocomplete="off">
+        <button class="answer-submit" type="submit">Submit</button>
+
+        <aside class="levels" aria-label="Levels">
+          <ul class="level-list">
+            <li class="level-circle" aria-label="Level 1"></li>
+            <li class="level-circle" aria-label="Level 2"></li>
+            <li class="level-circle" aria-label="Level 3"></li>
+            <li class="level-circle" aria-label="Level 4"></li>
+            <li class="level-circle" aria-label="Level 5"></li>
+            <li class="level-circle" aria-label="Level 6"></li>
+            <li class="level-circle" aria-label="Level 7"></li>
+            <li class="level-circle" aria-label="Level 8"></li>
+            <li class="level-circle" aria-label="Level 9"></li>
+            <li class="level-circle" aria-label="Level 10"></li>
+          </ul>
+        </aside>
+      </main>
+    </div>
+  </div>
+
+
+  <script src="lobby.js"></script>
+  <script src="alert.js"></script>
+  <script src="timer.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

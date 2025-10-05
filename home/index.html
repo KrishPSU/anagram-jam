@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anagram Jam</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <script src="/socket.io/socket.io.js"></script>
+
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <div class="floating-shapes">
+    <div class="shape"></div>
+    <div class="shape"></div>
+    <div class="shape"></div>
+  </div>
+
+  <!-- Error Alert -->
+  <div class="error-alert" id="errorAlert">
+    <div class="error-content">
+      <span class="error-icon">⚠️</span>
+      <span class="error-message" id="errorMessage">Something went wrong!</span>
+      <button class="error-close" id="errorClose">&times;</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <h1 class="logo">🧩 Anagram Jam</h1>
+    <p class="subtitle">Test your word skills and compete with friends!</p>
+    
+    <div class="input-group">
+      <label class="input-label" for="playerName">What's your name?</label>
+      <input 
+        type="text" 
+        id="playerName" 
+        class="name-input" 
+        placeholder="Enter your name..."
+        maxlength="20"
+      >
+    </div>
+
+    <div class="input-group">
+      <label class="input-label" for="roomCode">Room Code:</label>
+      <input 
+        type="text" 
+        id="roomCode" 
+        class="room-code-input" 
+        placeholder="Enter a room code..."
+        maxlength="5"
+      >
+    </div>
+
+
+    <div class="game-modes">
+      <button class="mode-button friends-mode" data-mode="friends">
+        <span class="mode-icon">👥</span>
+        <div class="mode-title">Join a Room</div>
+        <div class="mode-desc">Join a room your friends have created</div>
+      </button>
+      
+      <button class="mode-button create-mode" data-mode="create">
+        <span class="mode-icon">➕</span>
+        <div class="mode-title">Create a Room</div>
+        <div class="mode-desc">Create a room and invite others</div>
+      </button>
+    </div>
+
+    <!-- <button class="start-button" id="startButton" disabled>
+      Let's Play! 🚀
+    </button> -->
+  </div>
+
+
+</body>
+</html>
