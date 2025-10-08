@@ -192,3 +192,29 @@
 .skipped {
   background-color: #f87171;
 }
+
+
+
+.powerups {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 10;
+}
+
+.powerup {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background-color: #ffffff8c;
+  border: 2px solid #d1d5db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.12);
+}

@@ -56,6 +56,18 @@
       </header>
 
       <main class="game-content">
+        <p id="pointsDisplay">Points: 0</p>
+        <div class="powerups">
+          <div class="powerup" id="powerupHint" title="Hint (3 available)">
+            <span class="powerup-icon">💡</span>
+            <span class="powerup-count" id="hintCount">3</span>
+          </div>
+          <div class="powerup" id="powerupSkip" title="Skip (1 available)">
+            <span class="powerup-icon">⏭️</span>
+            <span class="powerup-count" id="skipCount">1</span>
+          </div>
+        </div>
+
         <div class="anagram" id="anagramDisplay"></div>
 
         <input class="answer-input" id="answerInput" type="text" placeholder="Type your answer" autocomplete="off">

@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const wordExists = require('word-exists');
 
 require('dotenv').config();
 
@@ -200,7 +201,7 @@ io.on('connection', (socket) => {
   });
 
 
-  socket.on('startGame', (roomCode) => {
+  socket.on('startGame', async (roomCode) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
     room.gameStarted = true;
@@ -210,7 +211,7 @@ io.on('connection', (socket) => {
 
     // Generate words for the game
     let levels = 10; // Default to 10 levels
-    let words = getRandomElements(wordsDB, levels);
+    let words = await getRandomWords(levels);
     console.log(words);
     room.words = { regular: words, jumbled: jumbleWords(words) };
     console.log(`Words for room ${roomCode}:`, words);
@@ -237,9 +238,37 @@ io.on('connection', (socket) => {
     const room = rooms.find(room => room.roomCode === data.roomCode);
     if (!room) return;
     const correctAnswer = room.words.regular[data.level].toLowerCase();
-    const isCorrect = data.answer === correctAnswer;
-    socket.emit('answerResult', isCorrect, data.level);
+    let isCorrect = false;
+    let points = data.points || 0;
+
+    if (data.answer === correctAnswer) {
+      isCorrect = true;
+      points += 2;
+    } else if (wordExists(data.answer) || isCreatable(data.answer, correctAnswer)) { 
+      isCorrect = true;
+      points += 1;
+    }
+
+    socket.emit('answerResult', isCorrect, data.level, points);
   });
+
+
+  function isCreatable(s, t) {
+    if(s.length!==t.length){
+        return false;
+    }
+    let count = new Array(256).fill(0);
+    for(let i=0; i<s.length; i++){
+        count[s.charCodeAt(i)]++;
+        count[t.charCodeAt(i)]--;
+    }
+    for(let i=0; i<count.length; i++){
+        if(count[i]!==0){
+            return false;
+        }
+    }
+    return true;
+  }
 
 
 
@@ -283,42 +312,54 @@ io.on('connection', (socket) => {
 
 
 
-// Word database organized by length
-const wordsDB = [
-  "the","and","for","you","are","but","not","all","any","can","her","his","our","was","one","out","use","how","why","now","too","new","old",
-  "man","boy","girl","dog","cat","sun","sky","air","day","end","run","car","bus","toy","job","fun","top","big","red","hot","ice","sea","art",
-  "book","home","work","love","life","food","good","kind","easy","hard","fast","slow","cool","warm","cold","blue","gray","green","gold","pink",
-  "rock","song","game","time","city","town","road","park","farm","shop","bank","mall","door","wall","room","yard","fish","bird","tree","seed",
-  "hand","face","hair","nose","eyes","ears","legs","arms","feet","head","neck","skin","back","wind","rain","snow","fire","star","moon","lake",
-  "boat","ship","sand","wave","desk","pen","page","word","line","test","quiz","math","code","data","plan","idea","goal","hope","fear","risk",
-  "play","walk","talk","read","cook","make","move","ride","draw","sing","jump","help","open","look","hear","feel","send","find","give","take",
-  "keep","need","wish","wait","stay","join","call","push","pull","turn","spin","lift","drop","show","hide","grow","fall","hurt","heal","rest",
-  "care","calm","mean","nice","rich","poor","wise","lazy","busy","fair","just","true","fake","real","sure","only","ever","also","very","over",
-  "soon","late","long","short","wide","thin","deep","high","down","left","right","north","south","east","west","above","below","after","under",
-  "apple","bread","fruit","grass","house","chair","table","light","music","water","smile","dream","world","heart","happy","sweet","laugh","thank",
-  "peace","watch","drink","clean","green","plant","start","begin","learn","teach","write","dance","drive","sleep","speak","paint","stand","think",
-  "bring","break","clear","build","serve","close","share","visit","taste","touch","enjoy","agree","argue","prove","raise","throw","carry","smell",
-  "guess","count","study","order","avoid","check","focus","match","offer","save","spend","trust","value","honor","piano","queen","tiger","zebra",
-  "vivid","quiet","brave","quick","happy","sunny","funny","angry","silly","crazy","smart","sharp","ready","early","lucky","sweet","fresh","clean",
-  "glow","buzz","wave","nest","drop","wink","quiz","yawn","jump","flip","clap","drip","grip","trip","bend","fold","grin","slam","snap","kick",
-  "spin","swim","soar","flow","burn","melt","boil","cool","glow","bake","wash","iron","pack","mail","film","draw","edit","text","zoom","save"
-]
-
-
-const getRandomElements = (arr, count=10) => {
-  let newArr = [];
-  if (count >= arr.length) {
-    return arr;
+const createPartitions = (count=10, divisions=3) => {
+  const base = Math.floor(count / divisions);
+  const remainder = count % divisions;
+  
+  // distribute remainder across the first few parts
+  const parts = [base, base, base];
+  for (let i = 0; i < remainder; i++) {
+    parts[i]++;
   }
-  for (let i = 0; i < count; i++) {
-    let newElem = arr[Math.floor(Math.random() * arr.length)];
-    while (newArr.includes(newElem)) {
-      newElem = arr[Math.floor(Math.random() * arr.length)];
-    }
-    newArr.push(newElem);
-  }
-  return newArr;
+  
+  return parts;
 }
+
+async function fetchWords(difficulty, count) {
+  const url = `https://random-word-api.vercel.app/api?words=${count}&length=${difficulty}`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const words = await response.json(); // returns an array
+    console.log(`Fetched words | C:${count} | D:${difficulty}:`, words);
+    return words;
+
+  } catch (error) {
+    console.error("Error fetching words:", error);
+    return [];
+  }
+}
+
+
+const getRandomWords = async (count=10, divisions=3) => {
+  const partitions = createPartitions(count, divisions);
+  console.log(partitions);
+  
+  let words = [];
+
+  for (let i=0; i<partitions.length; i++) {
+    if (partitions[i] <= 0) partitions[i] = 1;
+    words.push(await fetchWords(i+3, partitions[i]));
+  }
+
+  return words.flat();
+}
+
+
 
 
 // Function to generate an random disorganization of a given word

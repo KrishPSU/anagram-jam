@@ -5,9 +5,11 @@ const inputAnswer = document.getElementById('answerInput');
 const submitButton = document.querySelector('.answer-submit');
 const currentLeaderEl = document.getElementById('currentLeader');
 const gameTimerEl = document.getElementById('gameTimer');
+const pointsEl = document.getElementById('pointsDisplay');
 
 let currentLevel = 0;
 let currentWords = [];
+let points = 0;
 
 
 const timer = createCountdownTimer(
@@ -72,30 +74,20 @@ function loadLevel(level, timerUp=false) {
 
 submitButton.addEventListener('click', () => {
   const userAnswer = inputAnswer.value.trim().toLowerCase();
-  // const correctAnswer = currentWords.words[currentLevel].toLowerCase();
-
-  socket.emit('answerAttempt', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel, answer: userAnswer });
-
-  // if (userAnswer === correctAnswer) {
-  //   showAlert("Correct answer!", "success");
-  //   currentLevel++;
-  //   loadLevel(currentLevel);
-  //   socket.emit('levelCompleted', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel });
-  // } else {
-  //   showAlert("Wrong answer. Try again!");
-  // }
+  socket.emit('answerAttempt', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel, answer: userAnswer, points: points });
 });
 
 
-socket.on('answerResult', (isCorrect, level) => {
-  if (isCorrect) {
-    showAlert("Correct answer!", "success");
-    currentLevel++;
-    loadLevel(currentLevel);
-    socket.emit('levelCompleted', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel });
-  } else {
+socket.on('answerResult', (isCorrect, level, points) => {
+  if (!isCorrect) {
     showAlert("Wrong answer. Try again!");
+    return; 
   }
+  pointsEl.innerText = `Points: ${points}`;
+  showAlert("Correct answer!", "success");
+  currentLevel++;
+  loadLevel(currentLevel);
+  socket.emit('levelCompleted', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel });
 });
 
 
