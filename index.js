@@ -23,6 +23,7 @@ server.listen(PORT || 3000, () => {
 
 
 // Serve static assets for home (if present) and for game pages
+app.use(express.static(path.join(__dirname, 'create-room')));
 app.use('/', express.static(path.join(__dirname, 'home')));
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
 // app.use('/game/:roomCode/end', express.static(path.join(__dirname, 'end-screen')));  
