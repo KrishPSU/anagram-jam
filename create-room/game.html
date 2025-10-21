@@ -6,6 +6,7 @@
   <title>Game Lobby</title>
   <link rel="stylesheet" href="game.css">
   <link rel="stylesheet" href="game-state.css">
+  <link rel="stylesheet" href="win-condition.css">
 
   <script src="/socket.io/socket.io.js"></script>
 
@@ -91,6 +92,24 @@
     </div>
   </div>
 
+  <!-- Floating particles for win screen -->
+  <div class="particle"></div>
+  <div class="particle"></div>
+  <div class="particle"></div>
+  <div class="particle"></div>
+  <div class="particle"></div>
+  <div class="particle"></div>
+
+  <div class="game-over" id="gameOverScreen">
+    <div class="game-over-element">
+      <h1>Game Over!</h1>
+      <div class="winner">
+        <h2 id="winnerName">Player Name</h2>
+      </div>
+      <p id="winner-tag">... won the game!</p>
+      <button class="back-to-lobby" id="backToLobby">Back to Lobby</button>
+    </div>
+  </div>
 
   <script src="lobby.js"></script>
   <script src="alert.js"></script>

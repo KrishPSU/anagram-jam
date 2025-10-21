@@ -74,7 +74,7 @@ body::before {
 }
 
 .game-over {
-  display: flex;
+  display: none; /* Hidden by default */
   flex-direction: column;
   justify-content: center;
   align-items: center;
