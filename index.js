@@ -193,10 +193,20 @@ io.on('connection', (socket) => {
 
 
 
-  socket.on('starting-game', (roomCode) => {
+  socket.on('starting-game', async (roomCode) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
     room.gameStarted = true;
+    room.currentHighestLevel = 0;
+    room.currentHighestLevelHolder = '';
+    console.log(`Game started in room: ${roomCode}`);
+
+    // Generate words for the game
+    let levels = 10; // Default to 10 levels
+    let words = await getRandomWords(levels);
+    console.log(words);
+    room.words = { regular: words, jumbled: jumbleWords(words) };
+    console.log(`Words for room ${roomCode}:`, words);
     io.to(roomCode).emit('game-starting');
     console.log(`Game starting in room: ${roomCode}`);
   });
@@ -213,18 +223,7 @@ io.on('connection', (socket) => {
   socket.on('startGame', async (roomCode) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
-    room.gameStarted = true;
-    room.currentHighestLevel = 0;
-    room.currentHighestLevelHolder = '';
-    console.log(`Game started in room: ${roomCode}`);
-
-    // Generate words for the game
-    let levels = 10; // Default to 10 levels
-    let words = await getRandomWords(levels);
-    console.log(words);
-    room.words = { regular: words, jumbled: jumbleWords(words) };
-    console.log(`Words for room ${roomCode}:`, words);
-    io.to(roomCode).emit('gameWords', room.words.jumbled);
+    socket.emit('gameWords', room.words.jumbled);
   });
 
 
