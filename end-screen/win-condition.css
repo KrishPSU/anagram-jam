@@ -1,0 +1,90 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #232526 0%, #414345 100%);
+}
+
+.game-over {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  background: transparent;
+  color: white;
+}
+
+.game-over-element {
+  background: rgb(74 74 74 / 70%);
+  padding: 40px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+  margin: 20px;
+}
+
+.game-over h1 {
+  font-size: 48px;
+  margin-bottom: 20px;
+  background-color: #2b2d2e;
+  padding: 0px 10px 5px 10px;
+  border-radius: 15px;
+}
+
+.winner {
+  /* display: none; */
+  aspect-ratio: 1/1;
+  background-color: white;
+  border-radius: 50%;
+  max-width: 300px;
+  /* height: 20%; */
+  font-size: 36px;
+  padding: 20px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: goldenrod;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#winner-tag {
+  font-size: 24px;
+  margin-bottom: 30px;
+}
+.lost {
+  font-size: 24px;
+  margin-bottom: 30px;
+  color: #ff4d4d; /* Red color for emphasis */
+}
+.won {
+  font-size: 24px;
+  margin-bottom: 30px;
+  color: #28a745; /* Green color for emphasis */
+}
+
+.back-to-lobby {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  font-size: 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  font-weight: bold;
+}
+.back-to-lobby:hover {
+  background-color: #218838;
+}

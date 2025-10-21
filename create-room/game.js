@@ -1,4 +1,9 @@
 
+if (!localStorage.getItem('name') && !localStorage.getItem('roomCode')) {
+  window.location.href = '/';
+}
+
+
 const levelList = document.querySelectorAll('.level-circle');
 const anagramDisplay = document.getElementById('anagramDisplay');
 const inputAnswer = document.getElementById('answerInput');
@@ -13,21 +18,41 @@ let points = 0;
 
 
 const timer = createCountdownTimer(
-    30,
-    (timeRemaining) => {
-      gameTimerEl.textContent = `00:${timeRemaining}`;
-      // console.log(`Time remaining: ${timeRemaining} seconds`);
-    },
-    () => {
-      // console.log('Timer complete!');
-      showAlert("Time's up! Moving to next level.", 'warning');
-      currentLevel++;
-      loadLevel(currentLevel, true);
-    }
-  );
+  30,
+  (timeRemaining) => {
+    gameTimerEl.textContent = `00:${timeRemaining}`;
+    // console.log(`Time remaining: ${timeRemaining} seconds`);
+  },
+  () => {
+    // console.log('Timer complete!');
+    showAlert("Time's up! Moving to next level.", 'warning');
+    currentLevel++;
+    loadLevel(currentLevel, true);
+  }
+);
 
 
 socket.on('gameWords', (wordData) => {
+
+  waitingEl.innerText = "Starting game in 3";
+  waitingEl.style.display = "block";
+  setTimeout(() => {
+    if (state.started === false) return;
+    waitingEl.innerText = "Starting game in 2";
+    setTimeout(() => {
+      if (state.started === false) return;
+      waitingEl.innerText = "Starting game in 1";
+      setTimeout(() => {
+        if (state.started === false) return;
+        waitingEl.innerText = "Starting game now!";
+        setTimeout(() => {
+          if (state.started === false) return;
+          startGame(state.roomCode);
+        }, 1000);
+      }, 1000);
+    }, 1000);
+  }, 1000);
+
   console.log('Received game words:', wordData);
   currentWords = wordData;
   currentLevel = localStorage.getItem('inGame')?.level || 0;
@@ -80,6 +105,7 @@ submitButton.addEventListener('click', () => {
 
 socket.on('answerResult', (isCorrect, level, points) => {
   if (!isCorrect) {
+    inputAnswer.value = "";
     showAlert("Wrong answer. Try again!");
     return; 
   }
@@ -112,28 +138,49 @@ socket.on('newHighestPlayer', (id, name, level) => {
 
 
 socket.on('playerFinished', (id, name) => {
+  // document.getElementById('gameState').classList.remove("show");
+  // gameOverScreen.style.display = "flex";
+
+  // window.location.href = '/create-room/end.html';
+
+  timer.stop();
   if (myId === id) {
-    currentLeaderEl.textContent = `You have finished the game!`;
-    inputAnswer.disabled = true;
-    submitButton.disabled = true;
-    timer.stop();
-
-    setTimeout(() => {
-      window.location.reload();
-    }, 5000);
-
+    currentLeaderEl.textContent = `You have won the game!`;
+    window.location.href = `/game/${state.roomCode}/end?winnerId=${myId}&winnerName=${btoa(name)}&roomCode=${state.roomCode}`;
     return;
   }
 
-  anagramDisplay.textContent = `${name} won!`;
-  timer.stop();
-  inputAnswer.disabled = true;
-  submitButton.disabled = true;
-  currentLeaderEl.textContent = `${name} has finished the game!`;
+  window.location.href = `/game/${state.roomCode}/end?winnerId=${id}&winnerName=${btoa(name)}&roomCode=${state.roomCode}`;
 
-  setTimeout(() => {
-    window.location.reload();
-  }, 5000);
+  // displayEndScreen(name, false);
+  currentLeaderEl.textContent = `${name} has won the game!`;
 
-  showAlert(`${name} has finished the game!`, 'success');
+  // setTimeout(() => {
+  //   window.location.reload();
+  // }, 5000);
 });
+
+
+// backToLobbyBtn.addEventListener('click', () => {
+//   resetGame();
+// });
+
+
+
+// function resetGame() {
+//   currentLevel = 0;
+//   points = 0;
+//   pointsEl.innerText = `Points: ${points}`;
+//   levelList.forEach(el => {
+//     el.classList.remove('active', 'completed', 'skipped');
+//   });
+//   inputAnswer.disabled = false;
+//   submitButton.disabled = false;
+//   gameOverScreen.style.display = "none";
+//   currentLeaderEl.textContent = `No leader yet`;
+//   state.started = false;
+//   localStorage.removeItem('inGame');
+//   document.getElementById('lobbyWrapper').style.display = "block";
+//   document.getElementById('gameState').classList.remove("show");
+//   gameOverScreen.style.display = "none";
+// }

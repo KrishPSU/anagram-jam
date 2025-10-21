@@ -58,6 +58,8 @@ modeButtons.forEach(button => {
       socket.emit('joinRoom', { name: playerNameInput.value.trim(), roomCode: roomCodeInput.value.trim().toUpperCase() })
     } else if (selectedMode === 'create') {
       socket.emit('createRoom')
+      localStorage.setItem('name', playerNameInput.value.trim());
+      localStorage.setItem('myId', socket.id);
     }
 
 

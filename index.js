@@ -24,8 +24,8 @@ server.listen(PORT || 3000, () => {
 
 // Serve static assets for home (if present) and for game pages
 app.use('/', express.static(path.join(__dirname, 'home')));
-app.use('/join/:roomCode', express.static(path.join(__dirname, 'join-room')));
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
+// app.use('/game/:roomCode/end', express.static(path.join(__dirname, 'end-screen')));  
 // app.use('/admin', express.static(path.join(__dirname, 'edit-menu-app')));
 
 
@@ -43,6 +43,15 @@ app.get('/game/:roomCode', (req, res) => {
     res.redirect('/');
   }
 });
+app.get('/game/:roomCode/end', (req, res) => {
+  const { roomCode } = req.params;
+  const roomExists = rooms.find(r => r.roomCode === roomCode);
+  if (!roomExists) return res.redirect('/');
+  res.sendFile(path.join(__dirname, 'end-screen', 'end.html'));
+});
+
+// Static assets for the end page (no params)
+app.use('/end-screen', express.static(path.join(__dirname, 'end-screen'), { redirect: false }));
 
 app.get('/rooms', (req, res) => {
   res.send(rooms);
@@ -244,7 +253,7 @@ io.on('connection', (socket) => {
     if (data.answer === correctAnswer) {
       isCorrect = true;
       points += 2;
-    } else if (wordExists(data.answer) || isCreatable(data.answer, correctAnswer)) { 
+    } else if (wordExists(data.answer) && isCreatable(data.answer, correctAnswer)) { 
       isCorrect = true;
       points += 1;
     }
