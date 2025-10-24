@@ -237,6 +237,25 @@ socket.on('game-starting', () => {
 
   state.started = true;
 
+  waitingEl.innerText = "Starting game in 3";
+  waitingEl.style.display = "block";
+  setTimeout(() => {
+    if (state.started === false) return;
+    waitingEl.innerText = "Starting game in 2";
+    setTimeout(() => {
+      if (state.started === false) return;
+      waitingEl.innerText = "Starting game in 1";
+      setTimeout(() => {
+        if (state.started === false) return;
+        waitingEl.innerText = "Starting game now!";
+        setTimeout(() => {
+          if (state.started === false) return;
+          startGame(state.roomCode);
+        }, 1000);
+      }, 1000);
+    }, 1000);
+  }, 1000);
+
   socket.emit('startGame', roomCode);
 });
 
