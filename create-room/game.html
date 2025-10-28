@@ -4,17 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Game Lobby</title>
-  <link rel="stylesheet" href="game.css">
-  <link rel="stylesheet" href="game-state.css">
-  <link rel="stylesheet" href="win-condition.css">
+  <link rel="stylesheet" href="css/game.css">
+  <link rel="stylesheet" href="css/game-state.css">
+  <link rel="stylesheet" href="css/win-condition.css">
+
+  <script defer src="js/lobby.js"></script>
+  <script defer src="js/alert.js"></script>
+  <script defer src="js/timer.js"></script>
+  <script defer src="js/game.js"></script>
+  <script defer src="js/audio.js"></script>
 
   <script src="/socket.io/socket.io.js"></script>
 
 </head>
 <body>
 
-  <audio id="backgroundMusic" src="/anagram-jam-background-music.mp3" autoplay loop muted></audio>
-  <audio id="gameMusic" src="/what you in joined sample.mp3" loop muted></audio>
+  <audio id="backgroundMusic" src="/music/anagram-jam-background-music.mp3" autoplay loop muted></audio>
+  <audio id="gameMusic" src="/music/what you in joined sample.mp3" loop muted></audio>
 
 
   <div class="alert" id="alert">
@@ -117,10 +123,5 @@
     </div>
   </div>
 
-  <script src="lobby.js"></script>
-  <script src="alert.js"></script>
-  <script src="timer.js"></script>
-  <script src="game.js"></script>
-  <script src="audio.js"></script>
 </body>
 </html>

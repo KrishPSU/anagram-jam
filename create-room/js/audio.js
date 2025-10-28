@@ -19,12 +19,6 @@ mute_btn.addEventListener('click', () => {
   }
 });
 
-
-
-
-const background_audio = document.getElementById('backgroundMusic');
-background_audio.loop = true; // loop the music
-
 // document.addEventListener('click', () => {
 //   background_audio.muted = mute_audio;
 
