@@ -1,0 +1,44 @@
+* {
+  margin: 0;
+  padding: 0;
+  background-color: rgb(65, 65, 65);
+}
+
+
+body {
+  font-family: Arial, sans-serif;
+  color: white;
+  
+}
+
+
+.title {
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2rem;
+  font-style: italic;
+}
+
+
+
+.count {
+  margin-top: 5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  align-items: center;
+  justify-content: center;
+}
+
+
+.count h1 {
+  font-size: 5rem;
+  text-align: center;
+}
+
+.count p {
+  font-size: 1.5rem;
+  text-align: center;
+}

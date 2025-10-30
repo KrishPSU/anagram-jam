@@ -25,6 +25,7 @@ server.listen(PORT || 3000, () => {
 // Serve static assets for home (if present) and for game pages
 app.use(express.static(path.join(__dirname, 'create-room')));
 app.use('/', express.static(path.join(__dirname, 'home')));
+app.use('/admin', express.static(path.join(__dirname, 'admin')));
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
 // app.use('/game/:roomCode/end', express.static(path.join(__dirname, 'end-screen')));  
 // app.use('/admin', express.static(path.join(__dirname, 'edit-menu-app')));
@@ -71,11 +72,20 @@ function generateJoinCode() {
 
 
 let rooms = [];
+let clients = [];
 
 
 io.on('connection', (socket) => {
 
+  clients.push(socket.id);
+
   console.log("connection: ", socket.id);
+
+
+  socket.on('adminConnected', () => {
+    socket.emit('currentAliveConnections', clients.length, rooms.filter(r => r.gameStarted).length);
+  });
+
 
 
   socket.on('createRoom', (data) => {
@@ -150,6 +160,11 @@ io.on('connection', (socket) => {
 
 
   socket.on('disconnect', () => {
+    
+    clients = clients.filter(id => id !== socket.id);
+    console.log("disconnect: ", socket.id);
+    
+
     // Find the room that contains this player
     const room = rooms.find(room => 
       room.players.some(player => player.id === socket.id)
