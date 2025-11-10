@@ -255,8 +255,6 @@ socket.on('game-starting', () => {
       }, 1000);
     }, 1000);
   }, 1000);
-
-  socket.emit('startGame', roomCode);
 });
 
 
@@ -281,4 +279,5 @@ function startGame(roomCode) {
   document.getElementById('lobbyWrapper').style.display = "none";
   document.getElementById('gameState').classList.add("show");
   localStorage.setItem('inGame', { roomCode: state.roomCode, level: currentLevel });
+  socket.emit('startGame', roomCode);
 }

@@ -16,15 +16,28 @@ let currentLevel = 0;
 let currentWords = [];
 let points = 0;
 
+let currentAnswer = "";
+
 
 const timer = createCountdownTimer(
   30,
   (timeRemaining) => {
     gameTimerEl.textContent = `00:${timeRemaining}`;
-    // console.log(`Time remaining: ${timeRemaining} seconds`);
+    if (timeRemaining <= 5) {
+      socket.emit('timeWarning', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel } );
+    }
+
+    socket.on('timeUpdate', (answer) => {
+      currentAnswer = answer;
+    });
+
+    if (timeRemaining == 1) {
+      anagramDisplay.classList.add('reveal');
+      anagramDisplay.textContent = currentAnswer;
+      inputAnswer.value = "";
+    }
   },
   () => {
-    // console.log('Timer complete!');
     showAlert("Time's up! Moving to next level.", 'warning');
     currentLevel++;
     loadLevel(currentLevel, true);
@@ -48,6 +61,8 @@ socket.on('gameWords', (wordData) => {
 
 
 function loadLevel(level, timerUp=false) {
+  anagramDisplay.classList.remove('reveal');
+  currentAnswer = "";
   timer.reset();
   timer.start();
   localStorage.setItem('inGame', { roomCode: state.roomCode, level: currentLevel });

@@ -311,3 +311,16 @@ body {
   transition: opacity 0.2s;
   z-index: 100;
 }
+
+
+
+
+.mute:hover {
+  opacity: 0.8;
+}
+
+
+
+.reveal {
+  border:#10b981 5px solid !important;
+}

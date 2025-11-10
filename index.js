@@ -324,6 +324,17 @@ io.on('connection', (socket) => {
 
 
 
+
+
+  socket.on('timeWarning', (data) => {
+    const room = rooms.find(room => room.roomCode === data.roomCode);
+    if (!room) return;
+    const correctAnswer = room.words.regular[data.level];
+    socket.emit('timeUpdate', correctAnswer);
+  });
+
+
+
 });
 
 
