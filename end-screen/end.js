@@ -1,7 +1,11 @@
+const socket = io();
+
+
 const gameOverScreen = document.getElementById('gameOverScreen');
 const winnerNameEl = document.getElementById('winnerName');
 const winnerTagEl = document.getElementById('winner-tag');
 const backToLobbyBtn = document.getElementById('backToLobby');
+const gameWordsEl = document.getElementById('words');
 
 
 function displayEndScreen(winnerName, won) {
@@ -16,6 +20,8 @@ function displayEndScreen(winnerName, won) {
     // winnerTagEl.classList.remove('won');
     // winnerTagEl.classList.add('lost');
   }
+
+  socket.emit('requestGameWords', roomCode);
 }
 
 
@@ -38,3 +44,21 @@ displayEndScreen(winnerName, winnerId === myId);
 backToLobbyBtn.addEventListener('click', () => {
   window.location.href = "/game/" + roomCode;  // Redirect to lobby page
 });
+
+
+
+socket.on('final_game_words', (words) => {
+  console.log("Received game words:", words);
+  showGameWords(words);
+});
+
+function showGameWords(words) {
+  words.forEach(word => {
+    const wordEl = document.createElement('div');
+    wordEl.classList.add('word');
+    const wordElText = document.createElement('p');
+    wordElText.textContent = word;
+    wordEl.appendChild(wordElText);
+    gameWordsEl.appendChild(wordEl);
+  });
+}

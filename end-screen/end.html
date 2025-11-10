@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Game Over</title>
 
+  <script src="/socket.io/socket.io.js"></script>
+
   <link rel="stylesheet" href="/end-screen/win-condition.css">
   <script src="/end-screen/end.js" defer></script>
 
@@ -26,6 +28,13 @@
       </div>
       <p id="winner-tag">... won the game!</p>
       <button class="back-to-lobby" id="backToLobby">Back to Lobby</button>
+    </div>
+  </div>
+
+  <div id="final_game_words">
+    <h1>Game Words</h1>
+    <div id="words">
+      <!-- Words will be populated here -->
     </div>
   </div>
 

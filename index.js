@@ -335,6 +335,12 @@ io.on('connection', (socket) => {
 
 
 
+  socket.on('requestGameWords', (roomCode) => {
+    const room = rooms.find(room => room.roomCode === roomCode);
+    if (!room) return;
+    socket.emit('final_game_words', room.words.regular);
+  });
+
 });
 
 
