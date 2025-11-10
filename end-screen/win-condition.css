@@ -342,3 +342,26 @@ body::before {
   gap: 5px;
   font-weight: 500;
 }
+
+
+
+
+
+@media (max-width: 600px) {
+  body {
+    display: flex;
+    flex-direction: column;
+    justify-content:normal;
+    align-items: center;
+    overflow:auto;
+  }
+
+  #final_game_words {
+    margin-left: 0;
+  }
+  
+  #words {
+    display: flex;
+    flex-direction: column;
+  }
+}

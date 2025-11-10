@@ -212,6 +212,7 @@ io.on('connection', (socket) => {
   socket.on('starting-game', async (roomCode) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
+    if (room.gameStarted) return;
     room.gameStarted = true;
     room.currentHighestLevel = 0;
     room.currentHighestLevelHolder = '';
@@ -318,6 +319,7 @@ io.on('connection', (socket) => {
   socket.on('gameOver', (data) => {
     console.log(`Player ${data.name} won the game in room ${data.roomCode}`);
     const room = rooms.find(room => room.roomCode === data.roomCode);
+    room.gameStarted = false;
     if (!room) return;
     io.to(data.roomCode).emit('playerFinished', data.id, data.name);
   });
@@ -338,6 +340,7 @@ io.on('connection', (socket) => {
   socket.on('requestGameWords', (roomCode) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
+    if (room.gameStarted) return;
     socket.emit('final_game_words', room.words.regular);
   });
 
