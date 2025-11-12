@@ -104,7 +104,7 @@ io.on('connection', (socket) => {
 
 
 
-  socket.on('joinRoom', (data) => {
+   socket.on('joinRoom', (data) => {
     const roomCode = data.roomCode;
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) {
@@ -117,7 +117,6 @@ io.on('connection', (socket) => {
     // console.log(socket.rooms);
     console.log(room);
   });
-
   
 
   socket.on('join-socket-room', (roomCode, playerName, playerId) => {
@@ -125,7 +124,7 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('new-player', roomCode, playerName, socket.id);
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
-    room.players.push({ id: playerId, name: playerName });
+    room.players.push({ id: playerId, name: playerName, level: 0 });
     console.log(`Join-socket-room`)
     console.log(room);
     console.log(room.players); 
@@ -272,6 +271,14 @@ io.on('connection', (socket) => {
     } else if (wordExists(data.answer) && isCreatable(data.answer, correctAnswer)) { 
       isCorrect = true;
       points += 1;
+    }
+
+    if (isCorrect) {
+      const player = room.players.find(p => p.id === data.id);
+      if (player) {
+        player.level = data.level + 1;
+      }
+      io.to(data.roomCode).emit('update-players', room.players);
     }
 
     socket.emit('answerResult', isCorrect, data.level, points);

@@ -48,6 +48,8 @@ const timer = createCountdownTimer(
 socket.on('gameWords', (wordData) => {
   startGameAudio();
 
+  loadLeaderboard(state.players, true);
+
   console.log('Received game words:', wordData);
   currentWords = wordData;
   currentLevel = localStorage.getItem('inGame')?.level || 0;

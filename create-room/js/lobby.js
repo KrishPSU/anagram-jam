@@ -151,13 +151,13 @@ socket.on('playerLeft', (leavingPlayer, remainingPlayers, leaderId) => {
   for (let i=0; i<remainingPlayers.length; i++) {
     if (remainingPlayers[i].id != myId) {
       console.log(remainingPlayers[i].id != myId)
-      state.players.push({ id: remainingPlayers[i].id, name: remainingPlayers[i].name, isYou: false, isLeader: isLeader });
+      state.players.push({ id: remainingPlayers[i].id, name: remainingPlayers[i].name, isYou: false, isLeader: isLeader, level: remainingPlayers[i].level });
     } else {
       // let isLeader = false;
       if (localStorage.getItem('leaderId') === leaderId) {
         isLeader = true;
       }
-      state.players.unshift({ id: remainingPlayers[i].id, name: remainingPlayers[i].name, isYou: true, isLeader: isLeader });
+      state.players.unshift({ id: remainingPlayers[i].id, name: remainingPlayers[i].name, isYou: true, isLeader: isLeader, level: remainingPlayers[i].level });
     }
   }
 
@@ -197,7 +197,8 @@ socket.on('new-player', (roomCode, playerName, playerId) => {
   state.players.push({ 
     id: playerId, 
     name: playerName, 
-    isYou: false 
+    isYou: false,
+    level: 0
   });
 
   showAlert(`${playerName} joined the room`, 'success');
@@ -214,13 +215,13 @@ socket.on('get-others-in-room', (others, leaderId) => {
   for (let i=0; i<others.length; i++) {
     if (others[i].id != myId) {
       console.log(others[i].id != myId)
-      state.players.push({ id: others[i].id, name: others[i].name, isYou: false, isLeader: isLeader });
+      state.players.push({ id: others[i].id, name: others[i].name, isYou: false, isLeader: isLeader, level: others[i].level });
     } else {
       // let isLeader = false;
       if (localStorage.getItem('leaderId') === leaderId) {
         isLeader = true;
       }
-      state.players.unshift({ id: others[i].id, name: others[i].name, isYou: true, isLeader: isLeader });
+      state.players.unshift({ id: others[i].id, name: others[i].name, isYou: true, isLeader: isLeader, level: others[i].level });
     }
   }
   render();
