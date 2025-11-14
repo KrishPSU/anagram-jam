@@ -34,7 +34,7 @@ const readyBtn = document.getElementById('readyBtn');
 const leaveBtn = document.getElementById('leave');
 
 // Render
-function render() {
+function render(players) {
 
   if (isLeader) {
     readyBtn.style.opacity = "1";
@@ -54,6 +54,8 @@ function render() {
   
   roomCodeEl.textContent = state.roomCode;
   playersEl.innerHTML = '';
+  console.log('state.players', state.players);
+  console.log('players', players);
   state.players.forEach(player => {
     const pill = document.createElement('div');
     pill.className = 'player-pill' + (player.isYou ? ' you' : '');
@@ -64,7 +66,7 @@ function render() {
 
     const name = document.createElement('div');
     name.className = 'player-name';
-    name.textContent = player.name;
+    name.textContent = `${player.name}`;
     pill.appendChild(name);
 
     if (player.isYou) {
@@ -168,13 +170,13 @@ socket.on('playerLeft', (leavingPlayer, remainingPlayers, leaderId) => {
     waitingEl.style.display = "none";
   }
 
-  render();
+  render(remainingPlayers);
 });
 
 
 
 
-socket.on('new-player', (roomCode, playerName, playerId) => {
+socket.on('new-player', (roomCode, playerName, playerId, all_players) => {
 
   if (roomCode !== state.roomCode) return; // Ignore if not for this room
   if (playerId == myId) {
@@ -198,14 +200,14 @@ socket.on('new-player', (roomCode, playerName, playerId) => {
     id: playerId, 
     name: playerName, 
     isYou: false,
-    level: 0
+    level: 0,
   });
 
   showAlert(`${playerName} joined the room`, 'success');
   waitingEl.style.display = "none";
 
   console.log(state.players);
-  render();
+  render(all_players);
 });
 
 
@@ -224,7 +226,7 @@ socket.on('get-others-in-room', (others, leaderId) => {
       state.players.unshift({ id: others[i].id, name: others[i].name, isYou: true, isLeader: isLeader, level: others[i].level });
     }
   }
-  render();
+  render(others);
 });
 
 

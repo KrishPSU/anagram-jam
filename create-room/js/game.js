@@ -41,6 +41,7 @@ const timer = createCountdownTimer(
     showAlert("Time's up! Moving to next level.", 'warning');
     currentLevel++;
     loadLevel(currentLevel, true);
+    socket.emit('levelCompleted', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel } );
   }
 );
 
@@ -137,11 +138,6 @@ socket.on('newHighestPlayer', (id, name, level) => {
 
 
 socket.on('playerFinished', (id, name) => {
-  // document.getElementById('gameState').classList.remove("show");
-  // gameOverScreen.style.display = "flex";
-
-  // window.location.href = '/create-room/end.html';
-
   timer.stop();
   if (myId === id) {
     currentLeaderEl.textContent = `You have won the game!`;
@@ -151,35 +147,5 @@ socket.on('playerFinished', (id, name) => {
 
   window.location.href = `/game/${state.roomCode}/end?winnerId=${id}&winnerName=${btoa(name)}&roomCode=${state.roomCode}`;
 
-  // displayEndScreen(name, false);
   currentLeaderEl.textContent = `${name} has won the game!`;
-
-  // setTimeout(() => {
-  //   window.location.reload();
-  // }, 5000);
 });
-
-
-// backToLobbyBtn.addEventListener('click', () => {
-//   resetGame();
-// });
-
-
-
-// function resetGame() {
-//   currentLevel = 0;
-//   points = 0;
-//   pointsEl.innerText = `Points: ${points}`;
-//   levelList.forEach(el => {
-//     el.classList.remove('active', 'completed', 'skipped');
-//   });
-//   inputAnswer.disabled = false;
-//   submitButton.disabled = false;
-//   gameOverScreen.style.display = "none";
-//   currentLeaderEl.textContent = `No leader yet`;
-//   state.started = false;
-//   localStorage.removeItem('inGame');
-//   document.getElementById('lobbyWrapper').style.display = "block";
-//   document.getElementById('gameState').classList.remove("show");
-//   gameOverScreen.style.display = "none";
-// }

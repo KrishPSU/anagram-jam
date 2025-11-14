@@ -84,7 +84,7 @@
 
         <div class="anagram" id="anagramDisplay"></div>
 
-        <input class="answer-input" id="answerInput" type="text" placeholder="Type your answer" autocomplete="off">
+        <input class="answer-input" id="answerInput" oninput="this.value = this.value.replace(/[^A-Za-z]/g, '')" type="text" placeholder="Type your answer" autocomplete="off">
         <button class="answer-submit" type="submit">Submit</button>
 
         <div class="standing">

@@ -88,7 +88,7 @@ io.on('connection', (socket) => {
 
 
 
-  socket.on('createRoom', (data) => {
+  socket.on('createRoom', () => {
     const roomCode = generateJoinCode();
 
     const roomAlreadyExists = rooms.find(room => room.roomCode === roomCode);
@@ -121,9 +121,9 @@ io.on('connection', (socket) => {
 
   socket.on('join-socket-room', (roomCode, playerName, playerId) => {
     socket.join(roomCode);
-    io.to(roomCode).emit('new-player', roomCode, playerName, socket.id);
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
+    io.to(roomCode).emit('new-player', roomCode, playerName, socket.id, room.players);
     room.players.push({ id: playerId, name: playerName, level: 0 });
     console.log(`Join-socket-room`)
     console.log(room);
@@ -326,8 +326,8 @@ io.on('connection', (socket) => {
   socket.on('gameOver', (data) => {
     console.log(`Player ${data.name} won the game in room ${data.roomCode}`);
     const room = rooms.find(room => room.roomCode === data.roomCode);
-    room.gameStarted = false;
     if (!room) return;
+    room.gameStarted = false;
     io.to(data.roomCode).emit('playerFinished', data.id, data.name);
   });
 
