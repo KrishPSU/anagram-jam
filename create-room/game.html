@@ -82,7 +82,10 @@
           </div>
         </div>
 
-        <div class="anagram" id="anagramDisplay"></div>
+        <div class="word-display">
+          <div class="anagram" id="anagramDisplay"></div>
+          <div class="shuffle" id="shuffleBtn">🔄</div>
+        </div>
 
         <input class="answer-input" id="answerInput" oninput="this.value = this.value.replace(/[^A-Za-z]/g, '')" type="text" placeholder="Type your answer" autocomplete="off">
         <button class="answer-submit" type="submit">Submit</button>

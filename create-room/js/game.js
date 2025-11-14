@@ -11,6 +11,7 @@ const submitButton = document.querySelector('.answer-submit');
 const currentLeaderEl = document.getElementById('currentLeader');
 const gameTimerEl = document.getElementById('gameTimer');
 const pointsEl = document.getElementById('pointsDisplay');
+const shuffleBtn = document.getElementById('shuffleBtn');
 
 let currentLevel = 0;
 let currentWords = [];
@@ -148,4 +149,13 @@ socket.on('playerFinished', (id, name) => {
   window.location.href = `/game/${state.roomCode}/end?winnerId=${id}&winnerName=${btoa(name)}&roomCode=${state.roomCode}`;
 
   currentLeaderEl.textContent = `${name} has won the game!`;
+});
+
+
+
+shuffleBtn.addEventListener('click', () => {
+  const shuffled = currentWords[currentLevel].split('')
+    .sort(() => 0.5 - Math.random())
+    .join('');
+  anagramDisplay.textContent = shuffled;
 });

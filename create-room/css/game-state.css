@@ -99,6 +99,14 @@
   padding: 20px;
 }
 
+.word-display {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+}
+
 .anagram {
   position: relative;
   z-index: 1;
@@ -112,6 +120,16 @@
   letter-spacing: 8px;
   text-align: center;
   box-shadow: 0 20px 40px rgba(0,0,0,0.12);
+}
+
+.shuffle {
+  aspect-ratio: 1/1;
+  width: 40px;
+  font-size: 32px;
+}
+.shuffle:hover {
+  cursor: pointer;
+  opacity: 0.8;
 }
 
 .answer {
