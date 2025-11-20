@@ -148,8 +148,8 @@
   display: flex;
   flex-direction: column;
   gap: 50px;
-  justify-content: center;
-  align-items: center;
+  /* justify-content: center;
+  align-items: center; */
 }
 
 
@@ -178,12 +178,14 @@
   flex-direction: column;
   gap: 8px;
   align-items: center;
+  justify-content: center;
   z-index: 2;
+  margin: 10px;
 }
 
 .keyboard-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
 }
 
