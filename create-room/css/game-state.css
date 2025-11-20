@@ -152,7 +152,7 @@
 
 
 .answer-input {
-  width: min(60vw, 520px);
+  /* width: min(60vw, 520px); */
   max-width: 90vw;
   padding: 12px 14px;
   border-radius: 12px;
