@@ -199,25 +199,5 @@
     </div>
   </div>
 
-  <!-- Prevent double-tap zoom and focus issues -->
-  <script>
-    // Prevent double-tap zoom
-    let lastTouchEnd = 0;
-    document.addEventListener('touchend', function (event) {
-      const now = Date.now();
-      if (now - lastTouchEnd <= 300) {
-        event.preventDefault();
-      }
-      lastTouchEnd = now;
-    }, false);
-    
-    // Prevent focus zoom on inputs during rapid tapping
-    document.addEventListener('touchstart', function(e) {
-      if (e.target.tagName === 'INPUT' && e.target.disabled) {
-        e.preventDefault();
-      }
-    }, { passive: false });
-  </script>
-
 </body>
 </html>
