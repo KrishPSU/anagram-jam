@@ -4,6 +4,13 @@
   padding: 0;
 }
 
+/* Prevent touch zoom and highlighting on all buttons */
+button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -14,6 +21,11 @@ body {
   padding: 20px;
   flex-direction: column;
   gap: 20px;
+  /* Prevent zoom and touch issues */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 #waiting {
