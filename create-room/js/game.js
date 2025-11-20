@@ -92,16 +92,16 @@ function loadLevel(level, timerUp=false) {
       levelList[level - 1].classList.add('completed');
     }
   }
-  anagramDisplay.textContent = currentWords[level];
+  anagramDisplay.textContent = currentWords[level].toUpperCase();
   inputAnswer.value = "";
   inputAnswer.focus();
 }
 
 
-submitButton.addEventListener('click', () => {
-  const userAnswer = inputAnswer.value.trim().toLowerCase();
-  socket.emit('answerAttempt', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel, answer: userAnswer, points: points });
-});
+// submitButton.addEventListener('click', () => {
+//   const userAnswer = inputAnswer.value.trim().toLowerCase();
+//   socket.emit('answerAttempt', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel, answer: userAnswer, points: points });
+// });
 
 
 socket.on('answerResult', (isCorrect, level, points) => {
