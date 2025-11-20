@@ -156,11 +156,13 @@
   align-items: center;
   width: 100%;
   max-width: 100%;
+  transform: translateX(-7px);
 }
 
 
 .answer-input {
   /* width: min(60vw, 520px); */
+  text-align: center;
   width: 100%;
   max-width: 90vw;
   padding: 12px 14px;
@@ -191,7 +193,6 @@
   align-items: center;
   justify-content: center;
   z-index: 2;
-  transform: translateX(-7px);
 }
 
 .keyboard-row {
