@@ -3,7 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#764ba2">
+  <meta name="description" content="Test your word skills and compete with friends!">
   <title>Game Lobby</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/icon-192.png">
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+  
+  <!-- Apple Touch Icon -->
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/game-state.css">
   <link rel="stylesheet" href="css/win-condition.css">
@@ -17,6 +29,21 @@
   <script defer src="js/keyboard.js"></script>
 
   <script src="/socket.io/socket.io.js"></script>
+  
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('Service Worker registered successfully:', registration.scope);
+          })
+          .catch((error) => {
+            console.log('Service Worker registration failed:', error);
+          });
+      });
+    }
+  </script>
 
 </head>
 <body>

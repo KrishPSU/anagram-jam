@@ -26,6 +26,20 @@ server.listen(PORT || 3000, () => {
 app.use(express.static(path.join(__dirname, 'create-room')));
 app.use('/', express.static(path.join(__dirname, 'home')));
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
+
+// Serve PWA files (manifest.json and service worker)
+app.get('/manifest.json', (req, res) => {
+  res.sendFile(path.join(__dirname, 'manifest.json'));
+});
+
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.sendFile(path.join(__dirname, 'sw.js'));
+});
+
+// Serve icon files if they exist
+app.use(express.static(path.join(__dirname)));
+
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
 // app.use('/game/:roomCode/end', express.static(path.join(__dirname, 'end-screen')));  
 // app.use('/admin', express.static(path.join(__dirname, 'edit-menu-app')));
