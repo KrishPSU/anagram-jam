@@ -76,7 +76,7 @@ function loadLevel(level, timerUp=false) {
     timer.stop();
     anagramDisplay.textContent = "You win!";
     inputAnswer.disabled = true;
-    submitButton.disabled = true;
+    // submitButton.disabled = true;
     socket.emit('gameOver', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode });
     return;
   }
@@ -157,5 +157,5 @@ shuffleBtn.addEventListener('click', () => {
   const shuffled = currentWords[currentLevel].split('')
     .sort(() => 0.5 - Math.random())
     .join('');
-  anagramDisplay.textContent = shuffled;
+  anagramDisplay.textContent = shuffled.toUpperCase();
 });
