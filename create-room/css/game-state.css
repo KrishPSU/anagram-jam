@@ -152,7 +152,6 @@
   align-items: center;
   width: 100%;
   max-width: 100%;
-  border: 1px solid white;
 }
 
 
@@ -184,7 +183,7 @@
   align-items: center;
   justify-content: center;
   z-index: 2;
-  transform: translateX(-10px);
+  transform: translateX(-7px);
 }
 
 .keyboard-row {
