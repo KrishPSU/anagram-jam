@@ -152,6 +152,12 @@ body {
   color: white;
 }
 
+.solo-mode {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+  color: white;
+  margin-top: 15px;
+}
+
 .mode-icon {
   font-size: 1.5rem;
   margin-bottom: 8px;
