@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#43e97b">
+  <meta name="description" content="Solo mode - Race the clock and improve your skills!">
+  <title>Solo Mode | Anagram Jam</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/icon-192.png">
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+  
+  <!-- Apple Touch Icon -->
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="css/solo.css">
+  
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('Service Worker registered successfully:', registration.scope);
+          })
+          .catch((error) => {
+            console.log('Service Worker registration failed:', error);
+          });
+      });
+    }
+  </script>
+</head>
+<body>
+  <div class="floating-shapes">
+    <div class="shape"></div>
+    <div class="shape"></div>
+    <div class="shape"></div>
+  </div>
+
+  <div class="game-container">
+    <header class="game-header">
+      <div class="score-display">
+        <span class="score-label">Score</span>
+        <span class="score-value" id="scoreValue">0</span>
+      </div>
+    </header>
+
+    <main class="game-content">
+      <div class="word-display">
+        <div class="anagram" id="anagramDisplay">ANAGRAM</div>
+        <div class="shuffle" id="shuffleBtn">🔄</div>
+      </div>
+
+      <div class="words-container">
+        <h3 class="words-title">Found Words</h3>
+        <div class="words-list" id="wordsList">
+          <!-- Words will be populated here -->
+        </div>
+      </div>
+
+      <div class="answer-input-container">
+        <input 
+          class="answer-input" 
+          id="answerInput" 
+          type="text" 
+          placeholder="Type your answer" 
+          autocomplete="off"
+          oninput="this.value = this.value.replace(/[^A-Za-z]/g, '')"
+        >
+        <div class="keyboard">
+          <div class="keyboard-row">
+            <button class="key" data-key="Q">Q</button>
+            <button class="key" data-key="W">W</button>
+            <button class="key" data-key="E">E</button>
+            <button class="key" data-key="R">R</button>
+            <button class="key" data-key="T">T</button>
+            <button class="key" data-key="Y">Y</button>
+            <button class="key" data-key="U">U</button>
+            <button class="key" data-key="I">I</button>
+            <button class="key" data-key="O">O</button>
+            <button class="key" data-key="P">P</button>
+          </div>
+          <div class="keyboard-row">
+            <button class="key" data-key="A">A</button>
+            <button class="key" data-key="S">S</button>
+            <button class="key" data-key="D">D</button>
+            <button class="key" data-key="F">F</button>
+            <button class="key" data-key="G">G</button>
+            <button class="key" data-key="H">H</button>
+            <button class="key" data-key="J">J</button>
+            <button class="key" data-key="K">K</button>
+            <button class="key" data-key="L">L</button>
+          </div>
+          <div class="keyboard-row">
+            <button class="key key-wide" data-key="BACKSPACE">⌫</button>
+            <button class="key" data-key="Z">Z</button>
+            <button class="key" data-key="X">X</button>
+            <button class="key" data-key="C">C</button>
+            <button class="key" data-key="V">V</button>
+            <button class="key" data-key="B">B</button>
+            <button class="key" data-key="N">N</button>
+            <button class="key" data-key="M">M</button>
+            <button class="key key-wide" data-key="ENTER">ENTER</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

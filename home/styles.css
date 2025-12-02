@@ -116,6 +116,7 @@ body {
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
+  z-index: 0;
 }
 
 .mode-button::before {
@@ -127,6 +128,8 @@ body {
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
   transition: left 0.5s;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .mode-button:hover::before {
@@ -152,26 +155,27 @@ body {
   color: white;
 }
 
-.solo-mode {
-  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-  color: white;
-  margin-top: 15px;
-}
 
 .mode-icon {
   font-size: 1.5rem;
   margin-bottom: 8px;
   display: block;
+  position: relative;
+  z-index: 2;
 }
 
 .mode-title {
   font-size: 1rem;
   margin-bottom: 4px;
+  position: relative;
+  z-index: 2;
 }
 
 .mode-desc {
   font-size: 0.8rem;
   opacity: 0.9;
+  position: relative;
+  z-index: 2;
 }
 
 .start-button {

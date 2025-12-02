@@ -50,6 +50,11 @@ app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'home', 'index.html'));
 });
+
+app.get('/solo', (req, res) => {
+  res.sendFile(path.join(__dirname, 'solo', 'solo.html'));
+});
+
 app.get('/game/:roomCode', (req, res) => {
   const roomCode = req.params.roomCode;
   const roomExists = rooms.find(room => room.roomCode === roomCode);

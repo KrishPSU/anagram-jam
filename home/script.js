@@ -30,7 +30,6 @@ function hideError() {
 errorClose.addEventListener('click', hideError);
 
 
-// Handle mode selection
 modeButtons.forEach(button => {
   button.addEventListener('click', function() {
     // Remove active state from all buttons
@@ -49,6 +48,8 @@ modeButtons.forEach(button => {
       return;
     }
 
+    localStorage.setItem('name', playerNameInput.value.trim());
+    
 
     if (selectedMode === 'friends') {
       if (roomCodeInput.value.trim() == "") {
@@ -58,8 +59,11 @@ modeButtons.forEach(button => {
       socket.emit('joinRoom', { name: playerNameInput.value.trim(), roomCode: roomCodeInput.value.trim().toUpperCase() })
     } else if (selectedMode === 'create') {
       socket.emit('createRoom')
-      localStorage.setItem('name', playerNameInput.value.trim());
       localStorage.setItem('myId', socket.id);
+    } else if (selectedMode === 'solo') {
+      // localStorage.setItem('myId', socket.id);
+      // document.location.href = "/solo";
+      showError("Solo mode is coming soon!");
     }
 
 
