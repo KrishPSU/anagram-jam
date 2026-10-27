@@ -39,7 +39,7 @@
         </li>
         <li>
           <h3>Score and win</h3>
-          <p>The hidden word is worth 2 points. Any other real word made from the same letters is worth 1. <b>The first player through all 10 words wins the round.</b></p>
+          <p>The hidden word is worth 2 points. Any other real word made from the same letters is worth 1. <b>The round ends as soon as anyone gets through all 10 words, and the most points wins.</b> On a tie, whoever got to that score first wins.</p>
           <div class="howto-art" aria-hidden="true">
             <span class="howto-chip">CAT <b class="howto-pts">+2</b></span><span class="howto-chip">ACT <b class="howto-pts one">+1</b></span>
           </div>

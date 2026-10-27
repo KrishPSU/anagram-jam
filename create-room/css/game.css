@@ -208,6 +208,28 @@ body:not(.lobby) .lobby-help { display: none; }
 }
 
 
+/* "Reconnecting…" while the connection is down (lobby.js), so it doesn't look like the game froze. At the bottom,
+   clear of the buttons and the game's header along the top - and above the overlays, which wait on it too. */
+.reconnecting {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 300;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(30, 27, 46, 0.94);
+  border: 1px solid var(--glass-line);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.reconnecting .spinner { margin-right: 8px; vertical-align: -0.2em; }
+
+
 /* Full-screen overlays: the countdown, and "open in another tab" */
 
 .overlay {

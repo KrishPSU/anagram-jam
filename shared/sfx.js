@@ -1,29 +1,54 @@
-// Short sound effects made with the Web Audio API (no audio files), plus phone vibration.
-// Both follow the mute button ('muteAudio' in localStorage).
+// Short sound effects made with the Web Audio API (no audio files), plus phone vibration. The game page's music
+// (create-room/js/audio.js) plays through the same audio context. Everything follows the mute button
+// ('muteAudio' in localStorage).
 
 const sfx = (() => {
   let ctx;
 
   const muted = () => localStorage.getItem('muteAudio') === 'true';
 
-  function audio() {
+  // iPhones: play through the silent switch, like the music did back when it was an <audio> element (Web Audio
+  // would otherwise go quiet whenever the switch is on silent)
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+  } catch {}
+
+  function context() {
     if (!ctx) {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return null;
       ctx = new AudioCtx();
     }
-    if (ctx.state === 'suspended') ctx.resume();
     return ctx;
   }
 
-  // Browsers only allow sound after the player has tapped or typed something
-  ['pointerdown', 'keydown'].forEach(evt => window.addEventListener(evt, audio, { once: true, passive: true }));
+  // Browsers only let a page make sound once it has been tapped or typed on - and iPhones only count a finger
+  // that has lifted (touchend, click), not one going down. Phones also take the sound away when something else
+  // wants it (a call, another app), so this keeps listening rather than stopping after the first tap.
+  function wake() {
+    if (muted()) return;
+    const c = context();
+    if (c && c.state !== 'running') c.resume().catch(() => {});
+  }
+  ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(evt => window.addEventListener(evt, wake, { capture: true, passive: true }));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') wake();
+  });
+
+  // Muted, the context is suspended rather than left running in silence: on a phone, a running one keeps other
+  // apps' audio paused
+  function setMuted(on) {
+    localStorage.setItem('muteAudio', on ? 'true' : 'false');
+    if (!on) wake();
+    else if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {});
+  }
 
   // notes: [frequency, start offset (s), duration (s), wave, volume]
   function play(notes) {
     if (muted()) return;
-    const c = audio();
+    const c = context();
     if (!c) return;
+    wake();
     notes.forEach(([freq, start, duration, type = 'triangle', volume = 0.15]) => {
       const osc = c.createOscillator();
       const gain = c.createGain();
@@ -40,6 +65,9 @@ const sfx = (() => {
   }
 
   return {
+    context,
+    muted,
+    setMuted,
     tap: () => play([[520, 0, 0.05, 'sine', 0.04]]),
     tick: () => play([[880, 0, 0.05, 'square', 0.03]]),
     beep: () => play([[660, 0, 0.14, 'sine', 0.15]]),

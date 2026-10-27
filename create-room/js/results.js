@@ -1,17 +1,20 @@
 // The results screen, shown to the players of a round when it ends (see game.js 'round-over'). They stay in the
-// room the whole time: the lobby shows them as still in the game until they press Play again.
+// room the whole time: the lobby shows them as still in the game until they press Play again or Back to lobby.
 
 const winnerNameEl = document.getElementById('winnerName');
 const winnerTitleEl = document.getElementById('winnerTitle');
 const winnerTagEl = document.getElementById('winner-tag');
 const roomLabelEl = document.getElementById('roomLabel');
 const playAgainBtn = document.getElementById('playAgain');
+const backToLobbyBtn = document.getElementById('backToLobby');
 const rankingEl = document.getElementById('ranking');
 const gameWordsEl = document.getElementById('words');
 
 let shownRound = null; // the round whose results are on screen
 
 
+// results: the server's (see buildResults in index.js) - the winner has the most points, and the finisher got
+// through every word first, which ended the round
 function showResults(results) {
   // Already showing them - the connection only dropped for a moment
   if (view === 'results' && shownRound === results.round) return;
@@ -19,12 +22,12 @@ function showResults(results) {
   showView('results');
 
   const won = results.winnerId === myId;
+  const winner = results.players.find(p => p.id === results.winnerId) || { points: 0 };
   roomLabelEl.textContent = `Results · Room ${state.roomCode}`;
   winnerNameEl.textContent = results.winnerName;
   winnerTitleEl.textContent = won ? 'You win!' : `${results.winnerName} wins!`;
-  // "Got through" rather than "solved" - skipped words count toward finishing
-  winnerTagEl.textContent = won ? 'You got through every word first.' : 'First to get through every word.';
-  showRanking(results.players, results.words.length);
+  winnerTagEl.textContent = winnerTagline(results, winner);
+  showRanking(results);
   showGameWords(results.words);
 
   if (won) {
@@ -33,22 +36,37 @@ function showResults(results) {
   }
 }
 
+// What won it: the most points, or the same points but sooner - and who finished first, if that was someone else
+function winnerTagline(results, winner) {
+  const pts = `${winner.points} ${winner.points === 1 ? 'point' : 'points'}`;
+  if (!winner.points) return 'Nobody scored, so it went to whoever got furthest.';
+  if (results.tied) return `Tied on ${pts}, but got there first.`;
+  if (!results.finisherId || results.finisherId === results.winnerId) return `Most points (${pts}), and first through every word.`;
+  return `Most points (${pts}). ${results.finisherId === myId ? 'You' : results.finisherName} finished first.`;
+}
 
-// Back to the lobby, ready for the next round - it starts once everyone is
-playAgainBtn.addEventListener('click', () => {
-  playAgainBtn.disabled = true;
-  playAgainBtn.classList.add('is-loading');
-  socket.timeout(5000).emit('play-again', (err) => {
-    playAgainBtn.disabled = false;
-    playAgainBtn.classList.remove('is-loading');
-    if (err) {
-      showAlert("Couldn't reach the game. Try again.");
-      return;
-    }
-    showView('lobby');
-    render();
-  });
-});
+
+// Back to the lobby: Play again is ready for the next round (it starts once everyone is), Back to lobby isn't yet
+function toLobby(button, ready) {
+  [playAgainBtn, backToLobbyBtn].forEach(b => { b.disabled = true; });
+  button.classList.add('is-loading');
+  request(ready ? 'play-again' : 'back-to-lobby')
+    .then(() => {
+      // Shown straight away - the server's room-state confirms it
+      const me = state.players.find(p => p.isYou);
+      if (me) me.status = ready ? 'ready' : 'notReady';
+      showView('lobby');
+      render();
+    })
+    .catch(() => showAlert("Couldn't reach the game. Try again."))
+    .finally(() => {
+      [playAgainBtn, backToLobbyBtn].forEach(b => { b.disabled = false; });
+      button.classList.remove('is-loading');
+    });
+}
+
+playAgainBtn.addEventListener('click', () => toLobby(playAgainBtn, true));
+backToLobbyBtn.addEventListener('click', () => toLobby(backToLobbyBtn, false));
 
 
 
@@ -59,17 +77,25 @@ function el(tag, className, text) {
   return node;
 }
 
-function showRanking(players, total) {
+// Most points first (the server's order). Anyone who left mid-round is at the bottom - they can't win.
+function showRanking(results) {
+  const total = results.words.length;
   rankingEl.innerHTML = '';
-  players.forEach((player, i) => {
+  results.players.forEach((player, i) => {
     const row = el('li', 'rank-row' + (player.id === myId ? ' you' : ''), '');
     const name = player.name + (player.id === myId ? ' (you)' : '') + (player.left ? ' · left' : '');
     row.append(
-      el('span', 'place', i === 0 ? '🏆' : String(i + 1)),
+      el('span', 'place', player.id === results.winnerId ? '🏆' : String(i + 1)),
       avatarEl(player.name),
       el('span', 'name', name),
-      el('span', 'stats', `${player.points} pts · ${player.solved}/${total} solved`),
     );
+    if (player.id === results.finisherId) {
+      const flag = el('span', 'finished', '🏁');
+      flag.title = 'Finished first';
+      flag.setAttribute('aria-label', 'Finished first');
+      row.append(flag);
+    }
+    row.append(el('span', 'stats', `${player.points} pts · ${player.solved}/${total} solved`));
     rankingEl.appendChild(row);
   });
 }

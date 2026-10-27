@@ -19,8 +19,11 @@ let roundId = null; // the round on screen
 let currentLevel = 0;
 let currentWords = [];
 let points = 0;
+let roundEnding = false; // someone got through every word: the round stops for everyone (see 'round-over')
+let finishWatch;         // after you get through every word, until the round's results arrive
 
 let currentAnswer = "";
+let askedAnswer = -1; // the level whose answer has been asked for (see askAnswer)
 
 // The current word as tappable tiles
 let tiles = [];      // { letter, used, el } in the order the server scrambled them
@@ -30,23 +33,17 @@ let slots = [];      // the answer row's spaces, kept for the whole word so thei
 let flights = new Set(); // tiles still flying to the answer row - each entry lands its tile right away
 let submitting = false;
 let locked = false;  // celebrating a right answer or showing the answer - no input
-let submitTimeout;
 
 
-// True while a level is on screen - not in the lobby, and not after you've finished
+// True while a level is on screen - not in the lobby, not after you've finished, and not once the round is over
 function isPlaying() {
-  return currentLevel < currentWords.length;
+  return currentLevel < currentWords.length && !roundEnding;
 }
 
 function canPick() {
   return isPlaying() && !submitting && !locked;
 }
 
-
-// Registered once - this used to sit inside the timer tick and add a new listener every second
-socket.on('timeUpdate', (answer) => {
-  currentAnswer = answer;
-});
 
 const timer = createCountdownTimer(
   LEVEL_SECONDS,
@@ -56,7 +53,7 @@ const timer = createCountdownTimer(
     gameTimerEl.classList.toggle('urgent', timeRemaining <= 5);
     if (timeRemaining <= 5) {
       // Fetch the answer (shown at 1 second left) once per word - each ask is a database read on the server
-      if (!currentAnswer) socket.emit('timeWarning', { level: currentLevel });
+      if (askedAnswer !== currentLevel && isPlaying()) askAnswer();
       if (timeRemaining > 0 && isPlaying() && !locked) sfx.tick();
     }
 
@@ -71,6 +68,18 @@ const timer = createCountdownTimer(
   }
 );
 
+// The answer to the word on screen, for showing as its time runs out. Missing it only means it isn't shown,
+// so it's asked once (again on the next tick if that went unanswered) rather than with request().
+function askAnswer() {
+  const round = roundId, level = currentLevel;
+  askedAnswer = level;
+  socket.timeout(3000).emit('reveal', { round, level }, (err, word) => {
+    if (round !== roundId || level !== currentLevel) return;
+    if (err) askedAnswer = -1;
+    else if (word) currentAnswer = word;
+  });
+}
+
 
 // Sent to the whole room when a round starts - roster says who's playing it, and everyone else stays in
 // the lobby. (Coming back to a round arrives with 'joined' instead - see lobby.js.)
@@ -79,38 +88,66 @@ socket.on('gameWords', (round) => {
 });
 
 // A round on screen: a new one, or one you're coming back to. level, points, skipped and secondsLeft say
-// where you were in it; highest is who's furthest along.
+// where you were in it.
 function startRound(round) {
-  // Already playing it - the connection only dropped for a moment, so carry on
-  if (view === 'game' && roundId === round.round) return;
+  if (view === 'game' && roundId === round.round) {
+    catchUp(round);
+    return;
+  }
   console.log('Received game words:', round.words);
+  if (view === 'game') stopRound(); // still on an older round, somehow
   hideCountdown();
   roundId = round.round;
   currentWords = round.words;
+  roundEnding = false;
+  showProgress(round);
+  showView('game');
+  showLeader(true);
+  loadLeaderboard(state.players.filter(p => p.level !== null));
+  loadLevel(currentLevel, round.secondsLeft);
+}
+
+// Already playing this round - the connection only dropped for a moment, or the page asked where it should be.
+// The server can be ahead (the reply to a right answer got lost: catch up with it), or behind (the time-ups
+// telling it the clock ran out got lost: tell it again).
+function catchUp(round) {
+  if (roundEnding) return;
+  if (round.level > currentLevel) {
+    showProgress(round);
+    loadLevel(currentLevel, round.secondsLeft);
+  } else if (round.level < currentLevel) {
+    reportTimeUp(currentLevel - 1);
+  } else {
+    setPoints(round.points);
+  }
+}
+
+// The words done so far (circles), the word you're on, and your points
+function showProgress(round) {
   currentLevel = round.level;
-  points = round.points;
-  pointsEl.textContent = `${points} pts`;
-  // The words already played, if you're coming back
+  setPoints(round.points);
   levelList.forEach((circle, i) => {
     circle.classList.remove('active', 'completed', 'skipped');
     if (i < currentLevel) circle.classList.add(round.skipped.includes(i) ? 'skipped' : 'completed');
   });
-  currentLeaderEl.textContent = `First to ${currentWords.length} wins`;
-  delete currentLeaderEl.dataset.id;
-  if (round.highest) showLeader(round.highest.id, round.highest.name, round.highest.level, true);
-  showView('game');
-  loadLeaderboard(state.players.filter(p => p.level !== null));
-  loadLevel(currentLevel, round.secondsLeft);
+}
+
+function setPoints(value) {
+  points = value;
+  pointsEl.textContent = `${points} pts`;
 }
 
 // Off the game screen: nothing left to play or type into
 function stopRound() {
   timer.stop();
   landAll();
-  clearTimeout(submitTimeout);
+  clearInterval(finishWatch);
   roundId = null;
   currentWords = [];
   currentLevel = 0;
+  roundEnding = false;
+  submitting = false;
+  locked = false;
   tilesEl.replaceChildren();
   slotsEl.replaceChildren();
 }
@@ -119,36 +156,48 @@ function stopRound() {
 // seconds: on the clock for this word - less than a whole word's if you're coming back to it
 function loadLevel(level, seconds = LEVEL_SECONDS) {
   currentAnswer = "";
+  askedAnswer = -1;
   submitting = false;
   locked = false;
-  clearTimeout(submitTimeout);
-  timer.reset(seconds);
-  timer.start();
+  clearInterval(finishWatch);
   if (level >= currentWords.length) {
-    console.log("Game Over you win!");
+    // Through every word, which ends the round for everyone - the server sends 'round-over'. Until it gets here,
+    // keep asking where things stand, in case it never does.
     timer.stop();
     landAll();
     tilesEl.replaceChildren();
     slotsEl.replaceChildren();
     levelLabelEl.textContent = 'You finished!';
-    socket.emit('gameOver');
+    finishWatch = setInterval(sync, 3000);
     return;
   }
 
+  timer.reset(seconds);
+  timer.start();
   levelList[level].classList.add('active');
   levelLabelEl.textContent = `Word ${level + 1} of ${currentWords.length}`;
   showWord(currentWords[level]);
 }
 
 
-// Moves on after a right answer (timerUp = false) or when the clock runs out (timerUp = true).
-// levelCompleted goes first so the server knows you reached the end before you claim the win.
+// Moves on after a right answer (timerUp = false) or when the clock runs out (timerUp = true). The server moved
+// you on already for a right answer, as it scored it; when the clock runs out, it's told.
 function advance(timerUp) {
+  if (roundEnding) return;
   levelList[currentLevel].classList.remove('active');
   levelList[currentLevel].classList.add(timerUp ? 'skipped' : 'completed');
+  if (timerUp) reportTimeUp(currentLevel);
   currentLevel++;
-  socket.emit('levelCompleted', { level: currentLevel, skipped: timerUp });
   loadLevel(currentLevel);
+}
+
+// Tells the server the clock ran out on word `level`. If that can't get through, the page asks where it stands.
+function reportTimeUp(level) {
+  request('time-up', { round: roundId, level })
+    .then((reply) => {
+      if (reply.status !== 'ok') sync();
+    })
+    .catch(sync);
 }
 
 
@@ -297,11 +346,20 @@ function clearAnswer() {
 function submitAnswer() {
   if (!canPick() || picked.length < tiles.length) return;
   submitting = true;
-  // If the server never answers, don't leave the player stuck
-  clearTimeout(submitTimeout);
-  submitTimeout = setTimeout(() => { submitting = false; }, 3000);
+  const round = roundId, level = currentLevel;
   const answer = picked.map(i => tiles[i].letter).join('').toLowerCase();
-  socket.emit('answerAttempt', { level: currentLevel, answer: answer });
+  // A slow reply makes the answer row pulse, so it never just sits there
+  const slow = setTimeout(() => slotsEl.classList.add('checking'), 600);
+  request('answerAttempt', { round, level, answer })
+    .catch(() => null)
+    .then((reply) => {
+      clearTimeout(slow);
+      // Moved on meanwhile: the clock ran out, or the round is over
+      if (roundId !== round || level !== currentLevel) return;
+      slotsEl.classList.remove('checking');
+      submitting = false;
+      answered(reply, level);
+    });
 }
 
 function revealAnswer() {
@@ -321,15 +379,20 @@ function showFeedback(text) {
 }
 
 
-socket.on('answerResult', (isCorrect, level, newPoints, gained) => {
-  // Ignore results for a level you've already left (a double submit, or the timer ran out first).
-  // Acting on them used to skip you ahead an extra level.
-  if (level !== currentLevel) return;
-  submitting = false;
-  clearTimeout(submitTimeout);
+// What the server made of an answer to word `level`: right (celebrate, then on to the next word) or wrong (shake,
+// try again). Anything else means there's no round to answer anymore. No reply at all means it never got through
+// even after retrying - the letters come back so you can try again.
+function answered(reply, level) {
   landAll();
 
-  if (!isCorrect) {
+  if (!reply || reply.status === 'over' || reply.status === 'gone' || reply.status === 'skipped') {
+    if (!reply) showAlert("Couldn't reach the game. Try that word again.", 'warning');
+    if (!locked) clearAnswer();
+    sync();
+    return;
+  }
+
+  if (reply.status === 'wrong') {
     slotsEl.classList.add('wrong');
     sfx.wrong();
     sfx.buzz([60, 40, 60]);
@@ -339,13 +402,12 @@ socket.on('answerResult', (isCorrect, level, newPoints, gained) => {
     return;
   }
 
-  points = newPoints;
-  pointsEl.textContent = `${points} pts`;
+  setPoints(reply.points);
   // Stop the clock while the tiles celebrate, then move on
   timer.stop();
   locked = true;
   slotsEl.classList.add('win');
-  showFeedback(gained === 1 ? '+1 · another word!' : `+${gained}`);
+  showFeedback(reply.gained === 1 ? '+1 · another word!' : `+${reply.gained}`);
   sfx.correct();
   sfx.buzz(30);
   const round = roundId;
@@ -353,41 +415,54 @@ socket.on('answerResult', (isCorrect, level, newPoints, gained) => {
     // Still on this word - the round may have ended in the meantime
     if (roundId === round && level === currentLevel) advance(false);
   }, 650);
-});
+}
 
 
 undoBtn.addEventListener('click', undoLetter);
 
 
 
-// quiet: just catching up after coming back, so no "took the lead" toast
-function showLeader(id, name, level, quiet) {
-  const total = currentWords.length || 10;
-  currentLeaderEl.textContent = `👑 ${id === myId ? 'You' : name} · ${Math.min(level, total)}/${total}`;
-  if (quiet) {
-    currentLeaderEl.dataset.id = id;
-  } else if (currentLeaderEl.dataset.id != id) {
-    currentLeaderEl.dataset.id = id;
-    showAlert(id === myId ? "You took the lead!" : `${name} took the lead!`, id === myId ? 'success' : 'info');
+// The 👑 pill: who's ahead on points (the server works out everyone's place - see byStanding in index.js).
+// quiet: just catching up (a round starting, or coming back to one), so no "took the lead" toast.
+function showLeader(quiet) {
+  const leader = state.players.find(p => p.place === 1 && p.points > 0);
+  if (!leader) {
+    currentLeaderEl.textContent = 'Most points wins';
+    delete currentLeaderEl.dataset.id;
+    return;
   }
+  currentLeaderEl.textContent = `👑 ${leader.isYou ? 'You' : leader.name} · ${leader.points} pts`;
+  if (!quiet && currentLeaderEl.dataset.id !== leader.id) {
+    showAlert(leader.isYou ? 'You took the lead!' : `${leader.name} took the lead!`, leader.isYou ? 'success' : 'info');
+  }
+  currentLeaderEl.dataset.id = leader.id;
 }
 
-socket.on('newHighestPlayer', (id, name, level) => {
-  // Only for the players in the round
-  if (view === 'game') showLeader(id, name, level, false);
-});
 
 
-
-// Someone got through every word. The players in the round see the results; anyone waiting in the lobby
-// just hears who won.
+// Someone got through every word, which ends the round for everyone. Its players get a moment to see that
+// happen, then the results; anyone waiting in the lobby just hears who won.
 socket.on('round-over', (results) => {
-  if (view === 'game') {
-    showResults(results);
+  if (view === 'game' && results.round === roundId) {
+    roundOver(results);
   } else if (view === 'lobby') {
     showAlert(`${results.winnerId === myId ? 'You' : results.winnerName} won the round!`, 'info');
   }
 });
+
+function roundOver(results) {
+  if (roundEnding) return;
+  roundEnding = true;
+  timer.stop();
+  clearInterval(finishWatch);
+  // Whoever finished has just seen their last word land; everyone else is stopped mid-word
+  const byYou = results.finisherId === myId;
+  if (!byYou) {
+    showFeedback('Round over!');
+    if (results.finisherName) showAlert(`${results.finisherName} got through all ${currentWords.length} words!`, 'info');
+  }
+  setTimeout(() => showResults(results), byYou ? 900 : 1800);
+}
 
 
 

@@ -178,7 +178,9 @@
 .standing-item .avatar { width: 26px; height: 26px; font-size: 12px; }
 .standing-item .rank { font-weight: 800; opacity: 0.7; }
 .standing-item .rank:empty { display: none; }
-.standing-item .lv { font-variant-numeric: tabular-nums; opacity: 0.8; }
+/* Points decide the round; the level only says how close it is to ending */
+.standing-item .pts { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.standing-item .lv { font-size: 12px; font-variant-numeric: tabular-nums; opacity: 0.65; }
 
 @media (max-width: 899px) {
   .standing h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
@@ -203,7 +205,7 @@
     border-radius: 14px;
   }
 
-  .standing-item .lv { margin-left: auto; }
+  .standing-item .pts { margin-left: auto; }
 }
 
 
@@ -291,6 +293,13 @@
 .answer-slots.wrong .slot {
   border-color: var(--bad);
   background: rgba(239, 68, 68, 0.3);
+}
+
+/* Waiting on the server's verdict for longer than a moment (game.js submitAnswer) */
+.answer-slots.checking .slot { animation: checking 0.9s ease-in-out infinite; }
+
+@keyframes checking {
+  50% { opacity: 0.45; }
 }
 
 /* The answer shown when time runs out */

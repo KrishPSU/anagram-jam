@@ -18,7 +18,9 @@ const PORT = process.env.PORT || 3000;
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+// A ping every 10 seconds, and a connection that misses one is closed: a phone that dropped off the network
+// (or got locked) is noticed within 20 seconds instead of 45, so its page reconnects and its clock is paused sooner
+const io = new Server(server, { pingInterval: 10000, pingTimeout: 10000 });
 
 // A room nobody is in is deleted after this long - enough to reload a page or move between screens
 const EMPTY_ROOM_TTL = 30 * 1000;
@@ -152,14 +154,21 @@ function generateJoinCode() {
 // { v, roomCode, emptySince,
 //   players: [{ id, name, socketId, status: 'lobby' | 'game' | 'results', ready, awaySince }],
 //   wins: { [player id]: count },
-//   countdown: { token, roster } during the 3-2-1, roster being the ids of the players it's for,
-//   round: { id, words: { regular, jumbled }, startedAt, solves, highest, progress: { [player id]: ... } } while one is played,
+//   countdown: { token, roster, at } during the 3-2-1, roster being the ids of the players it's for,
+//   round: { id, words: { regular, jumbled }, startedAt, solves, progress: { [player id]: ... } } while one is played,
 //   results: the last round's, for whoever is still reading them }
+// (Rooms from before 'at', gains and scoredAt were added still work: those count as missing.)
 const ROOM_VERSION = 2; // rooms laid out any other way (made before this) count as gone
+
+// Game pages say which version they are as they connect. One from another version (still open from before a
+// deploy) can't play with this server, so it's sent home or told to reload - see 'connection'.
+const PAGE_VERSION = 3;
 
 const LEVEL_SECONDS = 30; // per word, as in game.js
 const MIN_PLAYERS = 2;
 const COUNTDOWN_MS = 4000; // the lobby's 3-2-1-GO
+// A page asking for the round as its 3-2-1 ends (see beginRound) may be this early, by its own clock
+const COUNTDOWN_SLACK = 500;
 // A dropped connection (a reload, a phone going to sleep, Vercel closing every WebSocket after about 5 minutes)
 // keeps your place in the room this long
 const AWAY_GRACE = 20 * 1000;
@@ -232,14 +241,27 @@ async function changeRoom(roomCode, change) {
   if (JSON.stringify(after) !== before) io.to(roomCode).emit('room-state', after);
   news.dropped.forEach(name => announceLeft(roomCode, name));
   if (news.stoppedBy) io.to(roomCode).emit('start-canceled', news.stoppedBy.id, news.stoppedBy.name);
+  if (news.roundOver) {
+    console.log(`Round over in room ${roomCode}: ${news.roundOver.finisherName} finished, ${news.roundOver.winnerName} won`);
+    io.to(roomCode).emit('round-over', news.roundOver);
+  }
   if (news.countdown) beginCountdown(roomCode, news.countdown);
   return { result: outcome.result, deleted: false, state: after };
 }
 
-// What a room does on its own after any change: a round nobody is playing anymore is over (with no winner),
-// the 3-2-1 stops if one of its players isn't ready anymore, and it starts once everyone in the room is ready.
-// Returns what changeRoom has to tell everyone: { stoppedBy, countdown }.
+// What a room does on its own after any change: the round ends the moment anyone gets through every word, a
+// round nobody is playing anymore is over (with no winner), the 3-2-1 stops if one of its players isn't ready
+// anymore, and it starts once everyone in the room is ready.
+// Returns what changeRoom has to tell everyone: { stoppedBy, countdown, roundOver }.
 function followRules(room) {
+  // Judged here, on every change, rather than when the finisher's page says so - that message could get lost
+  let roundOver = null;
+  const round = room.round;
+  if (round) {
+    const finisher = room.players.find(p => p.status === 'game' && round.progress[p.id] && round.progress[p.id].level >= round.words.regular.length);
+    if (finisher) roundOver = endRound(room, finisher);
+  }
+
   if (room.round && !room.players.some(p => p.status === 'game')) room.round = null;
 
   let stoppedBy = null;
@@ -256,9 +278,35 @@ function followRules(room) {
   const everyoneReady = room.players.length >= MIN_PLAYERS && room.players.every(p => p.status === 'lobby' && p.ready);
   let countdown = null;
   if (everyoneReady && !room.countdown && !room.round) {
-    countdown = room.countdown = { token: Math.random().toString(36).slice(2), roster: room.players.map(p => p.id) };
+    countdown = room.countdown = { token: Math.random().toString(36).slice(2), roster: room.players.map(p => p.id), at: Date.now() };
   }
-  return { stoppedBy, countdown };
+  return { stoppedBy, countdown, roundOver };
+}
+
+// Ends the round. Everyone who was playing it moves on to its results (still in the game, as far as the lobby
+// can tell, until they press Play again or Back to lobby), and its winner gets a win.
+function endRound(room, finisher) {
+  const results = buildResults(room, finisher);
+  room.wins[results.winnerId] = (room.wins[results.winnerId] || 0) + 1;
+  room.results = results;
+  room.round = null;
+  room.players.forEach(p => {
+    if (p.status === 'game') p.status = 'results';
+  });
+  return results;
+}
+
+// Most points first. Level on points, whoever got to their score sooner is ahead; then whoever is further along.
+// a and b are players' progress in a round (see beginRound).
+function byStanding(a, b) {
+  return b.points - a.points || (a.scoredAt || Infinity) - (b.scoredAt || Infinity) || b.level - a.level;
+}
+
+// Each player's place in the round so far (1 = ahead), for everyone in the room who's in it
+function placesIn(room) {
+  const ranked = room.players.filter(p => room.round.progress[p.id]).map(p => ({ id: p.id, ...room.round.progress[p.id] }));
+  ranked.sort(byStanding);
+  return Object.fromEntries(ranked.map((p, i) => [p.id, i + 1]));
 }
 
 // Takes out the players whose connection dropped more than AWAY_GRACE ago, and returns their names. Their
@@ -311,10 +359,13 @@ async function roomsPlaying() {
 }
 
 
-// What everyone in the room sees of it - no tokens, words or answers.
+// What everyone in the room sees of it - no player tokens, words or answers.
 // status: in the lobby ('ready' or 'notReady'), or 'inGame' while playing the round or reading its results.
+// place: where they stand in the round (see byStanding). countdown: the 3-2-1's token (the round's id to be),
+// and who it's for.
 function publicState(room) {
   const round = room.round;
+  const places = round ? placesIn(room) : {};
   return {
     players: room.players.map(p => {
       const progress = round && round.progress[p.id];
@@ -326,9 +377,10 @@ function publicState(room) {
         wins: room.wins[p.id] || 0,
         level: progress ? progress.level : null,
         points: progress ? progress.points : null,
+        place: places[p.id] || null,
       };
     }),
-    countdown: room.countdown ? room.countdown.roster : null,
+    countdown: room.countdown ? { token: room.countdown.token, roster: room.countdown.roster } : null,
     playing: !!round,
     total: round ? round.words.regular.length : 10,
   };
@@ -358,62 +410,122 @@ function resumeClock(progress) {
   return left;
 }
 
+// The round as one player's page needs it: their words, where they are, and the seconds left on their clock
+// (as it stands, unless given)
+function roundFor(room, progress, secondsLeft) {
+  if (secondsLeft === undefined) secondsLeft = progress.secondsLeft === null ? secondsLeftOn(progress) : progress.secondsLeft;
+  return {
+    round: room.round.id,
+    words: room.round.words.jumbled,
+    level: progress.level,
+    points: progress.points,
+    skipped: progress.skipped,
+    secondsLeft: Math.min(LEVEL_SECONDS, Math.max(1, secondsLeft)),
+  };
+}
 
-// Everyone in the room sees the 3-2-1 (the players it's for get the overlay). The words go out when it's
-// done, unless it was stopped in the meantime (see followRules).
+// Which screen a player belongs on, and what it needs: { round } they're playing, { results } they haven't left
+// yet, or {} for the lobby - with { countdown } (its token) if a 3-2-1 there is for them.
+// secondsLeft: for the round, if their clock has just been started again (see enterRoom).
+function placeOf(room, player, secondsLeft) {
+  const progress = player.status === 'game' && room.round && room.round.progress[player.id];
+  if (progress) return { round: roundFor(room, progress, secondsLeft) };
+  if (player.status === 'results' && room.results) return { results: room.results };
+  if (room.countdown && room.countdown.roster.includes(player.id)) return { countdown: room.countdown.token };
+  return {};
+}
+
+// This socket's player in the room, as long as it's still theirs (another tab can take over - see enterRoom)
+function playerOf(room, socket) {
+  return room.players.find(p => p.id === socket.data.playerId && p.socketId === socket.id);
+}
+
+
+// Everyone in the room sees the 3-2-1 (the players it's for get the overlay). The round starts when it's
+// done (see beginRound), unless it was stopped in the meantime (see followRules).
 function beginCountdown(roomCode, countdown) {
-  io.to(roomCode).emit('game-starting', countdown.roster);
+  io.to(roomCode).emit('game-starting', countdown.roster, countdown.token);
   console.log(`Game starting in room: ${roomCode}`);
+  // The players' pages ask for the round as their 3-2-1 ends ('start-round'). This is in case none of them do.
   setTimeout(() => {
     beginRound(roomCode, countdown.token).catch((err) => console.error(`Starting the game in room ${roomCode} failed:`, err.message));
   }, COUNTDOWN_MS);
 }
 
-async function beginRound(roomCode, token) {
+// Starts the round a 3-2-1 was for, once it has run out: when the timer above goes off, or when one of its
+// players' pages asks - whichever comes first. The timer alone isn't enough on Vercel: it runs on the instance that
+// started the 3-2-1, and an instance whose last connection has closed (the player who tapped Ready, say, then left)
+// is frozen, timers and all. Everyone stuck on GO! was that.
+// socket: the asking page's. Resolves to what it should do: { round } (theirs, to play), { wait } (ms, too early),
+// or { canceled: true } (the 3-2-1 was stopped, or the round isn't theirs).
+async function beginRound(roomCode, token, socket) {
   let tooFew;
   const begun = await changeRoom(roomCode, (room) => {
     tooFew = false;
-    if (!room.countdown || room.countdown.token !== token) return; // stopped, or it's another countdown by now
+    const player = socket && playerOf(room, socket);
+    const theirs = () => {
+      const progress = player && room.round.progress[player.id];
+      return progress ? { round: roundFor(room, progress) } : { canceled: true };
+    };
+    // Already started by the timer or another page
+    if (room.round && room.round.id === token) return { reply: theirs() };
+    // Stopped, or it's another countdown by now
+    if (!room.countdown || room.countdown.token !== token) return { reply: { canceled: true } };
+    const wait = (room.countdown.at || 0) + COUNTDOWN_MS - COUNTDOWN_SLACK - Date.now();
+    if (wait > 0) return { reply: { wait } };
+
     const roster = room.players.filter(p => room.countdown.roster.includes(p.id));
     room.countdown = null;
     if (roster.length < MIN_PLAYERS) {
       tooFew = true;
-      return;
+      return { reply: { canceled: true } };
     }
 
     const words = getRandomWords(10);
     const now = Date.now();
-    room.round = { id: token, words: { regular: words, jumbled: jumbleWords(words) }, startedAt: now, solves: words.map(() => null), highest: null, progress: {} };
+    room.round = { id: token, words: { regular: words, jumbled: jumbleWords(words) }, startedAt: now, solves: words.map(() => null), progress: {} };
     room.results = null;
     roster.forEach(p => {
       p.status = 'game';
       p.ready = false;
-      // Someone whose connection dropped during the 3-2-1 starts with their clock stopped, like any time they're away
-      room.round.progress[p.id] = { name: p.name, level: 0, points: 0, solved: 0, skipped: [], levelStartedAt: now, secondsLeft: p.awaySince ? LEVEL_SECONDS : null };
+      // gains: points for each word solved, by its level. scoredAt: when they got their latest points (ties go to
+      // whoever got to their score first). Someone whose connection dropped during the 3-2-1 starts with their
+      // clock stopped, like any time they're away.
+      room.round.progress[p.id] = { name: p.name, level: 0, points: 0, solved: 0, skipped: [], gains: [], scoredAt: null, levelStartedAt: now, secondsLeft: p.awaySince ? LEVEL_SECONDS : null };
     });
-    return { words: room.round.words, roster: roster.map(p => p.id) };
+    return { started: { words: room.round.words, roster: roster.map(p => p.id) }, reply: theirs() };
   });
   if (tooFew) io.to(roomCode).emit('start-canceled', null, '');
-  if (!begun || !begun.result) return;
+  if (!begun) return { canceled: true };
 
-  const { words, roster } = begun.result;
-  console.log(`Words for room ${roomCode}:`, words.regular);
-  // Everyone gets it, but only the players in the round play it - the rest stay in the lobby
-  io.to(roomCode).emit('gameWords', { round: token, roster, words: words.jumbled, level: 0, points: 0, skipped: [], secondsLeft: LEVEL_SECONDS, highest: null });
+  const { started, reply } = begun.result;
+  if (started) {
+    console.log(`Words for room ${roomCode}:`, started.words.regular);
+    // Everyone gets it, but only the players in the round play it - the rest stay in the lobby
+    io.to(roomCode).emit('gameWords', { round: token, roster: started.roster, words: started.words.jumbled, level: 0, points: 0, skipped: [], secondsLeft: LEVEL_SECONDS });
+  }
+  return reply;
 }
 
-// Snapshot of a finished round for its results screen
-function buildResults(room, winner) {
+// Snapshot of a finished round for its results screen. finisher got through every word first, which ended it;
+// the winner is whoever has the most points (see byStanding) out of the players still in the room.
+function buildResults(room, finisher) {
   const round = room.round;
   const inRoom = new Set(room.players.map(p => p.id));
-  const players = Object.entries(round.progress)
-    .map(([id, p]) => ({ id, name: p.name, points: p.points, solved: p.solved, level: p.level, left: !inRoom.has(id) }));
-  players.sort((a, b) => (b.id === winner.id) - (a.id === winner.id) || b.level - a.level || b.points - a.points);
+  const ranked = Object.entries(round.progress).map(([id, p]) => ({ id, ...p, left: !inRoom.has(id) }));
+  // Someone who left can't win, so they go below everyone still here
+  ranked.sort((a, b) => a.left - b.left || byStanding(a, b));
+  const [winner, runnerUp] = ranked;
   return {
     round: round.id,
     winnerId: winner.id,
     winnerName: winner.name,
-    players,
+    finisherId: finisher.id,
+    finisherName: finisher.name,
+    // Level on points with the next player, and won by getting there first
+    tied: !!runnerUp && !runnerUp.left && runnerUp.points === winner.points,
+    // seconds: into the round when they reached their score
+    players: ranked.map(p => ({ id: p.id, name: p.name, points: p.points, solved: p.solved, level: p.level, left: p.left, seconds: p.scoredAt ? Math.round((p.scoredAt - round.startedAt) / 1000) : null })),
     words: round.words.regular.map((word, i) => ({ word, scramble: round.words.jumbled[i], first: round.solves[i] || null })),
   };
 }
@@ -444,17 +556,15 @@ async function enterRoom(socket, { roomCode, token, name }) {
     player.socketId = socket.id;
     player.awaySince = null;
 
-    const you = { id };
     const progress = room.round && room.round.progress[id];
+    let secondsLeft;
     if (progress) {
       // Still in the round, or back in it after leaving - unless it's over by now
       player.status = 'game';
       player.ready = false;
-      you.round = { round: room.round.id, words: room.round.words.jumbled, level: progress.level, points: progress.points, skipped: progress.skipped, secondsLeft: resumeClock(progress), highest: room.round.highest };
-    } else if (player.status === 'results') {
-      you.results = room.results;
+      secondsLeft = resumeClock(progress);
     }
-    return { back, replaced, you };
+    return { back, replaced, you: { id, ...placeOf(room, player, secondsLeft) } };
   });
   if (!entered) {
     await socket.leave(roomCode);
@@ -490,7 +600,7 @@ function isCreatable(s, t) {
   return true;
 }
 
-// Handlers wait on the store now, so two events from one socket could finish out of order (say a gameOver
+// Handlers wait on the store now, so two events from one socket could finish out of order (say an answer
 // and the disconnect right behind it). Each socket's handlers run one at a time, in the order they arrived.
 const queues = new WeakMap();
 function handle(socket, event, handler) {
@@ -503,17 +613,26 @@ function handle(socket, event, handler) {
 }
 
 
+// The ack a page sent with an event, or a stand-in if it didn't send one
+const replier = (ack) => (typeof ack === 'function' ? ack : () => {});
+
+
 io.on('connection', (socket) => {
   const on = (event, handler) => handle(socket, event, handler);
-  // This socket's player in the room, as long as it's still theirs (another tab can take over - see enterRoom)
-  const me = (room) => room.players.find(p => p.id === socket.data.playerId && p.socketId === socket.id);
+  const me = (room) => playerOf(room, socket);
 
   console.log("connection: ", socket.id);
 
   // A game page says which room it's in as it connects (see lobby.js), and that's handled before anything else
   // it sends - after a dropped connection, the answers and levels it held on to arrive right behind it
-  if (socket.handshake.auth && socket.handshake.auth.roomCode) {
-    queues.set(socket, enterRoom(socket, socket.handshake.auth).catch((err) => console.error('Joining a room failed:', err.message)));
+  const auth = socket.handshake.auth || {};
+  if (auth.roomCode) {
+    if (auth.version === PAGE_VERSION) {
+      queues.set(socket, enterRoom(socket, auth).catch((err) => console.error('Joining a room failed:', err.message)));
+    } else {
+      // Open from before a deploy. Pages from before versions existed only know to go home; later ones reload.
+      socket.emit(auth.version ? 'outdated' : 'roomNotFound', auth.roomCode);
+    }
   }
 
 
@@ -564,24 +683,58 @@ io.on('connection', (socket) => {
 
 
 
+  // Everything a game page asks for below answers with an ack, and is safe to ask for twice: the page asks again
+  // when an answer doesn't come (see request in lobby.js), because on a phone a message can simply get lost.
+
   // The lobby's Ready button. Once everyone in the room is ready, the round starts (see followRules).
-  on('set-ready', async (ready) => {
+  on('set-ready', async (ready, ack) => {
     await changeRoom(socket.data.roomCode, (room) => {
       const player = me(room);
       if (player && player.status === 'lobby') player.ready = !!ready;
     });
+    replier(ack)();
   });
 
-  // Play again on the results screen: back to the lobby, ready for the next round
-  on('play-again', async (ack) => {
+  // From the results screen: Play again goes back to the lobby ready for the next round, Back to lobby doesn't
+  const toLobby = (ready) => async (ack) => {
     await changeRoom(socket.data.roomCode, (room) => {
       const player = me(room);
       if (player && player.status === 'results') {
         player.status = 'lobby';
-        player.ready = true;
+        player.ready = ready;
       }
     });
-    if (typeof ack === 'function') ack();
+    replier(ack)();
+  };
+  on('play-again', toLobby(true));
+  on('back-to-lobby', toLobby(false));
+
+  // This page's 3-2-1 has run out: the round, started now if the timer hasn't already (see beginRound)
+  on('start-round', async (token, ack) => {
+    const reply = replier(ack);
+    if (typeof token !== 'string') return reply({ canceled: true });
+    reply(await beginRound(socket.data.roomCode, token, socket));
+  });
+
+  // Where this page should be. It asks when it may have missed something: a message that should have come by
+  // now, or the page coming back after the phone was locked. Replies like 'joined' (see enterRoom) - or with
+  // { replaced: true } if another tab has taken over, or { gone: true } if this connection isn't in the room.
+  on('sync', async (ack) => {
+    const reply = replier(ack);
+    const synced = await changeRoom(socket.data.roomCode, (room) => {
+      const player = room.players.find(p => p.id === socket.data.playerId);
+      if (!player) return { gone: true };
+      if (player.socketId !== socket.id) return { replaced: true };
+      return { id: player.id, ...placeOf(room, player) };
+    });
+    if (!synced) return reply({ gone: true });
+    reply({ ...synced.result, state: synced.state });
+  });
+
+  // Someone in the room has been away longer than AWAY_GRACE. The other pages send this then, since the timer
+  // in 'disconnect' may never go off on Vercel (see beginRound) and their seat would hold everyone up.
+  on('tidy', async () => {
+    if (socket.data.roomCode) await tidyRoom(socket.data.roomCode);
   });
 
 
@@ -631,114 +784,89 @@ io.on('connection', (socket) => {
 
 
 
-  on('answerAttempt', async (data) => {
-    if (!data) return;
+  // An answer to word `level` of round `round`. Replies { status: 'right' | 'wrong', level, points, gained },
+  // or { status: 'over' } if there's no such round anymore (it ended), or 'gone' if this connection isn't in the
+  // room. Asking again about a word already solved - the reply got lost - gets the same reply, scored once.
+  on('answerAttempt', async (data, ack) => {
+    const reply = replier(ack);
+    if (!data || !Number.isInteger(data.level) || typeof data.answer !== 'string') return reply({ status: 'over' });
     const { roomCode } = socket.data;
     const answered = await changeRoom(roomCode, (room) => {
       const player = me(room);
-      const progress = player && room.round && room.round.progress[player.id];
-      if (!progress) return;
-      // Ignore stray submits - these used to crash the whole server
-      const word = Number.isInteger(data.level) && room.round.words.regular[data.level];
-      if (!word || typeof data.answer !== 'string') return;
-      // Already past this level (a duplicate submit) - don't score it twice
-      if (data.level < progress.level) return;
+      if (!player) return { status: 'gone' };
+      const round = room.round;
+      const progress = round && round.id === data.round && round.progress[player.id];
+      const word = progress && round.words.regular[data.level];
+      if (!word) return { status: 'over' };
+      if (!progress.gains) progress.gains = [];
+      if (data.level < progress.level) {
+        const gained = progress.gains[data.level] || 0;
+        return { status: gained ? 'right' : 'skipped', level: data.level, points: progress.points, gained };
+      }
+      const answer = data.answer.toLowerCase();
       const correctAnswer = word.toLowerCase();
       // Points are kept here rather than trusting the browser's count
       let gained = 0;
 
-      if (data.answer === correctAnswer) {
+      if (answer === correctAnswer) {
         gained = 2;
-      } else if (wordExists(data.answer) && isCreatable(data.answer, correctAnswer)) {
+      } else if (wordExists(answer) && isCreatable(answer, correctAnswer)) {
         gained = 1;
       }
 
       if (gained) {
+        // Words before this one that the server didn't hear the clock run out on (that message got lost)
+        for (let level = progress.level; level < data.level; level++) progress.skipped.push(level);
         progress.level = data.level + 1;
         progress.points += gained;
         progress.solved += 1;
+        progress.gains[data.level] = gained;
+        progress.scoredAt = Date.now();
         progress.levelStartedAt = Date.now();
         progress.secondsLeft = null;
-        if (!room.round.solves[data.level]) {
-          room.round.solves[data.level] = { name: player.name, seconds: Math.round((Date.now() - room.round.startedAt) / 1000) };
+        if (!round.solves[data.level]) {
+          round.solves[data.level] = { name: player.name, seconds: Math.round((Date.now() - round.startedAt) / 1000) };
         }
       }
-      return { name: player.name, gained, points: progress.points };
+      return { status: gained ? 'right' : 'wrong', level: data.level, points: progress.points, gained, name: player.name };
     });
-    if (!answered || !answered.result) return;
-
-    const { name, gained, points } = answered.result;
-    console.log(`Player ${name} answered level ${data.level} in room ${roomCode}: ${data.answer}`);
-    socket.emit('answerResult', gained > 0, data.level, points, gained);
+    reply(answered ? answered.result : { status: 'over' });
+    if (answered && answered.result.name) {
+      console.log(`Player ${answered.result.name} answered level ${data.level} in room ${roomCode}: ${data.answer} (+${answered.result.gained})`);
+    }
   });
 
-
-
-
-  // level: the one the player has moved on to. skipped: they got there because the clock ran out.
-  on('levelCompleted', async (data) => {
-    if (!data || !Number.isInteger(data.level)) return;
-    const { roomCode } = socket.data;
-    const completed = await changeRoom(roomCode, (room) => {
+  // The clock ran out on word `level` of round `round`: on to the next one. Replies { status: 'ok', level } with
+  // the level they're on now, or 'over' / 'gone' as for answerAttempt. Getting through the last word this way
+  // ends the round too (see followRules).
+  on('time-up', async (data, ack) => {
+    const reply = replier(ack);
+    if (!data || !Number.isInteger(data.level)) return reply({ status: 'over' });
+    const done = await changeRoom(socket.data.roomCode, (room) => {
       const player = me(room);
+      if (!player) return { status: 'gone' };
       const round = room.round;
-      const progress = player && round && round.progress[player.id];
-      if (!progress) return;
-      // A right answer has already moved them on (answerAttempt) - this is for the clock running out
-      if (data.level > progress.level) {
-        if (data.skipped) progress.skipped.push(data.level - 1);
-        progress.level = Math.min(data.level, round.words.regular.length);
+      const progress = round && round.id === data.round && round.progress[player.id];
+      if (!progress || data.level >= round.words.regular.length) return { status: 'over' };
+      // A right answer has already moved them on (answerAttempt) - this is for the clock running out. It can be
+      // more than one word on, if the page's earlier time-ups got lost.
+      if (data.level >= progress.level) {
+        for (let level = progress.level; level <= data.level; level++) progress.skipped.push(level);
+        progress.level = data.level + 1;
         progress.levelStartedAt = Date.now();
         progress.secondsLeft = null;
       }
-
-      if (round.highest && round.highest.level >= progress.level) return;
-      round.highest = { id: player.id, name: player.name, level: progress.level };
-      return round.highest;
+      return { status: 'ok', level: progress.level };
     });
-    if (!completed || !completed.result) return;
-
-    const { id, name, level } = completed.result;
-    console.log(`Player ${name} completed level ${level} in room ${roomCode}`);
-    io.to(roomCode).emit('newHighestPlayer', id, name, level);
+    reply(done ? done.result : { status: 'over' });
   });
 
-
-
-  on('gameOver', async () => {
-    const { roomCode } = socket.data;
-    const over = await changeRoom(roomCode, (room) => {
-      const player = me(room);
-      const round = room.round;
-      // Only someone who has actually reached the last word wins - and only the first, since the
-      // round is over (gone) by the time a near-simultaneous second finish arrives
-      const progress = player && round && round.progress[player.id];
-      if (!progress || progress.level < round.words.regular.length) return;
-      room.results = buildResults(room, player);
-      room.wins[player.id] = (room.wins[player.id] || 0) + 1;
-      room.round = null;
-      // Everyone who was playing moves on to the results (still in the game, as far as the lobby can tell,
-      // until they press Play again)
-      room.players.forEach(p => {
-        if (p.status === 'game') p.status = 'results';
-      });
-      return room.results;
-    });
-    if (!over || !over.result) return;
-
-    console.log(`Player ${over.result.winnerName} won the game in room ${roomCode}`);
-    io.to(roomCode).emit('round-over', over.result);
-  });
-
-
-
-
-
-  on('timeWarning', async (data) => {
-    if (!data) return;
-    const room = await findRoom(socket.data.roomCode);
-    const word = room && room.round && Number.isInteger(data.level) && room.round.words.regular[data.level];
-    if (word) socket.emit('timeUpdate', word);
+  // The answer to word `level` of round `round`, shown when the clock is about to run out on it
+  on('reveal', async (data, ack) => {
+    const reply = replier(ack);
+    const room = data && await findRoom(socket.data.roomCode);
+    const word = room && room.round && room.round.id === data.round && Number.isInteger(data.level) && room.round.words.regular[data.level];
+    reply(word || null);
   });
 
 });

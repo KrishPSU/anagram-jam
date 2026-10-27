@@ -156,6 +156,9 @@
   text-overflow: ellipsis;
 }
 
+/* 🏁 for whoever got through every word first, which ended the round */
+.rank-row .finished { flex: none; }
+
 .rank-row .stats {
   white-space: nowrap;
   font-size: 14px;

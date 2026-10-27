@@ -58,8 +58,7 @@
 </head>
 <body class="lobby">
 
-  <audio id="backgroundMusic" src="/music/anagram-jam-background-music.mp3" autoplay loop muted></audio>
-  <audio id="gameMusic" src="/music/what you in joined sample.mp3" loop muted></audio>
+  <!-- The music is played by js/audio.js -->
 
   <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
@@ -106,6 +105,9 @@
     <button class="btn btn-glass" id="useHere" type="button">Play here instead</button>
   </div>
 
+  <!-- While the connection is down (lobby.js) -->
+  <p class="reconnecting" id="reconnecting" role="status" hidden><span class="spinner" aria-hidden="true"></span>Reconnecting…</p>
+
 
   <div class="game-state" id="gameState">
     <div class="floating-shapes">
@@ -116,7 +118,7 @@
 
     <div class="game-ui">
       <header class="game-header">
-        <div class="leader" id="leaderPill"><span id="currentLeader">First to 10 wins</span></div>
+        <div class="leader" id="leaderPill"><span id="currentLeader">Most points wins</span></div>
         <div class="timer" id="gameTimer" role="timer" aria-label="Seconds left">
           <svg viewBox="0 0 48 48" aria-hidden="true">
             <circle class="track" cx="24" cy="24" r="21"></circle>
@@ -175,7 +177,7 @@
   </div>
 
 
-  <!-- The round you just played. Play again takes you back to the lobby, ready for the next one. -->
+  <!-- The round you just played. Play again takes you back to the lobby ready for the next one; Back to lobby, not ready yet. -->
   <section class="results" id="resultsView" hidden>
     <section class="winner-card" aria-labelledby="winnerTitle">
       <p class="eyebrow" id="roomLabel">Results</p>
@@ -183,7 +185,8 @@
       <h1 id="winnerTitle">Game over</h1>
       <p class="winner-tag" id="winner-tag"></p>
       <div class="end-actions">
-        <button class="btn btn-go" id="playAgain" type="button"><span class="spinner" aria-hidden="true"></span>Play again</button>
+        <button class="btn btn-go" id="playAgain" type="button" title="Back to the lobby, ready for the next round"><span class="spinner" aria-hidden="true"></span>Play again</button>
+        <button class="btn btn-glass" id="backToLobby" type="button" title="Back to the lobby, not ready yet"><span class="spinner" aria-hidden="true"></span>Back to lobby</button>
       </div>
     </section>
 
