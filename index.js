@@ -8,6 +8,9 @@ const { createStore } = require('./store');
 
 require('dotenv').config();
 
+// A rejected promise nobody handles would otherwise crash the server, ending every game on it
+process.on('unhandledRejection', (err) => console.error('Unhandled rejection:', err));
+
 
 const PORT = process.env.PORT || 3000;
 
@@ -19,20 +22,46 @@ const io = new Server(server);
 // A room nobody is in is deleted after this long - enough to reload a page or move between screens
 const EMPTY_ROOM_TTL = 30 * 1000;
 
-// Rooms live in Redis when there is one (see store.js), otherwise in this process's memory.
-// Connecting Upstash Redis to the Vercel project sets REDIS_URL and KV_URL (the same address), here with
-// the project's custom prefix anagram_jam_.
-const store = createStore(process.env.anagram_jam_REDIS_URL || process.env.anagram_jam_KV_URL || process.env.REDIS_URL || process.env.KV_URL,
-  { emptyRoomTtl: EMPTY_ROOM_TTL });
+// The Redis address. Connecting Upstash Redis to a Vercel project sets REDIS_URL and KV_URL (the same
+// address) with whatever prefix was chosen - this project uses anagram_jam_ - so any name ending in either will do.
+function redisUrlFromEnv() {
+  const names = Object.keys(process.env).filter(name => /(^|_)(REDIS|KV)_URL$/i.test(name) && process.env[name].trim());
+  const usable = names.filter(name => /^rediss?:\/\//.test(process.env[name].trim()));
+  names.filter(name => !usable.includes(name)).forEach(name => console.error(`${name} isn't a redis:// or rediss:// address - ignoring it`));
+  usable.sort((a, b) => /REDIS_URL$/i.test(b) - /REDIS_URL$/i.test(a));
+  if (usable.length) console.log(`Redis address from ${usable[0]}`);
+  return usable.length ? process.env[usable[0]].trim() : undefined;
+}
+
+// Rooms live in Redis when there is one (see store.js), otherwise in this process's memory
+const store = createStore(redisUrlFromEnv(), { emptyRoomTtl: EMPTY_ROOM_TTL });
 if (store.redis) {
   // Broadcasts reach players connected to other server instances too. Loaded only here, like ioredis in
   // store.js, so running without Redis never depends on these packages.
   const { createAdapter } = require('@socket.io/redis-adapter');
   const subClient = store.redis.duplicate();
   subClient.on('error', (err) => console.error('Redis (adapter):', err.message));
+  guardRedis(store.redis, ['publish']);
+  guardRedis(subClient, ['subscribe', 'psubscribe', 'unsubscribe', 'punsubscribe']);
   io.adapter(createAdapter(store.redis, subClient));
 }
 console.log(`Rooms are kept in ${store.redis ? 'Redis' : 'memory'}`);
+
+// The adapter doesn't handle Redis refusing a command (Upstash refuses them all once the free plan is used up):
+// a failed publish or subscribe would crash the server. Messages still reach the players on this instance
+// either way, and while rooms are being kept in memory there's no point publishing at all.
+function guardRedis(client, commands) {
+  for (const command of commands) {
+    const send = client[command].bind(client);
+    client[command] = (...args) => {
+      if (command === 'publish' && !store.usingRedis()) return Promise.resolve(0);
+      return send(...args).catch((err) => {
+        console.error(`Redis ${command} failed:`, err.message);
+        return 0;
+      });
+    };
+  }
+}
 
 // Start server
 server.listen(PORT || 3000, () => {
@@ -170,20 +199,29 @@ async function deleteIfAbandoned(roomCode) {
   await changeRoom(roomCode, () => {});
 }
 
-// Rooms in memory that nobody looks up again are cleaned up here. In Redis an empty room's key expires
-// by itself (see store.js), so there's nothing to poll - polling would spend the free plan's commands.
-if (!store.redis) {
-  setInterval(async () => {
-    try {
-      for (const roomCode of await store.emptySince(Date.now() - EMPTY_ROOM_TTL)) await deleteIfAbandoned(roomCode);
-    } catch (err) {
-      console.error('Cleaning up rooms failed:', err.message);
-    }
-  }, 5000);
-}
+// Rooms in memory that nobody looks up again are cleaned up here: all of them without Redis, and with
+// Redis the ones created while it wasn't answering. Redis expires its own rooms (see store.js), so this
+// never spends any of the free plan's commands.
+setInterval(async () => {
+  try {
+    for (const roomCode of await store.emptySince(Date.now() - EMPTY_ROOM_TTL)) await deleteIfAbandoned(roomCode);
+  } catch (err) {
+    console.error('Cleaning up rooms failed:', err.message);
+  }
+}, 5000);
 
 async function liveRooms() {
   return (await store.list()).filter(room => !isAbandoned(room));
+}
+
+// For the admin page: where rooms are kept right now, and why when it isn't Redis. Kept vague on purpose -
+// the page is public, and Redis errors can name the database's host.
+function storageStatus() {
+  const status = store.status();
+  if (status.store === 'redis') return 'Redis';
+  if (!status.reason) return 'Memory (no Redis set up)';
+  const why = /max requests limit/i.test(status.reason) ? "the free plan's commands for the month are used up" : "Redis isn't answering";
+  return `Memory since ${new Date(status.since).toUTCString().slice(17, 22)} UTC - ${why}`;
 }
 
 // The home page asks about once a minute per visitor, so a count up to a minute old will do - working
@@ -282,7 +320,7 @@ io.on('connection', (socket) => {
   on('adminConnected', async () => {
     const rooms = await liveRooms();
     const players = rooms.reduce((n, r) => n + r.players.length + r.viewers.length, 0);
-    socket.emit('currentAliveConnections', players, rooms.filter(r => r.gameStarted).length);
+    socket.emit('currentAliveConnections', players, rooms.filter(r => r.gameStarted).length, storageStatus());
   });
 
   // For the home page's "3 rooms playing now"

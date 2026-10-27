@@ -14,6 +14,8 @@
 // Upstash's free plan allows 500K commands a month and bills a Lua script as 1 command plus 1 for every
 // call inside it, so the Redis side is kept lean: an update is a GET plus a 3-command script, and an empty
 // room's key is set to expire when the room should go, so no polling is needed to clean up.
+//
+// If Redis stops answering (see fallbackStore), the game carries on with rooms in memory.
 
 const DELETE = Symbol('delete room');
 
@@ -22,7 +24,7 @@ const ROOM_TTL = 12 * 60 * 60 * 1000;
 
 // emptyRoomTtl: how long a room may stay empty (room.emptySince) before it's gone
 function createStore(redisUrl, { emptyRoomTtl }) {
-  return redisUrl ? redisStore(redisUrl, emptyRoomTtl) : memoryStore();
+  return redisUrl ? fallbackStore(redisStore(redisUrl, emptyRoomTtl), memoryStore()) : memoryStore();
 }
 
 function memoryStore() {
@@ -31,6 +33,9 @@ function memoryStore() {
   return {
     DELETE,
     redis: null,
+    status: () => ({ store: 'memory', reason: null }),
+
+    has: (roomCode) => rooms.has(roomCode),
 
     // false if the code is already taken
     async create(room) {
@@ -73,8 +78,10 @@ function memoryStore() {
 function redisStore(url, emptyRoomTtl) {
   const Redis = require('ioredis');
   const redis = new Redis(url, {
-    // Fail a command after a few reconnect attempts instead of queueing it forever while Redis is unreachable
+    // Give up on a command quickly while Redis is unreachable or slow, so the game can fall back to memory
     maxRetriesPerRequest: 3,
+    connectTimeout: 3000,
+    commandTimeout: 2000,
     // Skip the two CLIENT SETINFO commands ioredis sends on every connection - they'd count against the quota
     disableClientInfo: true,
   });
@@ -116,6 +123,9 @@ function redisStore(url, emptyRoomTtl) {
     if (roomCodes.length) redis.srem(ROOMS, ...roomCodes).catch(() => {});
   };
 
+  // Marks an error that says nothing about Redis itself, so fallbackStore doesn't treat it as Redis failing
+  const notRedis = (err) => Object.assign(err, { notRedis: true });
+
   return {
     DELETE,
     redis, // the Socket.IO adapter publishes through this connection too
@@ -138,7 +148,12 @@ function redisStore(url, emptyRoomTtl) {
           return null;
         }
         const room = JSON.parse(raw);
-        const result = change(room);
+        let result;
+        try {
+          result = change(room);
+        } catch (err) {
+          throw notRedis(err);
+        }
         const next = result === DELETE ? '' : JSON.stringify(room);
         if (next === raw) return { result }; // nothing changed, nothing to write
         const replaced = await redis.replaceRoom(roomKey(roomCode), ROOMS, raw, next, roomCode, ttlFor(room));
@@ -146,7 +161,7 @@ function redisStore(url, emptyRoomTtl) {
         // Another instance changed the room since we read it - redo the change on the new version
         await new Promise(resolve => setTimeout(resolve, Math.random() * 20 * (attempt + 1)));
       }
-      throw new Error(`Room ${roomCode} kept changing under us`);
+      throw notRedis(new Error(`Room ${roomCode} kept changing under us`));
     },
 
     async list() {
@@ -156,6 +171,86 @@ function redisStore(url, emptyRoomTtl) {
       forget(roomCodes.filter((roomCode, i) => raws[i] === null));
       return raws.filter(raw => raw !== null).map(raw => JSON.parse(raw));
     },
+  };
+}
+
+// Redis with a safety net. If Redis stops answering - once the free plan's 500K commands for the month are
+// used up Upstash refuses every command, and it can also just be unreachable - new rooms are kept in this
+// process's memory instead (how the app worked before Redis: fine unless the players of one room land on
+// different instances), and once a minute it checks whether Redis answers again.
+// A room stays where it was created, so a game started during an outage carries on in memory after Redis is
+// back. Rooms that were in Redis when it stopped answering can't be reached until it's back.
+// The used-up quota is unmistakable, so that switches at once; anything else has to fail three times in a row,
+// so one network hiccup doesn't cut this instance off from the rooms in Redis.
+function fallbackStore(redis, memory) {
+  let outage = null; // { since, reason } while Redis isn't answering
+  let failures = 0;  // in a row
+
+  async function attempt(operation, onFailure) {
+    if (outage) return onFailure();
+    try {
+      const result = await operation();
+      failures = 0;
+      return result;
+    } catch (err) {
+      if (err.notRedis) throw err;
+      redisFailed(err);
+      return onFailure();
+    }
+  }
+
+  function redisFailed(err) {
+    failures++;
+    if (outage) return; // several operations failed at once - the first one already switched
+    if (!/max requests limit/i.test(err.message) && failures < 3) {
+      console.error(`Redis error (${err.message})`);
+      return;
+    }
+    outage = { since: Date.now(), reason: err.message };
+    console.error(`Redis isn't answering (${err.message}) - keeping new rooms in memory until it does`);
+    const check = setInterval(async () => {
+      try {
+        // A real command: PING doesn't count against the quota, so it might work while everything else is refused
+        await redis.redis.get('anagram:check');
+        outage = null;
+        failures = 0;
+        clearInterval(check);
+        console.log('Redis is answering again - new rooms go back to Redis');
+      } catch {}
+    }, 30 * 1000);
+    check.unref();
+  }
+
+  return {
+    DELETE,
+    redis: redis.redis,
+    usingRedis: () => !outage,
+    status: () => (outage ? { store: 'memory', reason: outage.reason, since: outage.since } : { store: 'redis' }),
+
+    // If Redis can't take a new room it goes in memory, so creating a room always works
+    async create(room) {
+      if (memory.has(room.roomCode)) return false;
+      return attempt(() => redis.create(room), () => memory.create(room));
+    },
+
+    // A room in Redis can't be reached while Redis isn't answering
+    async get(roomCode) {
+      if (memory.has(roomCode)) return memory.get(roomCode);
+      return attempt(() => redis.get(roomCode), () => null);
+    },
+
+    async update(roomCode, change) {
+      if (memory.has(roomCode)) return memory.update(roomCode, change);
+      return attempt(() => redis.update(roomCode, change), () => null);
+    },
+
+    async list() {
+      const local = await memory.list();
+      return local.concat(await attempt(() => redis.list(), () => []));
+    },
+
+    // Only the rooms kept in memory need sweeping - Redis expires its own
+    emptySince: (before) => memory.emptySince(before),
   };
 }
 
