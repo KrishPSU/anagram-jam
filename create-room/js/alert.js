@@ -2,6 +2,7 @@ const alertEl = document.getElementById('alert');
 const alertIcon = document.getElementById('alertIcon');
 const alertMessage = document.getElementById('alertMessage');
 const alertClose = document.getElementById('alertClose');
+let alertTimeout;
 
 // Error Alert Functions
 function showAlert(message, type='error') {
@@ -27,8 +28,9 @@ function showAlert(message, type='error') {
   alertEl.classList.add('show');
   alertEl.classList.add(type);
 
-  // Auto-hide after 5 seconds
-  setTimeout(() => {
+  // Auto-hide after 5 seconds (restart the clock so an earlier alert's timer can't cut this one short)
+  clearTimeout(alertTimeout);
+  alertTimeout = setTimeout(() => {
     hideAlert();
   }, 5000);
 }

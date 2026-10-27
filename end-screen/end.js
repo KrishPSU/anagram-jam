@@ -32,8 +32,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const winnerId = urlParams.get('winnerId');
 const winnerNameEncoded = urlParams.get('winnerName');
 const roomCode = urlParams.get('roomCode');
-const winnerName = atob(winnerNameEncoded); // Decode the base64 encoded name
-const myId = localStorage.getItem('myId');
+const winnerName = winnerNameEncoded; // URLSearchParams already decodes it
+const myId = sessionStorage.getItem('myId'); // set by the game page; the old localStorage id was the home page's
 
 console.log("Winner ID:", winnerId);
 console.log("My ID:", myId);

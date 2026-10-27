@@ -16,6 +16,11 @@ mute_btn.addEventListener('click', () => {
     background_audio.muted = false;
     game_audio.muted = false;
     mute_btn.innerHTML = "🔊";
+    // The browser may have blocked autoplay on load, so start this screen's track now
+    const track = currentWords.length ? game_audio : background_audio;
+    track.play().catch((e) => {
+      console.log("(UNMUTE) Audio play was prevented:", e);
+    });
   }
 });
 
@@ -51,7 +56,8 @@ function startGameAudio() {
   background_audio.pause();
   const game_audio = document.getElementById('gameMusic');
 
-  if (game_audio.muted === false) return; // already playing
+  // Check `paused`, not `muted` - toggling mute in the lobby unmuted this track and it then never started
+  if (!game_audio.paused) return; // already playing
 
   game_audio.muted = mute_audio;
   game_audio.play().catch((e) => {

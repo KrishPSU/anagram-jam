@@ -65,15 +65,21 @@ body {
   top: 15px;
   left: 15px;
   padding: 5px 30px 8px 30px;
+  border: none;
   border-radius: 10px;
   background-color: #e94848de;
   color: white;
+  font: inherit;
   font-weight: bold;
   cursor: pointer;
   transition: opacity 0.2s;
 }
 #leave:hover {
   opacity: 0.8;
+}
+#leave:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 
@@ -363,7 +369,7 @@ body {
 
 
 @media (max-width: 480px) {
-  .alert-alert {
+  .alert {
     top: 10px;
     width: 95%;
   }

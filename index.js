@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const wordExists = require('word-exists');
+const WORDS = require('./words');
 
 require('dotenv').config();
 
@@ -26,6 +27,7 @@ server.listen(PORT || 3000, () => {
 app.use(express.static(path.join(__dirname, 'create-room')));
 app.use('/', express.static(path.join(__dirname, 'home')));
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
+app.use('/solo', express.static(path.join(__dirname, 'solo')));
 
 // Serve PWA files (manifest.json and service worker)
 app.get('/manifest.json', (req, res) => {
@@ -37,8 +39,10 @@ app.get('/sw.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'sw.js'));
 });
 
-// Serve icon files if they exist
-app.use(express.static(path.join(__dirname)));
+// Serve the icon files (only these - serving the whole project root would expose the server code)
+app.get(['/icon-192.png', '/icon-512.png'], (req, res) => {
+  res.sendFile(path.join(__dirname, req.path));
+});
 
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
 // app.use('/game/:roomCode/end', express.static(path.join(__dirname, 'end-screen')));  
@@ -74,8 +78,9 @@ app.get('/game/:roomCode/end', (req, res) => {
 // Static assets for the end page (no params)
 app.use('/end-screen', express.static(path.join(__dirname, 'end-screen'), { redirect: false }));
 
+// Summary only - sending the full rooms would leak every game's answers
 app.get('/rooms', (req, res) => {
-  res.send(rooms);
+  res.send(rooms.map(r => ({ roomCode: r.roomCode, players: r.players.map(p => p.name), gameStarted: r.gameStarted })));
 });
 
 
@@ -93,6 +98,51 @@ function generateJoinCode() {
 let rooms = [];
 let clients = [];
 
+// Empty rooms stick around for a while so players can reload or come back from the end screen
+const EMPTY_ROOM_TTL = 10 * 60 * 1000;
+const cleanupTimers = new Map();
+const startTimers = new Map();
+
+function scheduleRoomCleanup(room) {
+  clearTimeout(cleanupTimers.get(room.roomCode));
+  cleanupTimers.set(room.roomCode, setTimeout(() => {
+    cleanupTimers.delete(room.roomCode);
+    if (room.players.length === 0) deleteRoom(room);
+  }, EMPTY_ROOM_TTL));
+}
+
+function deleteRoom(room) {
+  clearTimeout(cleanupTimers.get(room.roomCode));
+  cleanupTimers.delete(room.roomCode);
+  clearTimeout(startTimers.get(room.roomCode));
+  startTimers.delete(room.roomCode);
+  rooms = rooms.filter(r => r !== room);
+  console.log(`Room ${room.roomCode} deleted - no players left`);
+}
+
+// The room's creator leads whenever they're in it, otherwise whoever has been in the room longest
+function pickLeader(room) {
+  const leader = room.players.find(p => p.isHost) || room.players[0];
+  return leader ? leader.id : null;
+}
+
+function removePlayer(room, playerId) {
+  const leavingPlayer = room.players.find(p => p.id === playerId);
+  if (!leavingPlayer) return;
+  room.players = room.players.filter(p => p.id !== playerId);
+  room.leaderId = pickLeader(room);
+  io.to(room.roomCode).emit('playerLeft', leavingPlayer.name, room.players, room.leaderId);
+  console.log(`Player ${leavingPlayer.name} (${playerId}) left room ${room.roomCode}`);
+
+  if (room.players.length === 0) {
+    // Nobody is left to finish a game that was in progress
+    room.gameStarted = false;
+    clearTimeout(startTimers.get(room.roomCode));
+    startTimers.delete(room.roomCode);
+    scheduleRoomCleanup(room);
+  }
+}
+
 
 io.on('connection', (socket) => {
 
@@ -108,14 +158,14 @@ io.on('connection', (socket) => {
 
 
   socket.on('createRoom', () => {
-    const roomCode = generateJoinCode();
-
-    const roomAlreadyExists = rooms.find(room => room.roomCode === roomCode);
-    while (roomAlreadyExists) {
+    let roomCode = generateJoinCode();
+    while (rooms.some(room => room.roomCode === roomCode)) {
       roomCode = generateJoinCode();
-      roomAlreadyExists = rooms.find(room => room.roomCode === roomCode);
     }
-    rooms.push({ roomCode: roomCode, players: [], leaderId: socket.id, gameStarted: false, words: [], currentHighestLevel: 0, currentHighestLevelHolder: '' });
+    // hostToken is this (home page) socket's id - the creator's browser saves it as 'leaderId' to claim the host spot
+    const room = { roomCode: roomCode, players: [], leaderId: null, hostToken: socket.id, gameStarted: false, words: { regular: [], jumbled: [] }, currentHighestLevel: 0, currentHighestLevelHolder: '' };
+    rooms.push(room);
+    scheduleRoomCleanup(room);
     socket.emit('roomCreated', roomCode);
 
     console.log(rooms);
@@ -124,13 +174,15 @@ io.on('connection', (socket) => {
 
 
    socket.on('joinRoom', (data) => {
+    if (!data) return;
     const roomCode = data.roomCode;
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) {
       socket.emit('roomNotFound', roomCode);
       return;
     }
-    room.players.push({ id: socket.id, name: data.name});
+    // Players are added when their game page connects (join-socket-room). Adding this home page
+    // socket too left a duplicate "ghost" player that later triggered a fake "left the room" alert.
     // Send the room state to the joining player
     socket.emit('roomJoined', roomCode, room.players);
     // console.log(socket.rooms);
@@ -138,16 +190,19 @@ io.on('connection', (socket) => {
   });
   
 
-  socket.on('join-socket-room', (roomCode, playerName, playerId) => {
-    socket.join(roomCode);
+  socket.on('join-socket-room', (roomCode, playerName, hostToken) => {
     const room = rooms.find(room => room.roomCode === roomCode);
-    if (!room) return;
-    io.to(roomCode).emit('new-player', roomCode, playerName, socket.id, room.players);
-    room.players.push({ id: playerId, name: playerName, level: 0 });
+    if (!room) {
+      socket.emit('roomNotFound', roomCode);
+      return;
+    }
+    socket.join(roomCode);
+    room.players.push({ id: socket.id, name: playerName, level: 0, isHost: !!hostToken && hostToken === room.hostToken });
+    room.leaderId = pickLeader(room);
     console.log(`Join-socket-room`)
     console.log(room);
-    console.log(room.players); 
-    socket.emit('get-others-in-room', room.players, room.leaderId); 
+    socket.to(roomCode).emit('new-player', roomCode, playerName, socket.id, room.players, room.leaderId);
+    socket.emit('get-others-in-room', room.players, room.leaderId, room.gameStarted);
   });
 
 
@@ -157,80 +212,34 @@ io.on('connection', (socket) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (room) {
       socket.leave(roomCode);
-      const playerIndex = room.players.findIndex(p => p.id === playerId);
-      if (playerIndex !== -1) {
-        const leavingPlayer = room.players[playerIndex];
-        room.players.splice(playerIndex, 1);
-        
-        // Notify other players in the room
-        io.to(roomCode).emit('playerLeft', leavingPlayer.name, room.players, room.leaderId);
-      }
-      console.log(room);
-      if (room.players.length === 0) {
-        const roomIndex = rooms.findIndex(r => r.roomCode === roomCode);
-        if (roomIndex !== -1) {
-          rooms.splice(roomIndex, 1);
-          console.log(`Room ${roomCode} deleted - no players left`);
-        }
-      }
+      removePlayer(room, socket.id);
+      if (room.players.length === 0) deleteRoom(room);
     }
   });
 
 
   socket.on('disconnect', () => {
-    
+
     clients = clients.filter(id => id !== socket.id);
     console.log("disconnect: ", socket.id);
-    
+
 
     // Find the room that contains this player
-    const room = rooms.find(room => 
+    const room = rooms.find(room =>
       room.players.some(player => player.id === socket.id)
     );
-    
-    if (room) {
-      // Find the specific player
-      const player = room.players.find(p => p.id === socket.id);
-      
-      // Remove the player from the array
-      room.players = room.players.filter(p => p.id !== socket.id);
-      
-      // Notify other players
-      io.to(room.roomCode).emit('playerLeft', player.name, room.players);
-      
-      console.log(`Player ${player.name} (${socket.id}) left room ${room.roomCode}`);
-    }
-  });
 
-  socket.on('left', (roomCode, playerId) => {
-    console.log(`${playerId} LEFT: ${roomCode}`);
-
-    const room = rooms.find(room => room.roomCode === roomCode);
-    if (room) {
-      const playerIndex = room.players.findIndex(p => p.id === playerId);
-      if (playerIndex !== -1) {
-        const leavingPlayer = room.players[playerIndex];
-        room.players.splice(playerIndex, 1);
-        io.to(roomCode).emit('playerLeft', leavingPlayer.name, room.players);
-      }
-      console.log(room);
-      if (room.players.length === 0) {
-        const roomIndex = rooms.findIndex(r => r.roomCode === roomCode);
-        if (roomIndex !== -1) {
-          rooms.splice(roomIndex, 1);
-          console.log(`Room ${roomCode} deleted - no players left`);
-        }
-      }
-    }
+    if (room) removePlayer(room, socket.id);
   });
 
 
 
 
-  socket.on('starting-game', async (roomCode) => {
+  socket.on('starting-game', (roomCode) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
     if (room.gameStarted) return;
+    if (room.leaderId !== socket.id) return;
     room.gameStarted = true;
     room.currentHighestLevel = 0;
     room.currentHighestLevelHolder = '';
@@ -238,27 +247,29 @@ io.on('connection', (socket) => {
 
     // Generate words for the game
     let levels = 10; // Default to 10 levels
-    let words = await getRandomWords(levels);
-    console.log(words);
+    let words = getRandomWords(levels);
     room.words = { regular: words, jumbled: jumbleWords(words) };
     console.log(`Words for room ${roomCode}:`, words);
     io.to(roomCode).emit('game-starting');
     console.log(`Game starting in room: ${roomCode}`);
+
+    // Send everyone the words at the same moment, once the lobby's 3-2-1 countdown is done
+    startTimers.set(roomCode, setTimeout(() => {
+      startTimers.delete(roomCode);
+      io.to(roomCode).emit('gameWords', room.words.jumbled);
+    }, 4000));
   });
 
   socket.on('cancel-start', (roomCode) => {
     const room = rooms.find(room => room.roomCode === roomCode);
     if (!room) return;
+    // Only during the countdown - once the words are out the game can't be canceled
+    if (room.leaderId !== socket.id || !startTimers.has(roomCode)) return;
+    clearTimeout(startTimers.get(roomCode));
+    startTimers.delete(roomCode);
     room.gameStarted = false;
     io.to(roomCode).emit('start-canceled');
     console.log(`Game canceled in room: ${roomCode}`);
-  });
-
-
-  socket.on('startGame', async (roomCode) => {
-    const room = rooms.find(room => room.roomCode === roomCode);
-    if (!room) return;
-    socket.emit('gameWords', room.words.jumbled);
   });
 
 
@@ -277,10 +288,14 @@ io.on('connection', (socket) => {
 
 
   socket.on('answerAttempt', (data) => {
+    if (!data) return;
     console.log(`Player ${data.name} answered level ${data.level} in room ${data.roomCode}: ${data.answer}`);
     const room = rooms.find(room => room.roomCode === data.roomCode);
-    if (!room) return;
-    const correctAnswer = room.words.regular[data.level].toLowerCase();
+    if (!room || !room.gameStarted) return;
+    // Ignore stray submits (e.g. Enter pressed in the lobby) - these used to crash the whole server
+    const word = Number.isInteger(data.level) && room.words.regular[data.level];
+    if (!word || typeof data.answer !== 'string') return;
+    const correctAnswer = word.toLowerCase();
     let isCorrect = false;
     let points = data.points || 0;
 
@@ -325,6 +340,7 @@ io.on('connection', (socket) => {
 
 
   socket.on('levelCompleted', (data) => {
+    if (!data) return;
     console.log(`Player ${data.name} completed level ${data.level} in room ${data.roomCode}`);
     // You can add more logic here if needed
 
@@ -343,9 +359,11 @@ io.on('connection', (socket) => {
 
 
   socket.on('gameOver', (data) => {
-    console.log(`Player ${data.name} won the game in room ${data.roomCode}`);
+    if (!data) return;
     const room = rooms.find(room => room.roomCode === data.roomCode);
-    if (!room) return;
+    // Only the first player to finish wins - a second, near-simultaneous finish could otherwise change the winner
+    if (!room || !room.gameStarted) return;
+    console.log(`Player ${data.name} won the game in room ${data.roomCode}`);
     room.gameStarted = false;
     io.to(data.roomCode).emit('playerFinished', data.id, data.name);
   });
@@ -355,6 +373,7 @@ io.on('connection', (socket) => {
 
 
   socket.on('timeWarning', (data) => {
+    if (!data) return;
     const room = rooms.find(room => room.roomCode === data.roomCode);
     if (!room) return;
     const correctAnswer = room.words.regular[data.level];
@@ -395,35 +414,28 @@ const createPartitions = (count=10, divisions=3) => {
   return parts;
 }
 
-async function fetchWords(difficulty, count) {
-  const url = `https://random-word-api.vercel.app/api?words=${count}&length=${difficulty}`;
-
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-
-    const words = await response.json(); // returns an array
-    console.log(`Fetched words | C:${count} | D:${difficulty}:`, words);
-    return words;
-
-  } catch (error) {
-    console.error("Error fetching words:", error);
-    return [];
+// Fisher-Yates shuffle (returns a new array)
+function shuffle(items) {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
   }
+  return result;
 }
 
 
-const getRandomWords = async (count=10, divisions=3) => {
+// Words come from the local list in words.js. The old random-word API is shut down
+// (it returns HTTP 402), which made every game start with zero words and end instantly.
+const getRandomWords = (count=10, divisions=3) => {
   const partitions = createPartitions(count, divisions);
   console.log(partitions);
-  
+
   let words = [];
 
   for (let i=0; i<partitions.length; i++) {
     if (partitions[i] <= 0) partitions[i] = 1;
-    words.push(await fetchWords(i+3, partitions[i]));
+    words.push(shuffle(WORDS[i+3]).slice(0, partitions[i]));
   }
 
   return words.flat();
@@ -434,22 +446,16 @@ const getRandomWords = async (count=10, divisions=3) => {
 
 // Function to generate an random disorganization of a given word
 function jumbleWord(word) {
-  const letters = word.split('');
-  
-  // Fisher-Yates shuffle
-  for (let i = letters.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [letters[i], letters[j]] = [letters[j], letters[i]];
-  }
-  
-  const jumbled = letters.join('');
-  
+  // A word made of one repeated letter can never come out different (and would recurse forever)
+  if (new Set(word).size < 2) return word;
+
+  const jumbled = shuffle(word.split('')).join('');
+
   // Make sure the jumbled word is different from the original
-  // If it's the same, try shuffling again (only for words with 2+ letters)
-  if (jumbled === word && word.length > 1) {
+  if (jumbled === word) {
     return jumbleWord(word);
   }
-  
+
   return jumbled;
 }
 

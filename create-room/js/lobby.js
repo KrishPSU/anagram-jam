@@ -1,13 +1,21 @@
+// First-time visitors (e.g. someone opening a shared link) need to pick a name - keep the room code for them
+if (!localStorage.getItem('name')) {
+  const code = getRoomCodeFromUrl();
+  window.location.replace(code ? '/?room=' + code : '/');
+}
+
 const socket = io();
 
 
 let isLeader = false;
 let myId;
+let countdownTimer;
 
 
 const state = {
   roomCode: getRoomCodeFromUrl(),
   started: false,
+  inProgress: false, // a round was already running when you arrived
   players: [
     // { id: myId, name: localStorage.getItem('name'), ready: false, isYou: true, isLeader },
   ]
@@ -16,12 +24,14 @@ const state = {
 
 
 socket.on('connect', () => {
+  if (!localStorage.getItem('name')) return;
   myId = socket.id;
-  socket.emit('join-socket-room', state.roomCode, localStorage.getItem('name'), myId);
+  sessionStorage.setItem('myId', myId); // the end screen uses this to know if you won
+  socket.emit('join-socket-room', state.roomCode, localStorage.getItem('name'), localStorage.getItem('leaderId'));
 });
 
-socket.on('disconnect', () => {
-  socket.emit('left', state.roomCode, myId);
+socket.on('roomNotFound', () => {
+  window.location.href = "/";
 });
 
 
@@ -34,7 +44,7 @@ const readyBtn = document.getElementById('readyBtn');
 const leaveBtn = document.getElementById('leave');
 
 // Render
-function render(players) {
+function render() {
 
   if (isLeader) {
     readyBtn.style.opacity = "1";
@@ -44,18 +54,24 @@ function render(players) {
     readyBtn.style.opacity = "0";
     readyBtn.style.display = "none";
     readyBtn.style.cursor = "default";
-    if (state.players.length < 2) {
-      waitingEl.innerText = "Waiting for others";
+  }
+
+  // During the countdown the waiting text shows the countdown instead
+  if (!state.started) {
+    if (state.inProgress) {
+      waitingEl.innerText = "Game in progress, you'll join the next round";
+    } else if (state.players.length < 2) {
+      waitingEl.innerText = isLeader ? "Waiting for players to join" : "Waiting for others";
     } else {
       waitingEl.innerText = "Waiting for leader to start";
     }
-    waitingEl.style.display = "block";
+    // The leader shouldn't be told to wait for the leader - their Start button is the prompt
+    waitingEl.style.display = (isLeader && state.players.length >= 2 && !state.inProgress) ? "none" : "block";
   }
-  
+
   roomCodeEl.textContent = state.roomCode;
   playersEl.innerHTML = '';
   console.log('state.players', state.players);
-  console.log('players', players);
   state.players.forEach(player => {
     const pill = document.createElement('div');
     pill.className = 'player-pill' + (player.isYou ? ' you' : '');
@@ -81,11 +97,31 @@ function render(players) {
 }
 
 
+// Rebuild the player list from the server's copy (you first). Appending to the old list
+// duplicated everyone after a reconnect.
+function setPlayers(players, leaderId) {
+  isLeader = leaderId === myId;
+  state.players = players.map(p => ({ id: p.id, name: p.name, isYou: p.id === myId, isLeader: p.id === leaderId, level: p.level }));
+  state.players.sort((a, b) => b.isYou - a.isYou);
+}
+
+
+// The room/level you're in mid-game, so a reload can rejoin. Stored as JSON because
+// localStorage only holds strings (objects used to be saved as "[object Object]").
+function getInGame() {
+  try {
+    return JSON.parse(localStorage.getItem('inGame'));
+  } catch {
+    return null;
+  }
+}
+
+
 
 function getRoomCodeFromUrl() {
   const path = window.location.pathname;
   const segments = path.split('/').filter(segment => segment.length > 0);
-  
+
   // Handle routes like /game/ABC123 or /join/ABC123
   if (segments.length >= 2) {
     const roomCode = segments[1];
@@ -94,7 +130,7 @@ function getRoomCodeFromUrl() {
       return roomCode;
     }
   }
-  
+
   return null;
 }
 
@@ -110,11 +146,10 @@ if (roomCode) {
 
 // Interactions
 readyBtn.addEventListener('click', () => {
-  const you = state.players.find(p => p.isYou);
-  if (!you.isLeader) return;
+  if (!isLeader) return;
 
   if (state.players.length < 2) {
-    waitingEl.innerText = "Waiting for others";
+    waitingEl.innerText = "Waiting for players to join";
     waitingEl.style.display = "block";
     readyBtn.textContent = "Start";
     readyBtn.classList.remove('ready');
@@ -132,8 +167,6 @@ readyBtn.addEventListener('click', () => {
       socket.emit('starting-game', state.roomCode);
     }
   }
-
-  render();
 });
 
 
@@ -149,84 +182,49 @@ leaveBtn.addEventListener('click', () => {
 
 socket.on('playerLeft', (leavingPlayer, remainingPlayers, leaderId) => {
   console.log(`${leavingPlayer} left`);
-  state.players = [];
-  for (let i=0; i<remainingPlayers.length; i++) {
-    if (remainingPlayers[i].id != myId) {
-      console.log(remainingPlayers[i].id != myId)
-      state.players.push({ id: remainingPlayers[i].id, name: remainingPlayers[i].name, isYou: false, isLeader: isLeader, level: remainingPlayers[i].level });
-    } else {
-      // let isLeader = false;
-      if (localStorage.getItem('leaderId') === leaderId) {
-        isLeader = true;
-      }
-      state.players.unshift({ id: remainingPlayers[i].id, name: remainingPlayers[i].name, isYou: true, isLeader: isLeader, level: remainingPlayers[i].level });
-    }
-  }
+  const wasLeader = isLeader;
+  setPlayers(remainingPlayers, leaderId);
 
-  showAlert(`${leavingPlayer} left the room`, 'warning');
-  if (state.players.length < 2) {
-    waitingEl.style.display = "block";
-  } else {
-    waitingEl.style.display = "none";
-  }
+  showAlert(`${leavingPlayer} left the room` + (isLeader && !wasLeader ? " - you're the leader now" : ''), 'warning');
+  if (state.started) loadLeaderboard(state.players);
 
-  render(remainingPlayers);
+  render();
 });
 
 
 
 
-socket.on('new-player', (roomCode, playerName, playerId, all_players) => {
+socket.on('new-player', (roomCode, playerName, playerId, all_players, leaderId) => {
 
   if (roomCode !== state.roomCode) return; // Ignore if not for this room
-  if (playerId == myId) {
-    const inGame = localStorage.getItem('inGame');
-    console.log(state);
-    if (inGame && inGame.roomCode === state.roomCode) {
-      state.started = true;
-      waitingEl.innerText = "Game in progress, joining...";
-      socket.emit('rejoin-game', state.roomCode, myId);
-    } else {
-      state.started = false;
-      waitingEl.innerText = "Waiting for leader to start";
-      waitingEl.style.display = "block";
-      localStorage.removeItem('inGame');
-    }
-    return;
-  }
 
   console.log('New player joined: ', playerName, playerId);
-  state.players.push({ 
-    id: playerId, 
-    name: playerName, 
-    isYou: false,
-    level: 0,
-  });
+  setPlayers(all_players, leaderId);
 
   showAlert(`${playerName} joined the room`, 'success');
-  waitingEl.style.display = "none";
 
   console.log(state.players);
-  render(all_players);
+  render();
 });
 
 
 
-socket.on('get-others-in-room', (others, leaderId) => {
+socket.on('get-others-in-room', (others, leaderId, gameStarted) => {
   console.log(others);
-  for (let i=0; i<others.length; i++) {
-    if (others[i].id != myId) {
-      console.log(others[i].id != myId)
-      state.players.push({ id: others[i].id, name: others[i].name, isYou: false, isLeader: isLeader, level: others[i].level });
-    } else {
-      // let isLeader = false;
-      if (localStorage.getItem('leaderId') === leaderId) {
-        isLeader = true;
-      }
-      state.players.unshift({ id: others[i].id, name: others[i].name, isYou: true, isLeader: isLeader, level: others[i].level });
-    }
+  setPlayers(others, leaderId);
+
+  const inGame = getInGame();
+  if (gameStarted && inGame && inGame.roomCode === state.roomCode) {
+    // Reloaded or reconnected mid-game - pick up where you left off
+    state.started = true;
+    waitingEl.innerText = "Game in progress, joining...";
+    waitingEl.style.display = "block";
+    socket.emit('rejoin-game', state.roomCode, myId);
+  } else {
+    state.inProgress = gameStarted;
+    localStorage.removeItem('inGame');
   }
-  render(others);
+  render();
 });
 
 
@@ -234,29 +232,21 @@ socket.on('get-others-in-room', (others, leaderId) => {
 
 
 
+// The server sends the words (see game.js 'gameWords') when this countdown finishes
 socket.on('game-starting', () => {
   leaveBtn.disabled = true;
   showAlert("Game is starting!", 'success');
 
   state.started = true;
 
+  let count = 3;
   waitingEl.innerText = "Starting game in 3";
   waitingEl.style.display = "block";
-  setTimeout(() => {
-    if (state.started === false) return;
-    waitingEl.innerText = "Starting game in 2";
-    setTimeout(() => {
-      if (state.started === false) return;
-      waitingEl.innerText = "Starting game in 1";
-      setTimeout(() => {
-        if (state.started === false) return;
-        waitingEl.innerText = "Starting game now!";
-        setTimeout(() => {
-          if (state.started === false) return;
-          startGame(state.roomCode);
-        }, 1000);
-      }, 1000);
-    }, 1000);
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    count--;
+    waitingEl.innerText = count > 0 ? `Starting game in ${count}` : "Starting game now!";
+    if (count === 0) clearInterval(countdownTimer);
   }, 1000);
 });
 
@@ -267,20 +257,9 @@ socket.on('start-canceled', () => {
   showAlert("Game start canceled", 'warning');
 
   state.started = false;
+  clearInterval(countdownTimer);
 
-  waitingEl.innerText = "Waiting for leader to start";
-  waitingEl.style.display = "block";
   readyBtn.textContent = "Start";
   readyBtn.classList.remove('ready');
+  render();
 });
-
-
-
-
-
-function startGame(roomCode) {
-  document.getElementById('lobbyWrapper').style.display = "none";
-  document.getElementById('gameState').classList.add("show");
-  localStorage.setItem('inGame', { roomCode: state.roomCode, level: currentLevel });
-  socket.emit('startGame', roomCode);
-}

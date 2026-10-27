@@ -8,16 +8,22 @@ const errorAlert = document.getElementById('errorAlert');
 const errorMessage = document.getElementById('errorMessage');
 const errorClose = document.getElementById('errorClose');
 let selectedMode = null;
+let errorTimeout;
 
 playerNameInput.value = localStorage.getItem('name') || '';
+
+// Shared game links send first-time players here with the room code filled in
+const roomFromLink = new URLSearchParams(window.location.search).get('room');
+if (roomFromLink) roomCodeInput.value = roomFromLink;
 
 // Error Alert Functions
 function showError(message) {
   errorMessage.textContent = message;
   errorAlert.classList.add('show');
-  
-  // Auto-hide after 5 seconds
-  setTimeout(() => {
+
+  // Auto-hide after 5 seconds (restart the clock so an earlier error's timer can't cut this one short)
+  clearTimeout(errorTimeout);
+  errorTimeout = setTimeout(() => {
     hideError();
   }, 5000);
 }
@@ -59,7 +65,6 @@ modeButtons.forEach(button => {
       socket.emit('joinRoom', { name: playerNameInput.value.trim(), roomCode: roomCodeInput.value.trim().toUpperCase() })
     } else if (selectedMode === 'create') {
       socket.emit('createRoom')
-      localStorage.setItem('myId', socket.id);
     } else if (selectedMode === 'solo') {
       // localStorage.setItem('myId', socket.id);
       // document.location.href = "/solo";

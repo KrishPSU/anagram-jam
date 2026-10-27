@@ -29,20 +29,19 @@ function handleBackspace() {
 }
 
 // Function to handle enter
+// (This used to also call enterButton.click(), which re-entered the ENTER button's own click
+// handler - every tap on the on-screen ENTER submitted twice and could skip a level.)
 function handleEnter() {
-  // This will be implemented later for submitting the answer
-  // For now, just trigger the button click
-  const enterButton = keyMap.get('ENTER');
-  if (enterButton) {
-    enterButton.click();
-  }
-
   const userAnswer = inputAnswer.value.trim().toLowerCase();
+  if (!userAnswer || !isPlaying()) return;
   socket.emit('answerAttempt', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel, answer: userAnswer, points: points });
 }
 
 // Listen for physical keyboard events
 document.addEventListener('keydown', (event) => {
+  // Leave browser shortcuts (Cmd/Ctrl+R, Cmd+L, ...) alone, and only type while a level is on screen
+  if (event.metaKey || event.ctrlKey || event.altKey || !isPlaying()) return;
+
   // Prevent default behavior for letter keys when input is focused
   const key = event.key.toUpperCase();
   
