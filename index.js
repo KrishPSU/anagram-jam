@@ -40,9 +40,15 @@ app.get('/sw.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'sw.js'));
 });
 
-// Serve the icon files (only these - serving the whole project root would expose the server code)
-app.get(['/icon-192.png', '/icon-512.png'], (req, res) => {
-  res.sendFile(path.join(__dirname, req.path));
+// Serve the icon files (only these - serving the whole project root would expose the server code).
+// Each filename is written out in full: Vercel only bundles files it can find named in the code, and the
+// path that used to be built from req.path left both icons out, so they were a 404 there.
+app.get('/icon-192.png', (req, res) => {
+  res.sendFile(path.join(__dirname, 'icon-192.png'));
+});
+
+app.get('/icon-512.png', (req, res) => {
+  res.sendFile(path.join(__dirname, 'icon-512.png'));
 });
 
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
