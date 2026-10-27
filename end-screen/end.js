@@ -34,11 +34,13 @@ function displayEndScreen(winnerName, won) {
     sfx.win();
     confetti();
   }
-
-  socket.emit('requestResults', roomCode);
 }
 
 displayEndScreen(winnerName, winnerId === myId);
+
+// Asking for the results also tells the server someone is reading them, which keeps the room alive for
+// Play again. Ask on every connect so that still holds after a dropped connection.
+socket.on('connect', () => socket.emit('requestResults', roomCode));
 
 
 backToLobbyBtn.addEventListener('click', () => {

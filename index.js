@@ -66,6 +66,12 @@ app.get('/solo', (req, res) => {
   res.sendFile(path.join(__dirname, 'solo', 'solo.html'));
 });
 
+// Drop rooms nobody has been in for too long before any of these look one up (see deleteAbandonedRooms)
+app.use(['/game', '/rooms'], (req, res, next) => {
+  deleteAbandonedRooms();
+  next();
+});
+
 app.get('/game/:roomCode', (req, res) => {
   const roomCode = req.params.roomCode;
   const roomExists = rooms.find(room => room.roomCode === roomCode);
@@ -105,22 +111,31 @@ function generateJoinCode() {
 let rooms = [];
 let clients = [];
 
-// Empty rooms stick around for a while so players can reload or come back from the end screen
-const EMPTY_ROOM_TTL = 10 * 60 * 1000;
-const cleanupTimers = new Map();
+// A room nobody is in is deleted after this long - enough to reload a page or move between screens
+const EMPTY_ROOM_TTL = 30 * 1000;
 const startTimers = new Map();
 
-function scheduleRoomCleanup(room) {
-  clearTimeout(cleanupTimers.get(room.roomCode));
-  cleanupTimers.set(room.roomCode, setTimeout(() => {
-    cleanupTimers.delete(room.roomCode);
-    if (room.players.length === 0) deleteRoom(room);
-  }, EMPTY_ROOM_TTL));
+// Nobody in the lobby or the game, and nobody reading the results. Play again on the results
+// screen leads back to the room, so the people reading them count as being in it.
+function isEmpty(room) {
+  return room.players.length === 0 && room.viewers.size === 0;
 }
 
+// Call whenever someone arrives in or leaves a room: notes when it went empty (null while someone is in it)
+function trackEmpty(room) {
+  room.emptySince = isEmpty(room) ? (room.emptySince || Date.now()) : null;
+}
+
+// Judged by the clock rather than a timer per room: a serverless instance (Vercel) is suspended while it
+// has nothing to do, and timers don't fire then. So this also runs before any request or socket event
+// looks a room up, and the interval just keeps a long-running server tidy.
+function deleteAbandonedRooms() {
+  const now = Date.now();
+  rooms.filter(room => room.emptySince && now - room.emptySince >= EMPTY_ROOM_TTL).forEach(deleteRoom);
+}
+setInterval(deleteAbandonedRooms, 5000);
+
 function deleteRoom(room) {
-  clearTimeout(cleanupTimers.get(room.roomCode));
-  cleanupTimers.delete(room.roomCode);
   clearTimeout(startTimers.get(room.roomCode));
   startTimers.delete(room.roomCode);
   rooms = rooms.filter(r => r !== room);
@@ -150,8 +165,8 @@ function removePlayer(room, playerId) {
     room.gameStarted = false;
     clearTimeout(startTimers.get(room.roomCode));
     startTimers.delete(room.roomCode);
-    scheduleRoomCleanup(room);
   }
+  trackEmpty(room);
 }
 
 // Snapshot for the results screen - players leave the room as they move to that page
@@ -169,6 +184,12 @@ function buildResults(room, winnerId) {
 
 
 io.on('connection', (socket) => {
+
+  // Same for every socket event below
+  socket.use((packet, next) => {
+    deleteAbandonedRooms();
+    next();
+  });
 
   clients.push(socket.id);
 
@@ -192,9 +213,9 @@ io.on('connection', (socket) => {
       roomCode = generateJoinCode();
     }
     // hostToken is this (home page) socket's id - the creator's browser saves it as 'leaderId' to claim the host spot
-    const room = { roomCode: roomCode, players: [], leaderId: null, hostToken: socket.id, gameStarted: false, words: { regular: [], jumbled: [] }, currentHighestLevel: 0, currentHighestLevelHolder: '', solves: [], stash: {}, results: null, startedAt: 0 };
+    const room = { roomCode: roomCode, players: [], viewers: new Set(), emptySince: null, leaderId: null, hostToken: socket.id, gameStarted: false, words: { regular: [], jumbled: [] }, currentHighestLevel: 0, currentHighestLevelHolder: '', solves: [], stash: {}, results: null, startedAt: 0 };
     rooms.push(room);
-    scheduleRoomCleanup(room);
+    trackEmpty(room); // starts empty - the creator's lobby page has to arrive within EMPTY_ROOM_TTL
     socket.emit('roomCreated', roomCode);
 
     console.log(rooms);
@@ -235,6 +256,7 @@ io.on('connection', (socket) => {
       if (holder && holder.name === playerName) holder.id = socket.id;
     }
     room.players.push(player);
+    trackEmpty(room);
     room.leaderId = pickLeader(room);
     console.log(`Join-socket-room`)
     console.log(room);
@@ -250,7 +272,8 @@ io.on('connection', (socket) => {
     if (room) {
       socket.leave(roomCode);
       removePlayer(room, socket.id);
-      if (room.players.length === 0) deleteRoom(room);
+      // Leaving on purpose doesn't wait out EMPTY_ROOM_TTL
+      if (isEmpty(room)) deleteRoom(room);
     }
   });
 
@@ -267,6 +290,11 @@ io.on('connection', (socket) => {
     );
 
     if (room) removePlayer(room, socket.id);
+
+    // ...or the room whose results this socket was reading
+    rooms.forEach(room => {
+      if (room.viewers.delete(socket.id)) trackEmpty(room);
+    });
   });
 
 
@@ -444,6 +472,11 @@ io.on('connection', (socket) => {
 
   socket.on('requestResults', (roomCode) => {
     const room = rooms.find(room => room.roomCode === roomCode);
+    // Reading the results counts as being in the room - Play again leads back to it
+    if (room) {
+      room.viewers.add(socket.id);
+      trackEmpty(room);
+    }
     socket.emit('results', room && room.results ? room.results : null);
   });
 
