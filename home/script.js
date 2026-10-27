@@ -218,8 +218,11 @@ function requestLiveStats() {
   socket.emit('getLiveStats');
 }
 
+// Once a minute, and only while the page is on screen - each check reads every room from the database,
+// and a tab left open in the background would otherwise keep spending the free plan's commands
 socket.on('connect', requestLiveStats);
-setInterval(requestLiveStats, 20000);
+setInterval(() => { if (!document.hidden) requestLiveStats(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) requestLiveStats(); });
 
 // Hidden when nobody is playing, so it never says "0 rooms"
 socket.on('liveStats', ({ playing }) => {

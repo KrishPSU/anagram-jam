@@ -16,10 +16,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// A room nobody is in is deleted after this long - enough to reload a page or move between screens
+const EMPTY_ROOM_TTL = 30 * 1000;
+
 // Rooms live in Redis when there is one (see store.js), otherwise in this process's memory.
 // Connecting Upstash Redis to the Vercel project sets REDIS_URL and KV_URL (the same address), here with
 // the project's custom prefix anagram_jam_.
-const store = createStore(process.env.anagram_jam_REDIS_URL || process.env.anagram_jam_KV_URL || process.env.REDIS_URL || process.env.KV_URL);
+const store = createStore(process.env.anagram_jam_REDIS_URL || process.env.anagram_jam_KV_URL || process.env.REDIS_URL || process.env.KV_URL,
+  { emptyRoomTtl: EMPTY_ROOM_TTL });
 if (store.redis) {
   // Broadcasts reach players connected to other server instances too. Loaded only here, like ioredis in
   // store.js, so running without Redis never depends on these packages.
@@ -116,9 +120,6 @@ function generateJoinCode() {
 }
 
 
-// A room nobody is in is deleted after this long - enough to reload a page or move between screens
-const EMPTY_ROOM_TTL = 30 * 1000;
-
 // Nobody in the lobby or the game, and nobody reading the results. Play again on the results
 // screen leads back to the room, so the people reading them count as being in it.
 function isEmpty(room) {
@@ -169,25 +170,27 @@ async function deleteIfAbandoned(roomCode) {
   await changeRoom(roomCode, () => {});
 }
 
-// Rooms nobody looks up again are cleaned up here. With Redis, only while someone is connected to this
-// instance: a long-running server would otherwise keep spending Redis commands with nobody around.
-setInterval(async () => {
-  if (store.redis && io.engine.clientsCount === 0) return;
-  try {
-    for (const roomCode of await store.emptySince(Date.now() - EMPTY_ROOM_TTL)) await deleteIfAbandoned(roomCode);
-  } catch (err) {
-    console.error('Cleaning up rooms failed:', err.message);
-  }
-}, 5000);
+// Rooms in memory that nobody looks up again are cleaned up here. In Redis an empty room's key expires
+// by itself (see store.js), so there's nothing to poll - polling would spend the free plan's commands.
+if (!store.redis) {
+  setInterval(async () => {
+    try {
+      for (const roomCode of await store.emptySince(Date.now() - EMPTY_ROOM_TTL)) await deleteIfAbandoned(roomCode);
+    } catch (err) {
+      console.error('Cleaning up rooms failed:', err.message);
+    }
+  }, 5000);
+}
 
 async function liveRooms() {
   return (await store.list()).filter(room => !isAbandoned(room));
 }
 
-// The home page asks every 20 seconds per visitor, so a few seconds' old count will do
+// The home page asks about once a minute per visitor, so a count up to a minute old will do - working
+// it out reads every room from the store (2 Redis commands)
 let liveStats = { at: 0, playing: 0 };
 async function roomsPlaying() {
-  if (Date.now() - liveStats.at > 5000) {
+  if (Date.now() - liveStats.at > 60000) {
     const playing = (await liveRooms()).filter(r => r.gameStarted && r.players.length > 0).length;
     liveStats = { at: Date.now(), playing };
   }

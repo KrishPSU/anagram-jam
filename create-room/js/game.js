@@ -52,7 +52,8 @@ const timer = createCountdownTimer(
     timerBarEl.style.strokeDashoffset = TIMER_RING * (1 - timeRemaining / LEVEL_SECONDS);
     gameTimerEl.classList.toggle('urgent', timeRemaining <= 5);
     if (timeRemaining <= 5) {
-      socket.emit('timeWarning', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel } );
+      // Fetch the answer (shown at 1 second left) once per word - each ask is a database read on the server
+      if (!currentAnswer) socket.emit('timeWarning', { id: myId, name: localStorage.getItem('name'), roomCode: state.roomCode, level: currentLevel } );
       if (timeRemaining > 0 && isPlaying() && !locked) sfx.tick();
     }
 

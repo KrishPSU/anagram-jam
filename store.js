@@ -10,14 +10,19 @@
 // Rooms are plain JSON objects. update() is the only way to change one: it reads the room, applies the
 // change and writes it back only if nobody changed it in the meantime, retrying otherwise - so two players
 // acting at the same moment on different instances can't overwrite each other.
+//
+// Upstash's free plan allows 500K commands a month and bills a Lua script as 1 command plus 1 for every
+// call inside it, so the Redis side is kept lean: an update is a GET plus a 3-command script, and an empty
+// room's key is set to expire when the room should go, so no polling is needed to clean up.
 
 const DELETE = Symbol('delete room');
 
 // A room nobody touches for this long disappears from Redis even if something went wrong cleaning it up
 const ROOM_TTL = 12 * 60 * 60 * 1000;
 
-function createStore(redisUrl) {
-  return redisUrl ? redisStore(redisUrl) : memoryStore();
+// emptyRoomTtl: how long a room may stay empty (room.emptySince) before it's gone
+function createStore(redisUrl, { emptyRoomTtl }) {
+  return redisUrl ? redisStore(redisUrl, emptyRoomTtl) : memoryStore();
 }
 
 function memoryStore() {
@@ -65,50 +70,50 @@ function memoryStore() {
   };
 }
 
-function redisStore(url) {
+function redisStore(url, emptyRoomTtl) {
   const Redis = require('ioredis');
-  // Fail a command after a few reconnect attempts instead of queueing it forever while Redis is unreachable
-  const redis = new Redis(url, { maxRetriesPerRequest: 3 });
+  const redis = new Redis(url, {
+    // Fail a command after a few reconnect attempts instead of queueing it forever while Redis is unreachable
+    maxRetriesPerRequest: 3,
+    // Skip the two CLIENT SETINFO commands ioredis sends on every connection - they'd count against the quota
+    disableClientInfo: true,
+  });
   redis.on('error', (err) => console.error('Redis:', err.message));
 
   const roomKey = (roomCode) => `anagram:room:${roomCode}`;
   const ROOMS = 'anagram:rooms'; // every room code
-  const EMPTY = 'anagram:empty'; // codes of empty rooms, scored by when they went empty
 
-  // KEYS: room, ROOMS, EMPTY. ARGV: room JSON, code, emptySince ('' if someone is in it), ttl
+  // An empty room's key expires when the room should be deleted (a few seconds' grace on top - every read
+  // already treats it as gone by then), an occupied room's after ROOM_TTL
+  const ttlFor = (room) => (room.emptySince ? Math.max(1000, room.emptySince + emptyRoomTtl + 5000 - Date.now()) : ROOM_TTL);
+
+  // KEYS: room, ROOMS. ARGV: room JSON, code, ttl
   redis.defineCommand('createRoom', {
-    numberOfKeys: 3,
+    numberOfKeys: 2,
     lua: `
-      if not redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[4]) then return 0 end
+      if not redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[3]) then return 0 end
       redis.call('SADD', KEYS[2], ARGV[2])
-      if ARGV[3] ~= '' then redis.call('ZADD', KEYS[3], ARGV[3], ARGV[2]) end
       return 1`,
   });
 
   // Replaces the room only if it still holds what we read (ARGV[1]); a new JSON of '' deletes it.
-  // KEYS: room, ROOMS, EMPTY. ARGV: JSON read, new JSON, code, emptySince ('' if someone is in it), ttl
+  // KEYS: room, ROOMS. ARGV: JSON read, new JSON, code, ttl
   redis.defineCommand('replaceRoom', {
-    numberOfKeys: 3,
+    numberOfKeys: 2,
     lua: `
       if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
       if ARGV[2] == '' then
         redis.call('DEL', KEYS[1])
         redis.call('SREM', KEYS[2], ARGV[3])
-        redis.call('ZREM', KEYS[3], ARGV[3])
         return 1
       end
-      redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[5])
-      if ARGV[4] ~= '' then
-        redis.call('ZADD', KEYS[3], ARGV[4], ARGV[3])
-      else
-        redis.call('ZREM', KEYS[3], ARGV[3])
-      end
+      redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[4])
       return 1`,
   });
 
-  // A code whose room expired by ROOM_TTL is still listed - drop it
+  // The codes of rooms whose keys have expired are still listed - drop them
   const forget = (roomCodes) => {
-    if (roomCodes.length) redis.multi().srem(ROOMS, ...roomCodes).zrem(EMPTY, ...roomCodes).exec().catch(() => {});
+    if (roomCodes.length) redis.srem(ROOMS, ...roomCodes).catch(() => {});
   };
 
   return {
@@ -116,7 +121,7 @@ function redisStore(url) {
     redis, // the Socket.IO adapter publishes through this connection too
 
     async create(room) {
-      const created = await redis.createRoom(roomKey(room.roomCode), ROOMS, EMPTY, JSON.stringify(room), room.roomCode, room.emptySince || '', ROOM_TTL);
+      const created = await redis.createRoom(roomKey(room.roomCode), ROOMS, JSON.stringify(room), room.roomCode, ttlFor(room));
       return created === 1;
     },
 
@@ -136,7 +141,7 @@ function redisStore(url) {
         const result = change(room);
         const next = result === DELETE ? '' : JSON.stringify(room);
         if (next === raw) return { result }; // nothing changed, nothing to write
-        const replaced = await redis.replaceRoom(roomKey(roomCode), ROOMS, EMPTY, raw, next, roomCode, room.emptySince || '', ROOM_TTL);
+        const replaced = await redis.replaceRoom(roomKey(roomCode), ROOMS, raw, next, roomCode, ttlFor(room));
         if (replaced === 1) return result === DELETE ? { deleted: true } : { result };
         // Another instance changed the room since we read it - redo the change on the new version
         await new Promise(resolve => setTimeout(resolve, Math.random() * 20 * (attempt + 1)));
@@ -150,10 +155,6 @@ function redisStore(url) {
       const raws = await redis.mget(roomCodes.map(roomKey));
       forget(roomCodes.filter((roomCode, i) => raws[i] === null));
       return raws.filter(raw => raw !== null).map(raw => JSON.parse(raw));
-    },
-
-    async emptySince(before) {
-      return redis.zrangebyscore(EMPTY, '-inf', before);
     },
   };
 }
