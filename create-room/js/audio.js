@@ -3,19 +3,24 @@ const mute_btn = document.getElementById('mute-button');
 
 let mute_audio = false;
 
+// The mute button covers the music and the sound effects in shared/sfx.js
+function showMuteState() {
+  mute_btn.textContent = mute_audio ? "🔇" : "🔊";
+  mute_btn.setAttribute('aria-pressed', mute_audio ? 'true' : 'false');
+}
+
 mute_btn.addEventListener('click', () => {
   mute_audio = !mute_audio;
   localStorage.setItem('muteAudio', mute_audio ? 'true' : 'false');
   const background_audio = document.getElementById('backgroundMusic');
   const game_audio = document.getElementById('gameMusic');
+  showMuteState();
   if (mute_audio) {
     background_audio.muted = true;
     game_audio.muted = true;
-    mute_btn.innerHTML = "🔇";
   } else {
     background_audio.muted = false;
     game_audio.muted = false;
-    mute_btn.innerHTML = "🔊";
     // The browser may have blocked autoplay on load, so start this screen's track now
     const track = currentWords.length ? game_audio : background_audio;
     track.play().catch((e) => {
@@ -35,11 +40,7 @@ mute_btn.addEventListener('click', () => {
 window.addEventListener('load', () => {
 
   mute_audio = localStorage.getItem('muteAudio') === 'true';
-  if (mute_audio) {
-    mute_btn.innerHTML = "🔇";
-  } else {
-    mute_btn.innerHTML = "🔊";
-  }
+  showMuteState();
 
   const background_audio = document.getElementById('backgroundMusic');
   background_audio.muted = mute_audio;

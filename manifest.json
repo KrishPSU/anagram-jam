@@ -4,8 +4,8 @@
   "description": "Test your word skills and compete with friends!",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#667eea",
-  "theme_color": "#764ba2",
+  "background_color": "#232526",
+  "theme_color": "#232526",
   "orientation": "portrait-primary",
   "icons": [
     {

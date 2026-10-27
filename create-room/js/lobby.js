@@ -10,6 +10,7 @@ const socket = io();
 let isLeader = false;
 let myId;
 let countdownTimer;
+let seenPlayers = new Set(); // ids already shown, so only new arrivals animate in
 
 
 const state = {
@@ -17,7 +18,7 @@ const state = {
   started: false,
   inProgress: false, // a round was already running when you arrived
   players: [
-    // { id: myId, name: localStorage.getItem('name'), ready: false, isYou: true, isLeader },
+    // { id: myId, name: localStorage.getItem('name'), isYou: true, isLeader, level, points },
   ]
 };
 
@@ -38,52 +39,58 @@ socket.on('roomNotFound', () => {
 
 // DOM refs
 const roomCodeEl = document.getElementById('roomCode');
+const eyebrowEl = document.getElementById('lobbyEyebrow');
 const waitingEl = document.getElementById('waiting');
 const playersEl = document.getElementById('players');
 const readyBtn = document.getElementById('readyBtn');
 const leaveBtn = document.getElementById('leave');
+const inviteBtn = document.getElementById('inviteBtn');
+const countdownEl = document.getElementById('countdown');
+const countNumEl = document.getElementById('countNum');
+const cancelStartBtn = document.getElementById('cancelStart');
 
 // Render
 function render() {
+  readyBtn.hidden = !isLeader;
 
-  if (isLeader) {
-    readyBtn.style.opacity = "1";
-    readyBtn.style.display = "block";
-    readyBtn.style.cursor = "pointer";
-  } else {
-    readyBtn.style.opacity = "0";
-    readyBtn.style.display = "none";
-    readyBtn.style.cursor = "default";
-  }
+  const count = state.players.length;
+  eyebrowEl.textContent = `Lobby · ${count} ${count === 1 ? 'player' : 'players'}`;
 
-  // During the countdown the waiting text shows the countdown instead
+  // During the countdown the overlay does the talking
   if (!state.started) {
+    const leader = state.players.find(p => p.isLeader);
     if (state.inProgress) {
-      waitingEl.innerText = "Game in progress, you'll join the next round";
-    } else if (state.players.length < 2) {
-      waitingEl.innerText = isLeader ? "Waiting for players to join" : "Waiting for others";
+      waitingEl.textContent = "A game is in progress. You'll join the next round.";
+    } else if (count < 2) {
+      waitingEl.textContent = isLeader ? "Waiting for players to join…" : "Waiting for others…";
+    } else if (isLeader) {
+      waitingEl.textContent = "Everyone in? Press Start.";
     } else {
-      waitingEl.innerText = "Waiting for leader to start";
+      waitingEl.textContent = `Waiting for ${leader ? leader.name : 'the leader'} to start…`;
     }
-    // The leader shouldn't be told to wait for the leader - their Start button is the prompt
-    waitingEl.style.display = (isLeader && state.players.length >= 2 && !state.inProgress) ? "none" : "block";
   }
 
-  roomCodeEl.textContent = state.roomCode;
   playersEl.innerHTML = '';
   console.log('state.players', state.players);
   state.players.forEach(player => {
     const pill = document.createElement('div');
-    pill.className = 'player-pill' + (player.isYou ? ' you' : '');
+    pill.className = 'player-pill' + (player.isYou ? ' you' : '') + (seenPlayers.has(player.id) ? '' : ' join');
 
-    const indicator = document.createElement('div');
-    indicator.className = 'ready-indicator' + (player.ready ? ' ready' : '');
-    pill.appendChild(indicator);
+    pill.appendChild(avatarEl(player.name));
 
     const name = document.createElement('div');
     name.className = 'player-name';
     name.textContent = `${player.name}`;
     pill.appendChild(name);
+
+    if (player.isLeader) {
+      const crown = document.createElement('span');
+      crown.className = 'crown';
+      crown.textContent = '👑';
+      crown.title = 'Leader - starts the game';
+      crown.setAttribute('aria-label', 'Leader');
+      pill.appendChild(crown);
+    }
 
     if (player.isYou) {
       const badge = document.createElement('div');
@@ -94,6 +101,16 @@ function render() {
 
     playersEl.appendChild(pill);
   });
+
+  // An open seat makes it obvious more people can join
+  if (!state.inProgress) {
+    const empty = document.createElement('div');
+    empty.className = 'player-pill empty';
+    empty.textContent = 'Waiting for a player…';
+    playersEl.appendChild(empty);
+  }
+
+  seenPlayers = new Set(state.players.map(p => p.id));
 }
 
 
@@ -101,7 +118,7 @@ function render() {
 // duplicated everyone after a reconnect.
 function setPlayers(players, leaderId) {
   isLeader = leaderId === myId;
-  state.players = players.map(p => ({ id: p.id, name: p.name, isYou: p.id === myId, isLeader: p.id === leaderId, level: p.level }));
+  state.players = players.map(p => ({ id: p.id, name: p.name, isYou: p.id === myId, isLeader: p.id === leaderId, level: p.level, points: p.points }));
   state.players.sort((a, b) => b.isYou - a.isYou);
 }
 
@@ -137,7 +154,13 @@ function getRoomCodeFromUrl() {
 
 const roomCode = getRoomCodeFromUrl();
 if (roomCode) {
-  roomCodeEl.innerText = roomCode;
+  [...roomCode].forEach(letter => {
+    const tile = document.createElement('span');
+    tile.className = 'tile';
+    tile.textContent = letter;
+    roomCodeEl.appendChild(tile);
+  });
+  roomCodeEl.setAttribute('aria-label', `Room code ${roomCode}`);
 } else {
   window.location.href = "/";
 }
@@ -149,23 +172,39 @@ readyBtn.addEventListener('click', () => {
   if (!isLeader) return;
 
   if (state.players.length < 2) {
-    waitingEl.innerText = "Waiting for players to join";
-    waitingEl.style.display = "block";
-    readyBtn.textContent = "Start";
-    readyBtn.classList.remove('ready');
-  } else {
-    if (readyBtn.classList.contains('ready')) {
-      readyBtn.textContent = 'Start';
-      waitingEl.style.display = "none";
-      readyBtn.classList.remove('ready');
-      socket.emit('cancel-start', state.roomCode);
-    } else {
-      readyBtn.textContent = 'Starting.. ✔';
-      readyBtn.classList.add('ready');
-      waitingEl.innerText = "Starting game";
-      waitingEl.style.display = "block";
-      socket.emit('starting-game', state.roomCode);
+    waitingEl.textContent = "You need at least 2 players to start.";
+    waitingEl.classList.remove('shake');
+    void waitingEl.offsetWidth;
+    waitingEl.classList.add('shake');
+    return;
+  }
+
+  readyBtn.disabled = true;
+  socket.emit('starting-game', state.roomCode);
+  // If the server didn't start it (e.g. you stopped being leader), let the button work again
+  setTimeout(() => { if (!state.started) readyBtn.disabled = false; }, 2000);
+});
+
+cancelStartBtn.addEventListener('click', () => {
+  socket.emit('cancel-start', state.roomCode);
+});
+
+// Phones get the share sheet; everywhere else the link is copied
+inviteBtn.addEventListener('click', async () => {
+  const url = `${window.location.origin}/game/${state.roomCode}`;
+  if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+    try {
+      await navigator.share({ title: 'Anagram Jam', text: `Join my Anagram Jam room: ${state.roomCode}`, url });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // closed the share sheet
     }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showAlert('Invite link copied. Send it to your friends!', 'success');
+  } catch {
+    showAlert(`Share this link: ${url}`, 'info');
   }
 });
 
@@ -202,6 +241,7 @@ socket.on('new-player', (roomCode, playerName, playerId, all_players, leaderId) 
   setPlayers(all_players, leaderId);
 
   showAlert(`${playerName} joined the room`, 'success');
+  sfx.join();
 
   console.log(state.players);
   render();
@@ -217,8 +257,7 @@ socket.on('get-others-in-room', (others, leaderId, gameStarted) => {
   if (gameStarted && inGame && inGame.roomCode === state.roomCode) {
     // Reloaded or reconnected mid-game - pick up where you left off
     state.started = true;
-    waitingEl.innerText = "Game in progress, joining...";
-    waitingEl.style.display = "block";
+    waitingEl.textContent = "Game in progress, joining…";
     socket.emit('rejoin-game', state.roomCode, myId);
   } else {
     state.inProgress = gameStarted;
@@ -229,37 +268,59 @@ socket.on('get-others-in-room', (others, leaderId, gameStarted) => {
 
 
 
+function showCountdown() {
+  countdownEl.hidden = false;
+  cancelStartBtn.hidden = !isLeader;
+
+  const show = (text) => {
+    countNumEl.textContent = text;
+    countNumEl.classList.remove('tick');
+    void countNumEl.offsetWidth; // restart the animation
+    countNumEl.classList.add('tick');
+  };
+
+  let count = 3;
+  show(count);
+  sfx.beep();
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    count--;
+    if (count > 0) {
+      show(count);
+      sfx.beep();
+    } else {
+      show('GO!');
+      sfx.go();
+      cancelStartBtn.hidden = true; // too late to cancel now
+      clearInterval(countdownTimer);
+    }
+  }, 1000);
+}
+
+function hideCountdown() {
+  clearInterval(countdownTimer);
+  countdownEl.hidden = true;
+}
 
 
 
 // The server sends the words (see game.js 'gameWords') when this countdown finishes
 socket.on('game-starting', () => {
   leaveBtn.disabled = true;
-  showAlert("Game is starting!", 'success');
+  readyBtn.disabled = true;
 
   state.started = true;
-
-  let count = 3;
-  waitingEl.innerText = "Starting game in 3";
-  waitingEl.style.display = "block";
-  clearInterval(countdownTimer);
-  countdownTimer = setInterval(() => {
-    count--;
-    waitingEl.innerText = count > 0 ? `Starting game in ${count}` : "Starting game now!";
-    if (count === 0) clearInterval(countdownTimer);
-  }, 1000);
+  showCountdown();
 });
 
 
 
 socket.on('start-canceled', () => {
   leaveBtn.disabled = false;
+  readyBtn.disabled = false;
+  hideCountdown();
   showAlert("Game start canceled", 'warning');
 
   state.started = false;
-  clearInterval(countdownTimer);
-
-  readyBtn.textContent = "Start";
-  readyBtn.classList.remove('ready');
   render();
 });

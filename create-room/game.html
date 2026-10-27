@@ -2,26 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#764ba2">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#232526">
   <meta name="description" content="Test your word skills and compete with friends!">
   <title>Game Lobby</title>
-  
+
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="/icon-192.png">
-  
+
   <!-- PWA Manifest -->
   <link rel="manifest" href="/manifest.json">
-  
+
   <!-- Apple Touch Icon -->
   <link rel="apple-touch-icon" href="/icon-192.png">
-  
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/shared/theme.css">
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/game-state.css">
-  <link rel="stylesheet" href="css/win-condition.css">
 
+  <script defer src="/shared/toast.js"></script>
+  <script defer src="/shared/sfx.js"></script>
+  <script defer src="/shared/players.js"></script>
   <script defer src="js/lobby.js"></script>
-  <script defer src="js/alert.js"></script>
   <script defer src="js/timer.js"></script>
   <script defer src="js/game.js"></script>
   <script defer src="js/audio.js"></script>
@@ -29,7 +35,7 @@
   <script defer src="js/keyboard.js"></script>
 
   <script src="/socket.io/socket.io.js"></script>
-  
+
   <!-- Service Worker Registration -->
   <script>
     if ('serviceWorker' in navigator) {
@@ -46,21 +52,14 @@
   </script>
 
 </head>
-<body>
+<body class="lobby">
 
   <audio id="backgroundMusic" src="/music/anagram-jam-background-music.mp3" autoplay loop muted></audio>
   <audio id="gameMusic" src="/music/what you in joined sample.mp3" loop muted></audio>
 
+  <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
-  <div class="alert" id="alert">
-    <div class="alert-content">
-      <span class="alert-icon" id="alertIcon">⚠️</span>
-      <span class="alert-message" id="alertMessage">Something went wrong!</span>
-      <button class="alert-close" id="alertClose">&times;</button>
-    </div>
-  </div>
-
-  <div class="mute" id="mute-button">🔊</div>
+  <button class="icon-btn mute" id="mute-button" type="button" aria-label="Mute sound" aria-pressed="false">🔊</button>
 
   <div class="lobby-wrapper" id="lobbyWrapper">
     <div class="floating-shapes">
@@ -68,19 +67,26 @@
       <div class="shape"></div>
       <div class="shape"></div>
     </div>
-    <button id="leave" type="button">Leave</button>
-    <p id="waiting">Waiting for others</p>
-    <div class="lobby">
-      <div class="topbar">
-        <div class="room-code">
-          <span class="room-code-label">ROOM CODE</span>
-          <span class="room-code-value" id="roomCode"></span>
-        </div>
-        <button id="readyBtn" class="ready-button" type="button">Start</button>
-      </div>
+    <button id="leave" class="btn btn-danger btn-sm" type="button">Leave</button>
 
+    <header class="lobby-head">
+      <p class="eyebrow" id="lobbyEyebrow">Lobby</p>
+      <div class="code-tiles" id="roomCode" aria-label="Room code"></div>
+      <button class="btn btn-glass btn-sm" id="inviteBtn" type="button">⧉ Copy invite link</button>
+    </header>
+
+    <div class="lobby-card card">
+      <p class="status" id="waiting" role="status">Connecting…</p>
       <div class="players" id="players"></div>
+      <button id="readyBtn" class="btn btn-go" type="button" hidden>Start game</button>
     </div>
+  </div>
+
+  <!-- 3-2-1 before each game. The server sends the words when it finishes. -->
+  <div class="countdown" id="countdown" hidden>
+    <p class="eyebrow">Get ready</p>
+    <div class="count-num" id="countNum">3</div>
+    <button class="btn btn-glass" id="cancelStart" type="button" hidden>Cancel</button>
   </div>
 
 
@@ -93,12 +99,25 @@
 
     <div class="game-ui">
       <header class="game-header">
-        <div class="leader">Leader: <span id="currentLeader">—</span></div>
-        <div class="timer" id="gameTimer">00:00</div>
+        <div class="leader" id="leaderPill"><span id="currentLeader">First to 10 wins</span></div>
+        <div class="timer" id="gameTimer" role="timer" aria-label="Seconds left">
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <circle class="track" cx="24" cy="24" r="21"></circle>
+            <circle class="bar" id="timerBar" cx="24" cy="24" r="21"></circle>
+          </svg>
+          <span id="timerText">30</span>
+        </div>
       </header>
 
+      <section class="standing" aria-labelledby="standingTitle">
+        <h2 id="standingTitle">Standings</h2>
+        <ul class="standing-list" id="standingList">
+          <!-- Player standings will be dynamically added here -->
+        </ul>
+      </section>
+
       <main class="game-content">
-        <p id="pointsDisplay">Points: 0</p>
+        <p class="progress"><span id="levelLabel">Word 1 of 10</span> · <span id="pointsDisplay">0 pts</span></p>
         <div class="powerups">
           <div class="powerup" id="powerupHint" title="Hint (3 available)">
             <span class="powerup-icon">💡</span>
@@ -110,57 +129,15 @@
           </div>
         </div>
 
-        <div class="word-display">
-          <div class="anagram" id="anagramDisplay"></div>
-          <div class="shuffle" id="shuffleBtn">🔄</div>
-        </div>
+        <div class="answer-slots" id="answerSlots" aria-label="Your answer"></div>
+        <p class="feedback" id="feedback" aria-live="polite"></p>
+        <div class="letter-tiles" id="anagramDisplay" aria-label="Scrambled letters"></div>
 
-        <div class="answer-input-container">
-          <input class="answer-input" id="answerInput" oninput="this.value = this.value.replace(/[^A-Za-z]/g, '')" type="text" placeholder="Type your answer" autocomplete="off" disabled>
-          <div class="keyboard">
-            <div class="keyboard-row">
-              <button class="key" data-key="Q">Q</button>
-              <button class="key" data-key="W">W</button>
-              <button class="key" data-key="E">E</button>
-              <button class="key" data-key="R">R</button>
-              <button class="key" data-key="T">T</button>
-              <button class="key" data-key="Y">Y</button>
-              <button class="key" data-key="U">U</button>
-              <button class="key" data-key="I">I</button>
-              <button class="key" data-key="O">O</button>
-              <button class="key" data-key="P">P</button>
-            </div>
-            <div class="keyboard-row">
-              <button class="key" data-key="A">A</button>
-              <button class="key" data-key="S">S</button>
-              <button class="key" data-key="D">D</button>
-              <button class="key" data-key="F">F</button>
-              <button class="key" data-key="G">G</button>
-              <button class="key" data-key="H">H</button>
-              <button class="key" data-key="J">J</button>
-              <button class="key" data-key="K">K</button>
-              <button class="key" data-key="L">L</button>
-            </div>
-            <div class="keyboard-row">
-              <button class="key key-wide" data-key="BACKSPACE">⌫</button>
-              <button class="key" data-key="Z">Z</button>
-              <button class="key" data-key="X">X</button>
-              <button class="key" data-key="C">C</button>
-              <button class="key" data-key="V">V</button>
-              <button class="key" data-key="B">B</button>
-              <button class="key" data-key="N">N</button>
-              <button class="key" data-key="M">M</button>
-              <button class="key key-wide" data-key="ENTER">ENTER</button>
-            </div>
-          </div>
+        <div class="word-actions">
+          <button class="icon-btn" id="undoBtn" type="button" aria-label="Remove last letter" title="Remove last letter (Backspace)">⌫</button>
+          <button class="icon-btn" id="shuffleBtn" type="button" aria-label="Shuffle letters" title="Shuffle (Space)">🔄</button>
         </div>
-
-        <div class="standing">
-          <h2>Current Standings</h2>
-          <ul class="standing-list" id="standingList">
-            <!-- Player standings will be dynamically added here -->
-          </ul>
-        </div>
+        <p class="hint">Tap the letters in order, or type them.</p>
 
         <aside class="levels" aria-label="Levels">
           <ul class="level-list">
@@ -177,25 +154,6 @@
           </ul>
         </aside>
       </main>
-    </div>
-  </div>
-
-  <!-- Floating particles for win screen -->
-  <div class="particle"></div>
-  <div class="particle"></div>
-  <div class="particle"></div>
-  <div class="particle"></div>
-  <div class="particle"></div>
-  <div class="particle"></div>
-
-  <div class="game-over" id="gameOverScreen">
-    <div class="game-over-element">
-      <h1>Game Over!</h1>
-      <div class="winner">
-        <h2 id="winnerName">Player Name</h2>
-      </div>
-      <p id="winner-tag">... won the game!</p>
-      <button class="back-to-lobby" id="backToLobby">Back to Lobby</button>
     </div>
   </div>
 

@@ -2,29 +2,33 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#764ba2">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#232526">
   <meta name="description" content="Test your word skills and compete with friends!">
   <title>Anagram Jam</title>
-  
+
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="/icon-192.png">
-  
+
   <!-- PWA Manifest -->
   <link rel="manifest" href="/manifest.json">
-  
+
   <!-- Apple Touch Icon -->
   <link rel="apple-touch-icon" href="/icon-192.png">
-  
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
   <script src="/socket.io/socket.io.js"></script>
 
+  <link rel="stylesheet" href="/shared/theme.css">
   <link rel="stylesheet" href="styles.css">
 
+  <script src="/shared/toast.js" defer></script>
   <script src="script.js" defer></script>
-  
-  
+
+
   <!-- Service Worker Registration -->
   <script>
     if ('serviceWorker' in navigator) {
@@ -40,73 +44,65 @@
     }
   </script>
 </head>
-<body>
-  <div class="floating-shapes">
-    <div class="shape"></div>
-    <div class="shape"></div>
-    <div class="shape"></div>
-  </div>
+<body class="home">
+  <!-- Letter tiles drifting up behind everything (filled in by script.js) -->
+  <div class="drift" id="drift" aria-hidden="true"></div>
 
-  <!-- Error Alert -->
-  <div class="error-alert" id="errorAlert">
-    <div class="error-content">
-      <span class="error-icon">⚠️</span>
-      <span class="error-message" id="errorMessage">Something went wrong!</span>
-      <button class="error-close" id="errorClose">&times;</button>
-    </div>
-  </div>
+  <main class="home-layout">
+    <section class="hero">
+      <p class="eyebrow">Word party game</p>
+      <h1 class="title-tiles" aria-label="Anagram Jam">
+        <span class="tile-row" data-word="ANAGRAM" aria-hidden="true"></span>
+        <span class="tile-row jam" data-word="JAM" aria-hidden="true"></span>
+      </h1>
+      <p class="tagline">Race your friends to unscramble 10 words.</p>
 
-  <div class="container">
-    <h1 class="logo">🧩 Anagram Jam</h1>
-    <p class="subtitle">Test your word skills and compete with friends!</p>
-    
-    <div class="input-group">
-      <label class="input-label" for="playerName">What's your name?</label>
-      <input 
-        type="text" 
-        id="playerName" 
-        class="name-input" 
-        placeholder="Enter your name..."
-        maxlength="20"
-      >
-    </div>
+      <p class="live" id="liveStats" hidden><i></i><span id="liveText"></span></p>
 
-    <div class="input-group">
-      <label class="input-label" for="roomCode">Room Code:</label>
-      <input 
-        type="text" 
-        id="roomCode" 
-        class="room-code-input" 
-        placeholder="Enter a room code..."
-        maxlength="5"
-        autocomplete="off"
-      >
-    </div>
+      <!-- Attract-mode round that plays by itself -->
+      <div class="demo" aria-hidden="true">
+        <span class="demo-who" id="demoWho">Demo round</span>
+        <div class="demo-tiles" id="demoTiles"></div>
+        <div class="demo-slots" id="demoSlots"></div>
+        <p class="demo-result" id="demoResult"></p>
+      </div>
+    </section>
 
-    <div class="game-modes">
-      <button class="mode-button friends-mode" data-mode="friends">
-        <span class="mode-icon">👥</span>
-        <div class="mode-title">Join a Room</div>
-        <div class="mode-desc">Join a room your friends have created</div>
-      </button>
-      
-      <button class="mode-button create-mode" data-mode="create">
-        <span class="mode-icon">➕</span>
-        <div class="mode-title">Create a Room</div>
-        <div class="mode-desc">Create a room and invite others</div>
-      </button>
-    </div>
+    <section class="start">
+      <form class="card start-card" id="startForm" novalidate>
+        <label class="field-label" for="playerName">Your name</label>
+        <input
+          type="text"
+          id="playerName"
+          class="field"
+          placeholder="Enter your name"
+          maxlength="20"
+          autocomplete="nickname"
+          enterkeyhint="go"
+        >
 
-    <button class="mode-button solo-mode" id="soloModeButton" data-mode="solo" style="color:white; background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); width: 100%; margin-top: 15px;">
-      <span class="mode-icon">🎮</span>
-      <div class="mode-title">Solo Mode <i>(Coming soon!)</i></div>
-      <div class="mode-desc">Play against a timer and improve your skills</div>
-    </button>
+        <div class="mode" id="chooseMode">
+          <button class="btn btn-primary" type="submit" id="createBtn">Create a room</button>
+          <button class="btn btn-ghost" type="button" id="showJoinBtn">Join with a code</button>
+        </div>
 
-    <!-- <button class="start-button" id="startButton" disabled>
-      Let's Play! 🚀
-    </button> -->
-  </div>
+        <div class="mode" id="joinMode" hidden>
+          <span class="field-label" id="codeLabel">Room code</span>
+          <div class="code-boxes" id="codeBoxes" role="group" aria-labelledby="codeLabel">
+            <input class="code-box" type="text" aria-label="Letter 1 of 5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <input class="code-box" type="text" aria-label="Letter 2 of 5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <input class="code-box" type="text" aria-label="Letter 3 of 5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <input class="code-box" type="text" aria-label="Letter 4 of 5" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <input class="code-box" type="text" aria-label="Letter 5 of 5" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go">
+          </div>
+          <button class="btn btn-primary" type="submit" id="joinBtn">Join room</button>
+          <button class="link-btn" type="button" id="backBtn">Create a room instead</button>
+        </div>
+      </form>
+
+      <button class="soon" type="button" id="soloBtn">Solo mode <span>Soon</span></button>
+    </section>
+  </main>
 
 </body>
 </html>

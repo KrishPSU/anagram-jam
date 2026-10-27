@@ -1,0 +1,209 @@
+/* Results screen. Colors, buttons and the backdrop come from /shared/theme.css. */
+
+.results {
+  max-width: 980px;
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+  padding: calc(28px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(32px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+
+@media (min-width: 860px) {
+  .results {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+    column-gap: 24px;
+  }
+
+  .winner-card {
+    grid-row: span 2;
+    position: sticky;
+    top: 28px;
+  }
+}
+
+.winner-card, .panel {
+  min-width: 0;
+  border-radius: 20px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.winner-card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 26px 20px 24px;
+  text-align: center;
+  animation: popIn 0.6s ease-out;
+}
+
+.winner {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(52vw, 210px);
+  aspect-ratio: 1 / 1;
+  padding: 22px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffd700, #ffed4e, #ffd700);
+  color: #2c3e50;
+  font-weight: 800;
+  font-size: clamp(22px, 6vw, 30px);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.5), 0 0 60px rgba(255, 215, 0, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.3);
+  animation: winnerGlow 2s ease-in-out infinite;
+}
+
+/* Only the shine turns - the name stays upright */
+.winner::before {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  background: conic-gradient(transparent, rgba(255, 255, 255, 0.35), transparent 35%);
+  animation: winnerShine 3s linear infinite;
+}
+
+.winner span { position: relative; }
+
+@keyframes winnerGlow {
+  50% { box-shadow: 0 0 40px rgba(255, 215, 0, 0.8), 0 0 80px rgba(255, 215, 0, 0.5), inset 0 0 30px rgba(255, 255, 255, 0.5); }
+}
+
+@keyframes winnerShine {
+  to { transform: rotate(360deg); }
+}
+
+.winner-card h1 {
+  margin: 0;
+  font-weight: 900;
+  font-size: clamp(30px, 8vw, 44px);
+  line-height: 1.05;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.winner-tag {
+  margin: 0;
+  font-size: 16px;
+  color: var(--on-dark-muted);
+}
+
+.end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.end-actions .btn { min-width: 140px; }
+
+.panel {
+  padding: 18px 18px 8px;
+}
+
+.panel h2 {
+  margin: 0 0 6px;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--on-dark-muted);
+}
+
+.panel-note {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.ranking, .word-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rank-row:last-child, .word-row:last-child { border-bottom: 0; }
+.rank-row.you { font-weight: 800; }
+
+.rank-row .place {
+  width: 26px;
+  flex: none;
+  text-align: center;
+  font-weight: 800;
+}
+
+.rank-row .name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rank-row .stats {
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--on-dark-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.word-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.word-row .word {
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: 0.08em;
+}
+
+.word-row .scramble {
+  grid-column: 1;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--on-dark-muted);
+}
+
+.word-row .first {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  text-align: right;
+  font-size: 14px;
+  color: var(--on-dark-muted);
+}
+
+.word-row .first.none { opacity: 0.6; }
+
+.empty-note {
+  padding: 10px 0 14px;
+  color: var(--on-dark-muted);
+}
+
+.confetti {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 50;
+  pointer-events: none;
+}

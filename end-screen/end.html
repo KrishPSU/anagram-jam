@@ -2,44 +2,55 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Game Over</title>
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#232526">
+  <title>Results | Anagram Jam</title>
+
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="/icon-192.png">
 
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
   <script src="/socket.io/socket.io.js"></script>
 
-  <link rel="stylesheet" href="/end-screen/win-condition.css">
+  <link rel="stylesheet" href="/shared/theme.css">
+  <link rel="stylesheet" href="/end-screen/end.css">
+  <script src="/shared/sfx.js" defer></script>
+  <script src="/shared/players.js" defer></script>
   <script src="/end-screen/end.js" defer></script>
 
 </head>
-<body>
-  <!-- Floating particles -->
-  <div class="particle"></div>
-  <div class="particle"></div>
-  <div class="particle"></div>
-  <div class="particle"></div>
-  <div class="particle"></div>
-  <div class="particle"></div>
-  
-  <div class="game-over" id="gameOverScreen">
-    <div class="game-over-element">
-      <h1>Game Over!</h1>
-      <div class="winner">
-        <h2 id="winnerName">Player Name</h2>
-      </div>
-      <p id="winner-tag">... won the game!</p>
-      <button class="back-to-lobby" id="backToLobby">Back to Lobby</button>
-    </div>
-  </div>
+<body class="end">
+  <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
 
-  <div id="final_game_words">
-    <h1>Game Words</h1>
-    <div id="words">
-      <!-- Words will be populated here -->
-    </div>
-  </div>
+  <main class="results">
+    <section class="winner-card" aria-labelledby="winnerTitle">
+      <p class="eyebrow" id="roomLabel">Results</p>
+      <div class="winner"><span id="winnerName">Player Name</span></div>
+      <h1 id="winnerTitle">Game over</h1>
+      <p class="winner-tag" id="winner-tag"></p>
+      <div class="end-actions">
+        <button class="btn btn-go" id="backToLobby" type="button">Play again</button>
+        <a class="btn btn-glass" href="/">Home</a>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="rankingTitle">
+      <h2 id="rankingTitle">Final standings</h2>
+      <ol class="ranking" id="ranking"></ol>
+    </section>
+
+    <section class="panel" aria-labelledby="wordsTitle">
+      <h2 id="wordsTitle">The words</h2>
+      <p class="panel-note">Each answer, its scramble, and who solved it first.</p>
+      <ol class="word-list" id="words">
+        <!-- Words will be populated here -->
+      </ol>
+    </section>
+  </main>
 
 </body>
 </html>

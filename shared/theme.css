@@ -1,0 +1,283 @@
+/* Anagram Jam theme - shared by every page.
+   Each page sets its glow tint with a class on <body>: home, lobby, game or end.
+   Same materials everywhere (backdrop, cards, tiles, font), a different mood per screen. */
+
+:root {
+  --bg-1: #232526;
+  --bg-2: #414345;
+  --glow-a: rgba(120, 119, 198, 0.34);
+  --glow-b: rgba(255, 119, 198, 0.26);
+  --glow-c: rgba(120, 219, 255, 0.34);
+
+  --on-dark: #ffffff;
+  --on-dark-muted: rgba(255, 255, 255, 0.72);
+  --glass: rgba(255, 255, 255, 0.12);
+  --glass-line: rgba(255, 255, 255, 0.22);
+  --panel: rgba(20, 18, 28, 0.45);
+
+  --card: rgba(255, 255, 255, 0.96);
+  --ink: #111827;
+  --ink-muted: #6b7280;
+  --field: #f3f4f6;
+  --field-line: #e5e7eb;
+  --you: #4338ca;
+  --you-bg: #e0e7ff;
+
+  --tile: #ffffff;
+  --tile-size: 44px;
+  --jam: #ff5fa8;
+  --jam-deep: #e0457f;
+  --go: #10b981;
+  --go-deep: #059669;
+  --go-light: #34d399;
+  --bad: #ef4444;
+
+  --radius-card: 16px;
+  --radius-tile: 10px;
+  --shadow-card: 0 20px 40px rgba(0, 0, 0, 0.28);
+  --shadow-tile: 0 3px 0 rgba(0, 0, 0, 0.28), 0 10px 18px -6px rgba(0, 0, 0, 0.45);
+  --font: "Rubik", "Arial Rounded MT Bold", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --toast-top: 16px;
+}
+
+body.home { --glow-a: rgba(255, 95, 168, 0.40); --glow-b: rgba(255, 170, 90, 0.30); --glow-c: rgba(120, 119, 198, 0.34); }
+body.lobby { --toast-top: 64px; }
+body.game { --glow-a: rgba(124, 108, 240, 0.36); --glow-b: rgba(255, 119, 198, 0.16); --glow-c: rgba(80, 160, 255, 0.30); --toast-top: 76px; }
+body.end { --glow-a: rgba(255, 196, 70, 0.28); --glow-b: rgba(255, 95, 168, 0.30); --glow-c: rgba(120, 119, 198, 0.30); }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  min-height: 100%;
+  background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%) fixed;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  font-family: var(--font);
+  color: var(--on-dark);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Drifting color glows. Oversized so the layer's edge never slides into view. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 50%, var(--glow-a), transparent 50%),
+    radial-gradient(circle at 80% 20%, var(--glow-b), transparent 50%),
+    radial-gradient(circle at 40% 80%, var(--glow-c), transparent 50%);
+  animation: glowDrift 12s ease-in-out infinite;
+}
+
+@keyframes glowDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-3%, -2%) scale(1.05); }
+  50% { transform: translate(2%, -3%) scale(0.97); }
+  75% { transform: translate(-2%, 2%) scale(1.03); }
+}
+
+button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }
+
+.eyebrow {
+  margin: 0;
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--on-dark-muted);
+}
+
+/* Letter tile - the game's signature shape, used for the logo, the words and the room code */
+.tile {
+  display: inline-grid;
+  place-items: center;
+  width: var(--tile-size);
+  height: calc(var(--tile-size) * 1.15);
+  border: 0;
+  border-radius: var(--radius-tile);
+  background: var(--tile);
+  color: var(--ink);
+  font: 900 calc(var(--tile-size) * 0.56) / 1 var(--font);
+  box-shadow: var(--shadow-tile);
+  user-select: none;
+}
+.tile.jam { background: var(--jam); color: #fff; }
+
+.card {
+  background: var(--card);
+  color: var(--ink);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  height: 48px;
+  padding: 0 20px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 16px;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+.btn-sm { height: 36px; padding: 0 14px; font-size: 14px; border-radius: 10px; }
+.btn-primary { background: linear-gradient(135deg, var(--jam), var(--jam-deep)); color: #fff; box-shadow: 0 10px 20px -10px var(--jam-deep); }
+.btn-go { background: linear-gradient(135deg, var(--go), var(--go-deep)); color: #fff; box-shadow: 0 10px 20px -10px var(--go-deep); }
+.btn-ghost { background: #fff; color: var(--ink); border: 2px solid var(--field-line); }
+.btn-glass { background: var(--glass); color: #fff; border: 1px solid var(--glass-line); }
+.btn-danger { background: rgba(225, 29, 72, 0.88); color: #fff; }
+
+.icon-btn {
+  appearance: none;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.24);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.icon-btn:hover { background: rgba(0, 0, 0, 0.34); }
+.icon-btn:active { transform: scale(0.94); }
+
+/* Player avatar: their initial on a color picked from their name */
+.avatar {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* Toasts (shared/toast.js) */
+.toast-stack {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--toast-top) + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: min(92vw, 420px);
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 14px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.3;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.toast.show { opacity: 1; transform: none; pointer-events: auto; }
+.toast.error { background: linear-gradient(135deg, #e11d48, #be123c); }
+.toast.warning { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #2b1700; }
+.toast.success { background: linear-gradient(135deg, #059669, #047857); }
+.toast.info { background: rgba(30, 27, 46, 0.94); border: 1px solid var(--glass-line); }
+.toast .toast-text { flex: 1; }
+.toast .toast-close {
+  appearance: none;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.toast .toast-close:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* Little twinkling dots, spread across the screen */
+.sparkles { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.sparkles i {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  animation: sparkle 6s ease-in-out infinite;
+}
+.sparkles i:nth-child(1) { top: 20%; left: 10%; animation-delay: 0s; }
+.sparkles i:nth-child(2) { top: 60%; left: 80%; animation-delay: 1s; }
+.sparkles i:nth-child(3) { top: 30%; left: 70%; animation-delay: 2s; }
+.sparkles i:nth-child(4) { top: 80%; left: 20%; animation-delay: 3s; }
+.sparkles i:nth-child(5) { top: 10%; left: 60%; animation-delay: 4s; }
+.sparkles i:nth-child(6) { top: 70%; left: 50%; animation-delay: 5s; }
+@keyframes sparkle {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+  25% { transform: translate(10px, -20px) scale(1.2); opacity: 1; }
+  50% { transform: translate(-15px, -10px) scale(0.8); opacity: 0.8; }
+  75% { transform: translate(5px, -30px) scale(1.1); opacity: 0.9; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(7px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(3px); }
+}
+.shake { animation: shake 0.4s ease; }
+
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.94); }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Players who turn off motion in their OS settings get a still screen */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
