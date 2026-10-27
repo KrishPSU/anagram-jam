@@ -417,6 +417,7 @@ function roundFor(room, progress, secondsLeft) {
   return {
     round: room.round.id,
     words: room.round.words.jumbled,
+    hashes: room.round.words.regular.map(wordHash),
     level: progress.level,
     points: progress.points,
     skipped: progress.skipped,
@@ -502,7 +503,7 @@ async function beginRound(roomCode, token, socket) {
   if (started) {
     console.log(`Words for room ${roomCode}:`, started.words.regular);
     // Everyone gets it, but only the players in the round play it - the rest stay in the lobby
-    io.to(roomCode).emit('gameWords', { round: token, roster: started.roster, words: started.words.jumbled, level: 0, points: 0, skipped: [], secondsLeft: LEVEL_SECONDS });
+    io.to(roomCode).emit('gameWords', { round: token, roster: started.roster, words: started.words.jumbled, hashes: started.words.regular.map(wordHash), level: 0, points: 0, skipped: [], secondsLeft: LEVEL_SECONDS });
   }
   return reply;
 }
@@ -937,6 +938,14 @@ function jumbleWord(word) {
   }
 
   return jumbled;
+}
+
+// A stand-in for a word, so the page can tell its shuffle button never to lay the tiles out as the answer
+// without being sent the answer itself. Same as wordHash in create-room/js/game.js (32-bit FNV-1a).
+function wordHash(word) {
+  let hash = 0x811c9dc5;
+  for (const letter of word.toLowerCase()) hash = Math.imul(hash ^ letter.charCodeAt(0), 0x01000193);
+  return hash >>> 0;
 }
 
 // Function to take the selected words and return an array of jumbled words

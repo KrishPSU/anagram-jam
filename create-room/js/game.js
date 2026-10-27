@@ -18,6 +18,7 @@ const TIMER_RING = 2 * Math.PI * 21; // circumference of the timer ring in game.
 let roundId = null; // the round on screen
 let currentLevel = 0;
 let currentWords = [];
+let currentHashes = []; // wordHash of each word's answer, so a shuffle never spells it out
 let points = 0;
 let roundEnding = false; // someone got through every word: the round stops for everyone (see 'round-over')
 let finishWatch;         // after you get through every word, until the round's results arrive
@@ -99,6 +100,7 @@ function startRound(round) {
   hideCountdown();
   roundId = round.round;
   currentWords = round.words;
+  currentHashes = round.hashes || [];
   roundEnding = false;
   showProgress(round);
   showView('game');
@@ -144,6 +146,7 @@ function stopRound() {
   clearInterval(finishWatch);
   roundId = null;
   currentWords = [];
+  currentHashes = [];
   currentLevel = 0;
   roundEnding = false;
   submitting = false;
@@ -466,15 +469,28 @@ function roundOver(results) {
 
 
 
+// Same as wordHash in index.js (32-bit FNV-1a)
+function wordHash(word) {
+  let hash = 0x811c9dc5;
+  for (const letter of word.toLowerCase()) hash = Math.imul(hash ^ letter.charCodeAt(0), 0x01000193);
+  return hash >>> 0;
+}
+
 function shuffleTiles() {
   if (!isPlaying() || locked) return;
-  const current = order.map(i => tiles[i].letter).join('');
+  const spell = (o) => o.map(i => tiles[i].letter).join('');
+  const current = spell(order);
+  const answer = currentHashes[currentLevel];
+  const isAnswer = (o) => answer !== undefined && wordHash(spell(o)) === answer;
   let next = order;
-  // Re-roll so the button never looks like it did nothing (happens a lot with 3-letter words)
-  for (let tries = 0; tries < 10; tries++) {
+  // Re-roll so the button never looks like it did nothing (happens a lot with 3-letter words),
+  // and never hands over the answer
+  for (let tries = 0; tries < 20; tries++) {
     next = [...order].sort(() => 0.5 - Math.random());
-    if (next.map(i => tiles[i].letter).join('') !== current) break;
+    if (spell(next) !== current && !isAnswer(next)) break;
   }
+  // Out of tries: staying put is better than showing the answer (the order on screen never spells it)
+  if (isAnswer(next)) next = order;
   order = next;
   tilesEl.replaceChildren(...order.map(i => tiles[i].el));
 }
