@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/game-state.css">
 
+  <script defer src="/shared/socket.js"></script>
   <script defer src="/shared/toast.js"></script>
   <script defer src="/shared/sfx.js"></script>
   <script defer src="/shared/players.js"></script>
@@ -76,7 +77,8 @@
     </header>
 
     <div class="lobby-card card">
-      <p class="status" id="waiting" role="status">Connecting…</p>
+      <!-- The spinner goes away on its own: the first status update replaces everything in here -->
+      <p class="status" id="waiting" role="status"><span class="spinner" aria-hidden="true"></span>Connecting…</p>
       <div class="players" id="players"></div>
       <button id="readyBtn" class="btn btn-go" type="button" hidden>Start game</button>
     </div>

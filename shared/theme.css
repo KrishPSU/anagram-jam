@@ -146,6 +146,24 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
 .btn-glass { background: var(--glass); color: #fff; border: 1px solid var(--glass-line); }
 .btn-danger { background: rgba(225, 29, 72, 0.88); color: #fff; }
 
+/* Loading spinner: a ring in the surrounding text color, sized with the text */
+.spinner {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+  border: 0.16em solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* A button shows its spinner only while it waits on the server, and stays fully opaque so the spinner is easy to see */
+.btn .spinner { display: none; }
+.btn.is-loading .spinner { display: inline-block; }
+.btn.is-loading:disabled { opacity: 1; cursor: progress; }
+
 .icon-btn {
   appearance: none;
   width: 44px;
@@ -279,5 +297,11 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* A frozen spinner says nothing, so keep it turning - just slower */
+  .spinner {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
   }
 }

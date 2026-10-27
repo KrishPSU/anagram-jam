@@ -1,4 +1,4 @@
-const socket = io();
+const socket = connectSocket();
 
 const playerCountEl = document.getElementById('player_count_el');
 const activeGameEl = document.getElementById('active_game_count_el');

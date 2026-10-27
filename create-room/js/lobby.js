@@ -4,7 +4,7 @@ if (!localStorage.getItem('name')) {
   window.location.replace(code ? '/?room=' + code : '/');
 }
 
-const socket = io();
+const socket = connectSocket();
 
 
 let isLeader = false;
@@ -191,7 +191,7 @@ cancelStartBtn.addEventListener('click', () => {
 
 // Phones get the share sheet; everywhere else the link is copied
 inviteBtn.addEventListener('click', async () => {
-  const url = `${window.location.origin}/game/${state.roomCode}`;
+  const url = `${window.location.origin}/game/${state.roomCode}/`; // the slash saves a redirect for whoever opens it
   if (navigator.share && matchMedia('(pointer: coarse)').matches) {
     try {
       await navigator.share({ title: 'Anagram Jam', text: `Join my Anagram Jam room: ${state.roomCode}`, url });

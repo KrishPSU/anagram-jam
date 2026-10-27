@@ -1,4 +1,4 @@
-const socket = io();
+const socket = connectSocket();
 
 
 const winnerNameEl = document.getElementById('winnerName');
@@ -42,7 +42,7 @@ displayEndScreen(winnerName, winnerId === myId);
 
 
 backToLobbyBtn.addEventListener('click', () => {
-  window.location.href = "/game/" + roomCode;  // Redirect to lobby page
+  window.location.href = "/game/" + roomCode + "/";  // Redirect to lobby page
 });
 
 

@@ -218,6 +218,9 @@
   box-shadow: 0 0 0 4px rgba(255, 95, 168, 0.18);
 }
 
+/* Locked while a create/join request is waiting on the server */
+.field:disabled, .code-box:disabled { opacity: 0.6; }
+
 .mode {
   display: grid;
   gap: 10px;
@@ -257,6 +260,7 @@
   text-underline-offset: 3px;
   cursor: pointer;
 }
+.link-btn:disabled { opacity: 0.5; cursor: default; }
 
 .soon {
   display: inline-flex;

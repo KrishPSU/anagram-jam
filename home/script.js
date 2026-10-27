@@ -1,4 +1,4 @@
-const socket = io();
+const socket = connectSocket();
 
 const playerNameInput = document.getElementById('playerName');
 const startForm = document.getElementById('startForm');
@@ -11,12 +11,25 @@ const showJoinBtn = document.getElementById('showJoinBtn');
 const joinBtn = document.getElementById('joinBtn');
 const backBtn = document.getElementById('backBtn');
 const soloBtn = document.getElementById('soloBtn');
+const busyStatusEl = document.getElementById('busyStatus');
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 let mode = 'choose'; // 'choose' (Create is the main action) or 'join' (code boxes showing)
+let pending = null; // 'create' or 'join' while waiting on the server
 let busyTimeout;
+
+// A healthy server answers in well under a second; past this it isn't going to
+const REQUEST_TIMEOUT = 10000;
+
+// Everything in the form is locked while a request is out, so nothing can change under it
+const formControls = [playerNameInput, ...codeBoxes, createBtn, showJoinBtn, joinBtn, backBtn];
+
+const REQUESTS = {
+  create: { button: createBtn, idle: 'Create a room', busy: 'Creating room…' },
+  join: { button: joinBtn, idle: 'Join room', busy: 'Joining room…' },
+};
 
 playerNameInput.value = localStorage.getItem('name') || '';
 
@@ -52,13 +65,33 @@ function focusFirstEmptyBox() {
   (codeBoxes.find(box => !box.value) || codeBoxes[codeBoxes.length - 1]).focus();
 }
 
-// Waiting on the server - stop double clicks from creating two rooms
-function setBusy(busy) {
-  createBtn.disabled = busy;
-  joinBtn.disabled = busy;
+// Waiting on the server: the button that was pressed spins, and the locked form stops double
+// clicks from creating two rooms. setBusy(null) puts everything back.
+function setBusy(kind) {
+  pending = kind;
   clearTimeout(busyTimeout);
-  if (busy) busyTimeout = setTimeout(() => setBusy(false), 5000);
+
+  formControls.forEach(el => { el.disabled = !!kind; });
+  Object.entries(REQUESTS).forEach(([name, { button, idle, busy }]) => {
+    button.classList.toggle('is-loading', name === kind);
+    button.querySelector('.btn-label').textContent = name === kind ? busy : idle;
+  });
+  busyStatusEl.textContent = kind ? REQUESTS[kind].busy : '';
+
+  if (kind) busyTimeout = setTimeout(giveUp, REQUEST_TIMEOUT);
 }
+
+function giveUp() {
+  const { button } = REQUESTS[pending];
+  setBusy(null);
+  showError("Couldn't reach the server. Please try again.");
+  button.focus(); // the button was disabled, so keyboard focus was dropped
+}
+
+// Going Back from the lobby can restore this page exactly as it was left, spinner and all
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) setBusy(null);
+});
 
 // Shared game links send first-time players here with the room code filled in
 const roomFromLink = new URLSearchParams(window.location.search).get('room');
@@ -114,6 +147,7 @@ codeBoxes.forEach((box, i) => {
 // Enter in any field submits: it creates a room, or joins one when the code boxes are showing
 startForm.addEventListener('submit', (e) => {
   e.preventDefault();
+  if (pending) return;
 
   const name = playerNameInput.value.trim();
   if (!name) {
@@ -132,10 +166,10 @@ startForm.addEventListener('submit', (e) => {
       focusFirstEmptyBox();
       return;
     }
-    setBusy(true);
+    setBusy('join');
     socket.emit('joinRoom', { name: name, roomCode: code });
   } else {
-    setBusy(true);
+    setBusy('create');
     socket.emit('createRoom');
   }
 });
@@ -146,25 +180,32 @@ soloBtn.addEventListener('click', () => {
 
 
 
+// Answers that show up after we gave up waiting (see giveUp) are ignored
 socket.on('roomCreated', (roomCode) => {
+  if (pending !== 'create') return;
   openGamePage(roomCode);
   localStorage.setItem('leaderId', socket.id);
 });
 
 socket.on('roomJoined', (roomCode) => {
+  if (pending !== 'join') return;
   openGamePage(roomCode);
 });
 
 socket.on('roomNotFound', (roomCode) => {
-  setBusy(false);
+  if (pending !== 'join') return;
+  setBusy(null);
   showError("No room found with the code " + roomCode);
   shake(codeBoxesEl);
   focusFirstEmptyBox();
 });
 
 function openGamePage(roomCode) {
+  // The spinner keeps going until the lobby replaces this page - just stop the timeout
+  clearTimeout(busyTimeout);
   localStorage.setItem('name', playerNameInput.value.trim());
-  document.location.href = "/game/" + roomCode;
+  // Ending the URL in a slash skips the redirect the server would otherwise add
+  document.location.href = "/game/" + roomCode + "/";
 }
 
 
