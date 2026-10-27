@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const wordExists = require('word-exists');
 const WORDS = require('./words');
+const { createStore } = require('./store');
 
 require('dotenv').config();
 
@@ -14,6 +15,19 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// Rooms live in Redis when there is one (see store.js), otherwise in this process's memory.
+// Connecting Upstash Redis to the Vercel project sets REDIS_URL (older KV databases set KV_URL).
+const store = createStore(process.env.REDIS_URL || process.env.KV_URL);
+if (store.redis) {
+  // Broadcasts reach players connected to other server instances too. Loaded only here, like ioredis in
+  // store.js, so running without Redis never depends on these packages.
+  const { createAdapter } = require('@socket.io/redis-adapter');
+  const subClient = store.redis.duplicate();
+  subClient.on('error', (err) => console.error('Redis (adapter):', err.message));
+  io.adapter(createAdapter(store.redis, subClient));
+}
+console.log(`Rooms are kept in ${store.redis ? 'Redis' : 'memory'}`);
 
 // Start server
 server.listen(PORT || 3000, () => {
@@ -66,25 +80,17 @@ app.get('/solo', (req, res) => {
   res.sendFile(path.join(__dirname, 'solo', 'solo.html'));
 });
 
-// Drop rooms nobody has been in for too long before any of these look one up (see deleteAbandonedRooms)
-app.use(['/game', '/rooms'], (req, res, next) => {
-  deleteAbandonedRooms();
-  next();
-});
-
-app.get('/game/:roomCode', (req, res) => {
-  const roomCode = req.params.roomCode;
-  const roomExists = rooms.find(room => room.roomCode === roomCode);
-  if (roomExists) {
+app.get('/game/:roomCode', async (req, res) => {
+  const room = await findRoom(req.params.roomCode);
+  if (room) {
     res.sendFile(path.join(__dirname, 'create-room', 'game.html'));
   } else {
     res.redirect('/');
   }
 });
-app.get('/game/:roomCode/end', (req, res) => {
-  const { roomCode } = req.params;
-  const roomExists = rooms.find(r => r.roomCode === roomCode);
-  if (!roomExists) return res.redirect('/');
+app.get('/game/:roomCode/end', async (req, res) => {
+  const room = await findRoom(req.params.roomCode);
+  if (!room) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'end-screen', 'end.html'));
 });
 
@@ -92,7 +98,8 @@ app.get('/game/:roomCode/end', (req, res) => {
 app.use('/end-screen', express.static(path.join(__dirname, 'end-screen'), { redirect: false }));
 
 // Summary only - sending the full rooms would leak every game's answers
-app.get('/rooms', (req, res) => {
+app.get('/rooms', async (req, res) => {
+  const rooms = await liveRooms();
   res.send(rooms.map(r => ({ roomCode: r.roomCode, players: r.players.map(p => p.name), gameStarted: r.gameStarted })));
 });
 
@@ -108,38 +115,82 @@ function generateJoinCode() {
 }
 
 
-let rooms = [];
-let clients = [];
-
 // A room nobody is in is deleted after this long - enough to reload a page or move between screens
 const EMPTY_ROOM_TTL = 30 * 1000;
-const startTimers = new Map();
 
 // Nobody in the lobby or the game, and nobody reading the results. Play again on the results
 // screen leads back to the room, so the people reading them count as being in it.
 function isEmpty(room) {
-  return room.players.length === 0 && room.viewers.size === 0;
+  return room.players.length === 0 && room.viewers.length === 0;
 }
 
-// Call whenever someone arrives in or leaves a room: notes when it went empty (null while someone is in it)
+// Notes when the room went empty (null while someone is in it). changeRoom does this after every change.
 function trackEmpty(room) {
   room.emptySince = isEmpty(room) ? (room.emptySince || Date.now()) : null;
 }
 
 // Judged by the clock rather than a timer per room: a serverless instance (Vercel) is suspended while it
-// has nothing to do, and timers don't fire then. So this also runs before any request or socket event
-// looks a room up, and the interval just keeps a long-running server tidy.
-function deleteAbandonedRooms() {
-  const now = Date.now();
-  rooms.filter(room => room.emptySince && now - room.emptySince >= EMPTY_ROOM_TTL).forEach(deleteRoom);
+// has nothing to do, and timers don't fire then
+function isAbandoned(room) {
+  return !!room.emptySince && Date.now() - room.emptySince >= EMPTY_ROOM_TTL;
 }
-setInterval(deleteAbandonedRooms, 5000);
 
-function deleteRoom(room) {
-  clearTimeout(startTimers.get(room.roomCode));
-  startTimers.delete(room.roomCode);
-  rooms = rooms.filter(r => r !== room);
-  console.log(`Room ${room.roomCode} deleted - no players left`);
+// The room, or null if there's no such room. One nobody has been in for too long counts as gone (and is deleted).
+async function findRoom(roomCode) {
+  if (typeof roomCode !== 'string') return null;
+  const room = await store.get(roomCode);
+  if (room && isAbandoned(room)) {
+    await deleteIfAbandoned(roomCode);
+    return null;
+  }
+  return room;
+}
+
+// Applies change(room) as one step (see store.update). It runs again if another server instance changed the
+// room at the same moment, so it must only edit the room - emit and log afterwards, using what it returns.
+// Resolves to null if there's no such room, otherwise { result, deleted }.
+async function changeRoom(roomCode, change) {
+  if (typeof roomCode !== 'string') return null;
+  let abandoned = false;
+  const outcome = await store.update(roomCode, (room) => {
+    abandoned = isAbandoned(room);
+    if (abandoned) return store.DELETE;
+    const result = change(room);
+    if (result !== store.DELETE) trackEmpty(room);
+    return result;
+  });
+  if (abandoned) console.log(`Room ${roomCode} deleted - nobody was in it`);
+  if (!outcome || abandoned) return null;
+  return { result: outcome.result, deleted: !!outcome.deleted };
+}
+
+async function deleteIfAbandoned(roomCode) {
+  await changeRoom(roomCode, () => {});
+}
+
+// Rooms nobody looks up again are cleaned up here. With Redis, only while someone is connected to this
+// instance: a long-running server would otherwise keep spending Redis commands with nobody around.
+setInterval(async () => {
+  if (store.redis && io.engine.clientsCount === 0) return;
+  try {
+    for (const roomCode of await store.emptySince(Date.now() - EMPTY_ROOM_TTL)) await deleteIfAbandoned(roomCode);
+  } catch (err) {
+    console.error('Cleaning up rooms failed:', err.message);
+  }
+}, 5000);
+
+async function liveRooms() {
+  return (await store.list()).filter(room => !isAbandoned(room));
+}
+
+// The home page asks every 20 seconds per visitor, so a few seconds' old count will do
+let liveStats = { at: 0, playing: 0 };
+async function roomsPlaying() {
+  if (Date.now() - liveStats.at > 5000) {
+    const playing = (await liveRooms()).filter(r => r.gameStarted && r.players.length > 0).length;
+    liveStats = { at: Date.now(), playing };
+  }
+  return liveStats.playing;
 }
 
 // The room's creator leads whenever they're in it, otherwise whoever has been in the room longest
@@ -148,25 +199,28 @@ function pickLeader(room) {
   return leader ? leader.id : null;
 }
 
+// Takes a player out of the room. Returns what to tell everyone (see announceLeft), or null if they weren't in it.
 function removePlayer(room, playerId) {
   const leavingPlayer = room.players.find(p => p.id === playerId);
-  if (!leavingPlayer) return;
+  if (!leavingPlayer) return null;
   // Keep their progress in case they're only reloading (restored in join-socket-room)
   if (room.gameStarted) {
     room.stash[leavingPlayer.name] = { name: leavingPlayer.name, level: leavingPlayer.level, points: leavingPlayer.points, solved: leavingPlayer.solved };
   }
   room.players = room.players.filter(p => p.id !== playerId);
   room.leaderId = pickLeader(room);
-  io.to(room.roomCode).emit('playerLeft', leavingPlayer.name, room.players, room.leaderId);
-  console.log(`Player ${leavingPlayer.name} (${playerId}) left room ${room.roomCode}`);
 
   if (room.players.length === 0) {
     // Nobody is left to finish a game that was in progress
     room.gameStarted = false;
-    clearTimeout(startTimers.get(room.roomCode));
-    startTimers.delete(room.roomCode);
+    room.startToken = null;
   }
-  trackEmpty(room);
+  return { id: playerId, name: leavingPlayer.name, players: room.players, leaderId: room.leaderId };
+}
+
+function announceLeft(roomCode, left) {
+  io.to(roomCode).emit('playerLeft', left.name, left.players, left.leaderId);
+  console.log(`Player ${left.name} (${left.id}) left room ${roomCode}`);
 }
 
 // Snapshot for the results screen - players leave the room as they move to that page
@@ -182,51 +236,71 @@ function buildResults(room, winnerId) {
   };
 }
 
+function isCreatable(s, t) {
+  if(s.length!==t.length){
+      return false;
+  }
+  let count = new Array(256).fill(0);
+  for(let i=0; i<s.length; i++){
+      count[s.charCodeAt(i)]++;
+      count[t.charCodeAt(i)]--;
+  }
+  for(let i=0; i<count.length; i++){
+      if(count[i]!==0){
+          return false;
+      }
+  }
+  return true;
+}
+
+// Handlers wait on the store now, so two events from one socket could finish out of order (say a gameOver
+// and the disconnect right behind it). Each socket's handlers run one at a time, in the order they arrived.
+const queues = new WeakMap();
+function handle(socket, event, handler) {
+  socket.on(event, (...args) => {
+    const queued = (queues.get(socket) || Promise.resolve())
+      .then(() => handler(...args))
+      .catch((err) => console.error(`${event} failed:`, err.message));
+    queues.set(socket, queued);
+  });
+}
+
 
 io.on('connection', (socket) => {
-
-  // Same for every socket event below
-  socket.use((packet, next) => {
-    deleteAbandonedRooms();
-    next();
-  });
-
-  clients.push(socket.id);
+  const on = (event, handler) => handle(socket, event, handler);
 
   console.log("connection: ", socket.id);
 
 
-  socket.on('adminConnected', () => {
-    socket.emit('currentAliveConnections', clients.length, rooms.filter(r => r.gameStarted).length);
+  on('adminConnected', async () => {
+    const [sockets, rooms] = await Promise.all([io.fetchSockets(), liveRooms()]);
+    socket.emit('currentAliveConnections', sockets.length, rooms.filter(r => r.gameStarted).length);
   });
 
   // For the home page's "3 rooms playing now"
-  socket.on('getLiveStats', () => {
-    socket.emit('liveStats', { playing: rooms.filter(r => r.gameStarted && r.players.length > 0).length });
+  on('getLiveStats', async () => {
+    socket.emit('liveStats', { playing: await roomsPlaying() });
   });
 
 
 
-  socket.on('createRoom', () => {
-    let roomCode = generateJoinCode();
-    while (rooms.some(room => room.roomCode === roomCode)) {
-      roomCode = generateJoinCode();
-    }
+  on('createRoom', async () => {
     // hostToken is this (home page) socket's id - the creator's browser saves it as 'leaderId' to claim the host spot
-    const room = { roomCode: roomCode, players: [], viewers: new Set(), emptySince: null, leaderId: null, hostToken: socket.id, gameStarted: false, words: { regular: [], jumbled: [] }, currentHighestLevel: 0, currentHighestLevelHolder: '', solves: [], stash: {}, results: null, startedAt: 0 };
-    rooms.push(room);
+    const room = { roomCode: null, players: [], viewers: [], emptySince: null, leaderId: null, hostToken: socket.id, gameStarted: false, startToken: null, words: { regular: [], jumbled: [] }, currentHighestLevel: 0, currentHighestLevelHolder: '', solves: [], stash: {}, results: null, startedAt: 0 };
     trackEmpty(room); // starts empty - the creator's lobby page has to arrive within EMPTY_ROOM_TTL
-    socket.emit('roomCreated', roomCode);
-
-    console.log(rooms);
+    do {
+      room.roomCode = generateJoinCode();
+    } while (!(await store.create(room)));
+    socket.emit('roomCreated', room.roomCode);
+    console.log(`Room ${room.roomCode} created`);
   });
 
 
 
-   socket.on('joinRoom', (data) => {
+  on('joinRoom', async (data) => {
     if (!data) return;
     const roomCode = data.roomCode;
-    const room = rooms.find(room => room.roomCode === roomCode);
+    const room = await findRoom(roomCode);
     if (!room) {
       socket.emit('roomNotFound', roomCode);
       return;
@@ -235,109 +309,131 @@ io.on('connection', (socket) => {
     // socket too left a duplicate "ghost" player that later triggered a fake "left the room" alert.
     // Send the room state to the joining player
     socket.emit('roomJoined', roomCode, room.players);
-    // console.log(socket.rooms);
-    console.log(room);
   });
-  
 
-  socket.on('join-socket-room', (roomCode, playerName, hostToken) => {
-    const room = rooms.find(room => room.roomCode === roomCode);
-    if (!room) {
+
+  on('join-socket-room', async (roomCode, playerName, hostToken) => {
+    if (typeof roomCode !== 'string') return socket.emit('roomNotFound', roomCode);
+    // Into the socket room before the others can see this player, so no news about the room is missed
+    await socket.join(roomCode);
+    const joined = await changeRoom(roomCode, (room) => {
+      const player = { id: socket.id, name: playerName, level: 0, points: 0, solved: 0, isHost: !!hostToken && hostToken === room.hostToken };
+      // Back mid-game (e.g. after a reload) - pick up your progress again
+      if (room.gameStarted && room.stash[playerName]) {
+        Object.assign(player, room.stash[playerName]);
+        delete room.stash[playerName];
+        const holder = room.currentHighestLevelHolder;
+        if (holder && holder.name === playerName) holder.id = socket.id;
+      }
+      room.players.push(player);
+      room.leaderId = pickLeader(room);
+      return { players: room.players, leaderId: room.leaderId, gameStarted: room.gameStarted };
+    });
+    if (!joined) {
+      await socket.leave(roomCode);
       socket.emit('roomNotFound', roomCode);
       return;
     }
-    socket.join(roomCode);
-    const player = { id: socket.id, name: playerName, level: 0, points: 0, solved: 0, isHost: !!hostToken && hostToken === room.hostToken };
-    // Back mid-game (e.g. after a reload) - pick up your progress again
-    if (room.gameStarted && room.stash[playerName]) {
-      Object.assign(player, room.stash[playerName]);
-      delete room.stash[playerName];
-      const holder = room.currentHighestLevelHolder;
-      if (holder && holder.name === playerName) holder.id = socket.id;
-    }
-    room.players.push(player);
-    trackEmpty(room);
-    room.leaderId = pickLeader(room);
-    console.log(`Join-socket-room`)
-    console.log(room);
-    socket.to(roomCode).emit('new-player', roomCode, playerName, socket.id, room.players, room.leaderId);
-    socket.emit('get-others-in-room', room.players, room.leaderId, room.gameStarted);
+    socket.data.roomCode = roomCode;
+    const { players, leaderId, gameStarted } = joined.result;
+    console.log(`Player ${playerName} (${socket.id}) joined room ${roomCode}`);
+    socket.to(roomCode).emit('new-player', roomCode, playerName, socket.id, players, leaderId);
+    socket.emit('get-others-in-room', players, leaderId, gameStarted);
   });
 
 
 
-  socket.on('leave-room', (roomCode, playerId) => {
+  on('leave-room', async (roomCode, playerId) => {
     console.log(`Player: ${playerId} left room: ${roomCode}`);
-    const room = rooms.find(room => room.roomCode === roomCode);
-    if (room) {
-      socket.leave(roomCode);
-      removePlayer(room, socket.id);
+    let left = null;
+    if (typeof roomCode === 'string') await socket.leave(roomCode);
+    const outcome = await changeRoom(roomCode, (room) => {
+      left = removePlayer(room, socket.id);
       // Leaving on purpose doesn't wait out EMPTY_ROOM_TTL
-      if (isEmpty(room)) deleteRoom(room);
-    }
+      if (isEmpty(room)) return store.DELETE;
+    });
+    if (!outcome) return;
+    socket.data.roomCode = null;
+    if (left) announceLeft(roomCode, left);
+    if (outcome.deleted) console.log(`Room ${roomCode} deleted - the last player left`);
   });
 
 
-  socket.on('disconnect', () => {
-
-    clients = clients.filter(id => id !== socket.id);
+  on('disconnect', async () => {
     console.log("disconnect: ", socket.id);
 
+    // The room this socket was playing in...
+    const { roomCode, viewing } = socket.data;
+    if (roomCode) {
+      let left = null;
+      await changeRoom(roomCode, (room) => {
+        left = removePlayer(room, socket.id);
+      });
+      if (left) announceLeft(roomCode, left);
+    }
 
-    // Find the room that contains this player
-    const room = rooms.find(room =>
-      room.players.some(player => player.id === socket.id)
-    );
-
-    if (room) removePlayer(room, socket.id);
-
-    // ...or the room whose results this socket was reading
-    rooms.forEach(room => {
-      if (room.viewers.delete(socket.id)) trackEmpty(room);
-    });
+    // ...or the room whose results it was reading
+    if (viewing) {
+      await changeRoom(viewing, (room) => {
+        room.viewers = room.viewers.filter(id => id !== socket.id);
+      });
+    }
   });
 
 
 
 
-  socket.on('starting-game', (roomCode) => {
-    const room = rooms.find(room => room.roomCode === roomCode);
-    if (!room) return;
-    if (room.gameStarted) return;
-    if (room.leaderId !== socket.id) return;
-    room.gameStarted = true;
-    room.currentHighestLevel = 0;
-    room.currentHighestLevelHolder = '';
-    console.log(`Game started in room: ${roomCode}`);
+  on('starting-game', async (roomCode) => {
+    const starting = await changeRoom(roomCode, (room) => {
+      if (room.gameStarted) return;
+      if (room.leaderId !== socket.id) return;
+      room.gameStarted = true;
+      room.currentHighestLevel = 0;
+      room.currentHighestLevelHolder = '';
 
-    // Generate words for the game
-    let levels = 10; // Default to 10 levels
-    let words = getRandomWords(levels);
-    room.words = { regular: words, jumbled: jumbleWords(words) };
-    room.solves = words.map(() => null);
-    room.stash = {};
-    room.results = null;
-    room.players.forEach(p => { p.level = 0; p.points = 0; p.solved = 0; });
-    console.log(`Words for room ${roomCode}:`, words);
+      // Generate words for the game
+      let levels = 10; // Default to 10 levels
+      let words = getRandomWords(levels);
+      room.words = { regular: words, jumbled: jumbleWords(words) };
+      room.solves = words.map(() => null);
+      room.stash = {};
+      room.results = null;
+      room.players.forEach(p => { p.level = 0; p.points = 0; p.solved = 0; });
+      // Identifies this countdown, so a canceled one can't still send the words - the cancel may be
+      // handled by another server instance than the one running the countdown
+      room.startToken = Math.random().toString(36).slice(2);
+      return { token: room.startToken, words };
+    });
+    if (!starting || !starting.result) return;
+    console.log(`Words for room ${roomCode}:`, starting.result.words);
     io.to(roomCode).emit('game-starting');
     console.log(`Game starting in room: ${roomCode}`);
 
     // Send everyone the words at the same moment, once the lobby's 3-2-1 countdown is done
-    startTimers.set(roomCode, setTimeout(() => {
-      startTimers.delete(roomCode);
-      room.startedAt = Date.now();
-      io.to(roomCode).emit('gameWords', room.words.jumbled);
-    }, 4000));
+    setTimeout(async () => {
+      try {
+        const begun = await changeRoom(roomCode, (room) => {
+          if (room.startToken !== starting.result.token) return; // canceled, or everyone left
+          room.startToken = null;
+          room.startedAt = Date.now();
+          return room.words.jumbled;
+        });
+        if (begun && begun.result) io.to(roomCode).emit('gameWords', begun.result);
+      } catch (err) {
+        console.error(`Starting the game in room ${roomCode} failed:`, err.message);
+      }
+    }, 4000);
   });
 
-  socket.on('cancel-start', (roomCode) => {
-    const room = rooms.find(room => room.roomCode === roomCode);
-    if (!room) return;
-    // Only during the countdown - once the words are out the game can't be canceled
-    if (room.leaderId !== socket.id || !startTimers.has(roomCode)) return;
-    clearTimeout(startTimers.get(roomCode));
-    startTimers.delete(roomCode);
-    room.gameStarted = false;
+  on('cancel-start', async (roomCode) => {
+    const canceled = await changeRoom(roomCode, (room) => {
+      // Only during the countdown - once the words are out the game can't be canceled
+      if (room.leaderId !== socket.id || !room.startToken) return;
+      room.startToken = null;
+      room.gameStarted = false;
+      return true;
+    });
+    if (!canceled || !canceled.result) return;
     io.to(roomCode).emit('start-canceled');
     console.log(`Game canceled in room: ${roomCode}`);
   });
@@ -345,12 +441,12 @@ io.on('connection', (socket) => {
 
 
 
-  socket.on('rejoin-game', (roomCode, myId) => {
-    const room = rooms.find(room => room.roomCode === roomCode);
+  on('rejoin-game', async (roomCode, myId) => {
+    const room = await findRoom(roomCode);
     if (!room) return;
     if (!room.gameStarted) return;
     console.log(`Player ${myId} rejoining game in room: ${roomCode}`);
-    socket.join(roomCode);
+    await socket.join(roomCode);
     socket.emit('gameWords', room.words.jumbled);
     // Catch the rejoining player up on who's leading (quietly - it's not a new lead)
     const holder = room.currentHighestLevelHolder;
@@ -360,109 +456,100 @@ io.on('connection', (socket) => {
 
 
 
-  socket.on('answerAttempt', (data) => {
+  on('answerAttempt', async (data) => {
     if (!data) return;
     console.log(`Player ${data.name} answered level ${data.level} in room ${data.roomCode}: ${data.answer}`);
-    const room = rooms.find(room => room.roomCode === data.roomCode);
-    if (!room || !room.gameStarted) return;
-    // Ignore stray submits (e.g. Enter pressed in the lobby) - these used to crash the whole server
-    const word = Number.isInteger(data.level) && room.words.regular[data.level];
-    if (!word || typeof data.answer !== 'string') return;
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player) return;
-    // Already past this level (a duplicate submit) - don't score it twice
-    if (data.level < player.level) return;
-    const correctAnswer = word.toLowerCase();
-    // Points are kept here rather than trusting the browser's count
-    let gained = 0;
+    const answered = await changeRoom(data.roomCode, (room) => {
+      if (!room.gameStarted) return;
+      // Ignore stray submits (e.g. Enter pressed in the lobby) - these used to crash the whole server
+      const word = Number.isInteger(data.level) && room.words.regular[data.level];
+      if (!word || typeof data.answer !== 'string') return;
+      const player = room.players.find(p => p.id === socket.id);
+      if (!player) return;
+      // Already past this level (a duplicate submit) - don't score it twice
+      if (data.level < player.level) return;
+      const correctAnswer = word.toLowerCase();
+      // Points are kept here rather than trusting the browser's count
+      let gained = 0;
 
-    if (data.answer === correctAnswer) {
-      gained = 2;
-    } else if (wordExists(data.answer) && isCreatable(data.answer, correctAnswer)) {
-      gained = 1;
-    }
-
-    if (gained) {
-      player.level = data.level + 1;
-      player.points += gained;
-      player.solved += 1;
-      if (!room.solves[data.level]) {
-        room.solves[data.level] = { name: player.name, seconds: Math.round((Date.now() - room.startedAt) / 1000) };
+      if (data.answer === correctAnswer) {
+        gained = 2;
+      } else if (wordExists(data.answer) && isCreatable(data.answer, correctAnswer)) {
+        gained = 1;
       }
-      io.to(data.roomCode).emit('update-players', room.players);
-    }
 
-    socket.emit('answerResult', gained > 0, data.level, player.points, gained);
+      if (gained) {
+        player.level = data.level + 1;
+        player.points += gained;
+        player.solved += 1;
+        if (!room.solves[data.level]) {
+          room.solves[data.level] = { name: player.name, seconds: Math.round((Date.now() - room.startedAt) / 1000) };
+        }
+      }
+      return { gained, points: player.points, players: gained ? room.players : null };
+    });
+    if (!answered || !answered.result) return;
+
+    const { gained, points, players } = answered.result;
+    if (players) io.to(data.roomCode).emit('update-players', players);
+    socket.emit('answerResult', gained > 0, data.level, points, gained);
   });
 
 
-  function isCreatable(s, t) {
-    if(s.length!==t.length){
-        return false;
-    }
-    let count = new Array(256).fill(0);
-    for(let i=0; i<s.length; i++){
-        count[s.charCodeAt(i)]++;
-        count[t.charCodeAt(i)]--;
-    }
-    for(let i=0; i<count.length; i++){
-        if(count[i]!==0){
-            return false;
-        }
-    }
-    return true;
-  }
 
 
-
-
-  socket.on('levelCompleted', (data) => {
+  on('levelCompleted', async (data) => {
     if (!data) return;
     console.log(`Player ${data.name} completed level ${data.level} in room ${data.roomCode}`);
-    // You can add more logic here if needed
 
-    const room = rooms.find(room => room.roomCode === data.roomCode);
-    if (!room) return;
+    const completed = await changeRoom(data.roomCode, (room) => {
+      // Track progress for the standings, including words skipped when the timer ran out
+      let players = null;
+      const player = room.players.find(p => p.id === socket.id);
+      if (player && Number.isInteger(data.level) && data.level > player.level) {
+        player.level = Math.min(data.level, room.words.regular.length);
+        players = room.players;
+      }
 
-    // Track progress for the standings, including words skipped when the timer ran out
-    const player = room.players.find(p => p.id === socket.id);
-    if (player && Number.isInteger(data.level) && data.level > player.level) {
-      player.level = Math.min(data.level, room.words.regular.length);
-      io.to(data.roomCode).emit('update-players', room.players);
-    }
+      if (room.currentHighestLevel >= data.level) return { players, newLeader: false };
+      room.currentHighestLevel = data.level;
+      room.currentHighestLevelHolder = { name: data.name, id: data.id};
+      return { players, newLeader: true };
+    });
+    if (!completed || !completed.result) return;
 
-    if (room.currentHighestLevel >= data.level) return;
-    room.currentHighestLevel = data.level;
-
-    // if (room.currentHighestLevelHolder && room.currentHighestLevelHolder.id === data.id) return;
-
-    room.currentHighestLevelHolder = { name: data.name, id: data.id};
-    io.to(data.roomCode).emit('newHighestPlayer', data.id, data.name, data.level);
+    const { players, newLeader } = completed.result;
+    if (players) io.to(data.roomCode).emit('update-players', players);
+    if (newLeader) io.to(data.roomCode).emit('newHighestPlayer', data.id, data.name, data.level);
   });
 
 
 
-  socket.on('gameOver', (data) => {
+  on('gameOver', async (data) => {
     if (!data) return;
-    const room = rooms.find(room => room.roomCode === data.roomCode);
-    // Only the first player to finish wins - a second, near-simultaneous finish could otherwise change the winner
-    if (!room || !room.gameStarted) return;
-    // ...and only someone who has actually reached the last word
-    const winner = room.players.find(p => p.id === socket.id);
-    if (!winner || winner.level < room.words.regular.length) return;
-    console.log(`Player ${winner.name} won the game in room ${data.roomCode}`);
-    room.gameStarted = false;
-    room.results = buildResults(room, winner.id);
-    io.to(data.roomCode).emit('playerFinished', winner.id, winner.name);
+    const over = await changeRoom(data.roomCode, (room) => {
+      // Only the first player to finish wins - a second, near-simultaneous finish could otherwise change the winner
+      if (!room.gameStarted) return;
+      // ...and only someone who has actually reached the last word
+      const winner = room.players.find(p => p.id === socket.id);
+      if (!winner || winner.level < room.words.regular.length) return;
+      room.gameStarted = false;
+      room.results = buildResults(room, winner.id);
+      return { id: winner.id, name: winner.name };
+    });
+    if (!over || !over.result) return;
+
+    console.log(`Player ${over.result.name} won the game in room ${data.roomCode}`);
+    io.to(data.roomCode).emit('playerFinished', over.result.id, over.result.name);
   });
 
 
 
 
 
-  socket.on('timeWarning', (data) => {
+  on('timeWarning', async (data) => {
     if (!data) return;
-    const room = rooms.find(room => room.roomCode === data.roomCode);
+    const room = await findRoom(data.roomCode);
     if (!room) return;
     const correctAnswer = room.words.regular[data.level];
     socket.emit('timeUpdate', correctAnswer);
@@ -470,14 +557,14 @@ io.on('connection', (socket) => {
 
 
 
-  socket.on('requestResults', (roomCode) => {
-    const room = rooms.find(room => room.roomCode === roomCode);
+  on('requestResults', async (roomCode) => {
     // Reading the results counts as being in the room - Play again leads back to it
-    if (room) {
-      room.viewers.add(socket.id);
-      trackEmpty(room);
-    }
-    socket.emit('results', room && room.results ? room.results : null);
+    const reading = await changeRoom(roomCode, (room) => {
+      if (!room.viewers.includes(socket.id)) room.viewers.push(socket.id);
+      return room.results;
+    });
+    if (reading) socket.data.viewing = roomCode;
+    socket.emit('results', reading && reading.result ? reading.result : null);
   });
 
 });
@@ -495,13 +582,13 @@ io.on('connection', (socket) => {
 const createPartitions = (count=10, divisions=3) => {
   const base = Math.floor(count / divisions);
   const remainder = count % divisions;
-  
+
   // distribute remainder across the first few parts
   const parts = [base, base, base];
   for (let i = 0; i < remainder; i++) {
     parts[i]++;
   }
-  
+
   return parts;
 }
 

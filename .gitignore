@@ -1,1 +1,3 @@
 /node_modules
+# Local settings such as REDIS_URL, which holds the database password
+.env
