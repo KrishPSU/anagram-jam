@@ -314,6 +314,7 @@ leaveDialog.addEventListener('close', () => {
 
 
 function showCountdown() {
+  closeHowToPlay(); // so it isn't covering the 3-2-1
   countdownEl.hidden = false;
   cancelStartBtn.hidden = false;
 

@@ -20,6 +20,14 @@
   }
 }
 
+/* How to play, top-right. Scrolls away with the page rather than floating over the form. */
+.home-help {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  z-index: 10;
+}
+
 /* Hero */
 
 .hero {
@@ -169,6 +177,8 @@
   .home-layout {
     grid-template-rows: 1fr auto;
     align-content: stretch;
+    /* Room at the top for the How to play button, so a short screen doesn't push the title under it */
+    padding-top: calc(68px + env(safe-area-inset-top, 0px));
     padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
   }
 

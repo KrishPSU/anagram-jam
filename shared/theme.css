@@ -242,6 +242,216 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
 }
 .toast .toast-close:hover { background: rgba(255, 255, 255, 0.2); }
 
+/* "How to play" button and box (shared/how-to-play.js). Each page places the button itself. */
+.help-btn {
+  appearance: none;
+  height: 44px;
+  padding: 0 16px 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.help-btn:hover { background: rgba(255, 255, 255, 0.2); }
+.help-btn:active { transform: scale(0.96); }
+
+/* The "?" in its circle */
+.help-btn i {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  font-style: normal;
+  font-weight: 800;
+  font-size: 15px;
+}
+
+/* Until it's been opened once: pink, with a soft pulse (just the pink with reduced motion) */
+.help-btn.is-new { border-color: var(--jam); animation: helpGlow 2s ease-out infinite; }
+.help-btn.is-new i { background: var(--jam); color: #fff; }
+
+@keyframes helpGlow {
+  0% { box-shadow: 0 0 0 0 rgba(255, 95, 168, 0.55); }
+  70%, 100% { box-shadow: 0 0 0 10px rgba(255, 95, 168, 0); }
+}
+
+.howto-dialog {
+  width: min(calc(100vw - 32px), 420px);
+  max-height: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.howto-dialog[open] { animation: popIn 0.2s ease-out; }
+
+.howto-dialog::backdrop {
+  background: rgba(16, 14, 24, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* Scrolls inside itself on short screens */
+.howto-card {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.howto-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.howto-head h2 {
+  margin: 0;
+  font-weight: 800;
+  font-size: 22px;
+}
+
+.howto-close {
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--field);
+  color: var(--ink-muted);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.howto-close:hover { background: var(--field-line); color: var(--ink); }
+
+.howto-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 18px;
+}
+
+/* Step number beside the title, then the text and the picture at full width (room for the tiles on a phone) */
+.howto-steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  column-gap: 10px;
+  row-gap: 4px;
+}
+
+.howto-steps li > :not(h3) { grid-column: 1 / -1; }
+
+.howto-steps li::before {
+  content: counter(step);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--you-bg);
+  color: var(--you);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.howto-steps h3 {
+  margin: 0;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 28px;
+}
+
+.howto-steps p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.howto-steps p b { color: var(--ink); }
+
+/* A little piece of the game, on the game's own dark backdrop */
+.howto-art {
+  --tile-size: 26px;
+  margin-top: 6px;
+  padding: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--bg-1), var(--bg-2));
+  color: #fff;
+}
+
+.howto-art .tile { box-shadow: 0 2px 0 rgba(0, 0, 0, 0.28); }
+.howto-art .tile.win { background: var(--go); color: #fff; }
+
+.howto-chip {
+  height: 28px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.howto-chip + .howto-chip, .tile + .howto-chip { margin-left: 2px; }
+.howto-chip.ready { border-color: transparent; background: #d1fae5; color: #047857; }
+
+.howto-arrow {
+  margin: 0 4px;
+  font-weight: 700;
+  color: var(--on-dark-muted);
+}
+
+.howto-go {
+  font-weight: 900;
+  font-size: 16px;
+  color: var(--go-light);
+}
+
+.howto-pts {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--go);
+  color: #fff;
+  font-size: 12px;
+}
+.howto-pts.one { background: rgba(16, 185, 129, 0.45); }
+
+.howto-tip {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+}
+
 /* Little twinkling dots, spread across the screen */
 .sparkles { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
 .sparkles i {

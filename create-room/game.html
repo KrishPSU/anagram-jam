@@ -29,6 +29,7 @@
   <script defer src="/shared/toast.js"></script>
   <script defer src="/shared/sfx.js"></script>
   <script defer src="/shared/players.js"></script>
+  <script defer src="/shared/how-to-play.js"></script>
   <script defer src="js/lobby.js"></script>
   <script defer src="js/timer.js"></script>
   <script defer src="js/game.js"></script>
@@ -66,6 +67,8 @@
   <!-- On every screen. Asks before you leave (#leaveDialog). -->
   <button class="icon-btn home-btn" id="homeBtn" type="button" aria-label="Leave this lobby" title="Leave this lobby">🏠</button>
   <button class="icon-btn mute" id="mute-button" type="button" aria-label="Mute sound" aria-pressed="false">🔊</button>
+  <!-- Lobby screen only. Opens the box from /shared/how-to-play.js. -->
+  <button class="help-btn lobby-help" type="button" data-how-to-play><i aria-hidden="true">?</i>How to play</button>
 
   <div class="lobby-wrapper" id="lobbyWrapper">
     <div class="floating-shapes">

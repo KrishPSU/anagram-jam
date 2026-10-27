@@ -14,6 +14,15 @@ body {
   z-index: 100;
 }
 
+/* Left of the mute button, on the lobby screen only */
+.lobby-help {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(64px + env(safe-area-inset-right, 0px));
+  z-index: 100;
+}
+body:not(.lobby) .lobby-help { display: none; }
+
 /* (Not ".home" - that's the home page's body class from theme.css) */
 .home-btn {
   position: fixed;

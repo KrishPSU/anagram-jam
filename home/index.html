@@ -27,6 +27,7 @@
 
   <script src="/shared/socket.js" defer></script>
   <script src="/shared/toast.js" defer></script>
+  <script src="/shared/how-to-play.js" defer></script>
   <script src="script.js" defer></script>
 
 
@@ -48,6 +49,9 @@
 <body class="home">
   <!-- Letter tiles drifting up behind everything (filled in by script.js) -->
   <div class="drift" id="drift" aria-hidden="true"></div>
+
+  <!-- Opens the box from /shared/how-to-play.js -->
+  <button class="help-btn home-help" type="button" data-how-to-play><i aria-hidden="true">?</i>How to play</button>
 
   <main class="home-layout">
     <section class="hero">
