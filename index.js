@@ -17,8 +17,9 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 // Rooms live in Redis when there is one (see store.js), otherwise in this process's memory.
-// Connecting Upstash Redis to the Vercel project sets REDIS_URL (older KV databases set KV_URL).
-const store = createStore(process.env.REDIS_URL || process.env.KV_URL);
+// Connecting Upstash Redis to the Vercel project sets REDIS_URL and KV_URL (the same address), here with
+// the project's custom prefix anagram_jam_.
+const store = createStore(process.env.anagram_jam_REDIS_URL || process.env.anagram_jam_KV_URL || process.env.REDIS_URL || process.env.KV_URL);
 if (store.redis) {
   // Broadcasts reach players connected to other server instances too. Loaded only here, like ioredis in
   // store.js, so running without Redis never depends on these packages.
@@ -272,9 +273,13 @@ io.on('connection', (socket) => {
   console.log("connection: ", socket.id);
 
 
+  // Counted from the rooms, which every instance shares: people in a lobby, a game or on a results screen.
+  // (Asking the other instances via io.fetchSockets() doesn't work on Upstash - it can't tell the adapter
+  // how many servers are listening, so each instance only ever counted its own connections.)
   on('adminConnected', async () => {
-    const [sockets, rooms] = await Promise.all([io.fetchSockets(), liveRooms()]);
-    socket.emit('currentAliveConnections', sockets.length, rooms.filter(r => r.gameStarted).length);
+    const rooms = await liveRooms();
+    const players = rooms.reduce((n, r) => n + r.players.length + r.viewers.length, 0);
+    socket.emit('currentAliveConnections', players, rooms.filter(r => r.gameStarted).length);
   });
 
   // For the home page's "3 rooms playing now"
