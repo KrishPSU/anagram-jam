@@ -164,6 +164,18 @@
 
 /* Start card */
 
+/* Single column: the hero fills the space above and the start card sits at the bottom, clear of the screen edge */
+@media (max-width: 859px) {
+  .home-layout {
+    grid-template-rows: 1fr auto;
+    align-content: stretch;
+    padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .hero { align-self: center; }
+  .start { align-self: end; }
+}
+
 .start {
   width: 100%;
   max-width: 400px;
