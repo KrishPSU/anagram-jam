@@ -1,34 +1,31 @@
-const socket = connectSocket();
-
+// The results screen, shown to the players of a round when it ends (see game.js 'round-over'). They stay in the
+// room the whole time: the lobby shows them as still in the game until they press Play again.
 
 const winnerNameEl = document.getElementById('winnerName');
 const winnerTitleEl = document.getElementById('winnerTitle');
 const winnerTagEl = document.getElementById('winner-tag');
 const roomLabelEl = document.getElementById('roomLabel');
-const backToLobbyBtn = document.getElementById('backToLobby');
+const playAgainBtn = document.getElementById('playAgain');
 const rankingEl = document.getElementById('ranking');
 const gameWordsEl = document.getElementById('words');
 
-
-console.log("End screen loaded");
-
-// Get winner info from URL parameters
-const urlParams = new URLSearchParams(window.location.search);
-const winnerId = urlParams.get('winnerId');
-const winnerName = urlParams.get('winnerName') || 'Someone'; // URLSearchParams already decodes it
-const roomCode = urlParams.get('roomCode');
-const myId = sessionStorage.getItem('myId'); // set by the game page; the old localStorage id was the home page's
-
-console.log("Winner ID:", winnerId);
-console.log("My ID:", myId);
+let shownRound = null; // the round whose results are on screen
 
 
-function displayEndScreen(winnerName, won) {
-  roomLabelEl.textContent = roomCode ? `Results · Room ${roomCode}` : 'Results';
-  winnerNameEl.textContent = winnerName;
-  winnerTitleEl.textContent = won ? 'You win!' : `${winnerName} wins!`;
+function showResults(results) {
+  // Already showing them - the connection only dropped for a moment
+  if (view === 'results' && shownRound === results.round) return;
+  shownRound = results.round;
+  showView('results');
+
+  const won = results.winnerId === myId;
+  roomLabelEl.textContent = `Results · Room ${state.roomCode}`;
+  winnerNameEl.textContent = results.winnerName;
+  winnerTitleEl.textContent = won ? 'You win!' : `${results.winnerName} wins!`;
   // "Got through" rather than "solved" - skipped words count toward finishing
   winnerTagEl.textContent = won ? 'You got through every word first.' : 'First to get through every word.';
+  showRanking(results.players, results.words.length);
+  showGameWords(results.words);
 
   if (won) {
     sfx.win();
@@ -36,39 +33,30 @@ function displayEndScreen(winnerName, won) {
   }
 }
 
-displayEndScreen(winnerName, winnerId === myId);
 
-// Asking for the results also tells the server someone is reading them, which keeps the room alive for
-// Play again. Ask on every connect so that still holds after a dropped connection.
-socket.on('connect', () => socket.emit('requestResults', roomCode));
-
-
-backToLobbyBtn.addEventListener('click', () => {
-  window.location.href = "/game/" + roomCode + "/";  // Redirect to lobby page
+// Back to the lobby, ready for the next round - it starts once everyone is
+playAgainBtn.addEventListener('click', () => {
+  playAgainBtn.disabled = true;
+  playAgainBtn.classList.add('is-loading');
+  socket.timeout(5000).emit('play-again', (err) => {
+    playAgainBtn.disabled = false;
+    playAgainBtn.classList.remove('is-loading');
+    if (err) {
+      showAlert("Couldn't reach the game. Try again.");
+      return;
+    }
+    showView('lobby');
+    render();
+  });
 });
 
 
-
-socket.on('results', (results) => {
-  console.log("Received results:", results);
-  if (!results) {
-    showEmpty(rankingEl, "Results for this game aren't available anymore.");
-    showEmpty(gameWordsEl, "The words for this game aren't available anymore.");
-    return;
-  }
-  showRanking(results.players, results.words.length);
-  showGameWords(results.words);
-});
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
   node.className = className;
   node.textContent = text;
   return node;
-}
-
-function showEmpty(listEl, message) {
-  listEl.replaceChildren(el('li', 'empty-note', message));
 }
 
 function showRanking(players, total) {

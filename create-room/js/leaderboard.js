@@ -2,10 +2,13 @@
 const standingListEl = document.getElementById('standingList');
 
 
-// A row of player chips on phones and a side panel on wide screens (see game-state.css)
-function loadLeaderboard(players, newGame=false) {
+// A row of player chips on phones and a side panel on wide screens (see game-state.css).
+// players: the ones in the round (lobby.js keeps them up to date from the server's room-state)
+function loadLeaderboard(players) {
   // Clear existing standings
   standingListEl.innerHTML = '';
+  // Until someone gets past the first word there's no order to show, so no ranks either
+  const newGame = players.every(p => !p.level);
   if (newGame) {
     players.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   } else {
@@ -36,11 +39,4 @@ function loadLeaderboard(players, newGame=false) {
     standingListEl.appendChild(item);
   });
 
-  console.log("updated-players", players);
 }
-
-
-
-socket.on('update-players', (players) => {
-  loadLeaderboard(players, false);
-});

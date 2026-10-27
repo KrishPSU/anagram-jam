@@ -4,7 +4,8 @@
 
 document.addEventListener('keydown', (event) => {
   // Leave browser shortcuts (Cmd/Ctrl+R, Cmd+L, ...) alone, and only type while a level is on screen
-  if (event.metaKey || event.ctrlKey || event.altKey || !isPlaying()) return;
+  // (and not into the game behind the "Leave this lobby?" box)
+  if (event.metaKey || event.ctrlKey || event.altKey || !isPlaying() || leaveDialog.open) return;
 
   if (/^[a-z]$/i.test(event.key)) {
     event.preventDefault();

@@ -23,6 +23,7 @@
   <link rel="stylesheet" href="/shared/theme.css">
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/game-state.css">
+  <link rel="stylesheet" href="css/results.css">
 
   <script defer src="/shared/socket.js"></script>
   <script defer src="/shared/toast.js"></script>
@@ -31,6 +32,7 @@
   <script defer src="js/lobby.js"></script>
   <script defer src="js/timer.js"></script>
   <script defer src="js/game.js"></script>
+  <script defer src="js/results.js"></script>
   <script defer src="js/audio.js"></script>
   <script defer src="js/leaderboard.js"></script>
   <script defer src="js/keyboard.js"></script>
@@ -59,7 +61,10 @@
   <audio id="gameMusic" src="/music/what you in joined sample.mp3" loop muted></audio>
 
   <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
 
+  <!-- On every screen. Asks before you leave (#leaveDialog). -->
+  <button class="icon-btn home-btn" id="homeBtn" type="button" aria-label="Leave this lobby" title="Leave this lobby">🏠</button>
   <button class="icon-btn mute" id="mute-button" type="button" aria-label="Mute sound" aria-pressed="false">🔊</button>
 
   <div class="lobby-wrapper" id="lobbyWrapper">
@@ -68,7 +73,6 @@
       <div class="shape"></div>
       <div class="shape"></div>
     </div>
-    <button id="leave" class="btn btn-danger btn-sm" type="button">Leave</button>
 
     <header class="lobby-head">
       <p class="eyebrow" id="lobbyEyebrow">Lobby</p>
@@ -80,15 +84,23 @@
       <!-- The spinner goes away on its own: the first status update replaces everything in here -->
       <p class="status" id="waiting" role="status"><span class="spinner" aria-hidden="true"></span>Connecting…</p>
       <div class="players" id="players"></div>
-      <button id="readyBtn" class="btn btn-go" type="button" hidden>Start game</button>
+      <!-- Everyone in the room has to be ready for a round to start -->
+      <button id="readyBtn" class="btn btn-go" type="button" aria-pressed="false" hidden>I'm ready</button>
     </div>
   </div>
 
-  <!-- 3-2-1 before each game. The server sends the words when it finishes. -->
-  <div class="countdown" id="countdown" hidden>
+  <!-- 3-2-1 once everyone is ready. The server sends the words when it finishes. -->
+  <div class="overlay" id="countdown" hidden>
     <p class="eyebrow">Get ready</p>
     <div class="count-num" id="countNum">3</div>
-    <button class="btn btn-glass" id="cancelStart" type="button" hidden>Cancel</button>
+    <button class="btn btn-glass" id="cancelStart" type="button" hidden>Not ready</button>
+  </div>
+
+  <!-- This browser opened the room in another tab, which took over -->
+  <div class="overlay" id="elsewhere" hidden>
+    <p class="eyebrow">Anagram Jam</p>
+    <p class="overlay-text">This game is open in another tab.</p>
+    <button class="btn btn-glass" id="useHere" type="button">Play here instead</button>
   </div>
 
 
@@ -136,8 +148,8 @@
         <div class="letter-tiles" id="anagramDisplay" aria-label="Scrambled letters"></div>
 
         <div class="word-actions">
-          <button class="icon-btn" id="undoBtn" type="button" aria-label="Remove last letter" title="Remove last letter (Backspace)">⌫</button>
           <button class="icon-btn" id="shuffleBtn" type="button" aria-label="Shuffle letters" title="Shuffle (Space)">🔄</button>
+          <button class="icon-btn" id="undoBtn" type="button" aria-label="Remove last letter" title="Remove last letter (Backspace)">⌫</button>
         </div>
         <p class="hint">Tap the letters in order, or type them.</p>
 
@@ -158,6 +170,43 @@
       </main>
     </div>
   </div>
+
+
+  <!-- The round you just played. Play again takes you back to the lobby, ready for the next one. -->
+  <section class="results" id="resultsView" hidden>
+    <section class="winner-card" aria-labelledby="winnerTitle">
+      <p class="eyebrow" id="roomLabel">Results</p>
+      <div class="winner"><span id="winnerName">Player Name</span></div>
+      <h1 id="winnerTitle">Game over</h1>
+      <p class="winner-tag" id="winner-tag"></p>
+      <div class="end-actions">
+        <button class="btn btn-go" id="playAgain" type="button"><span class="spinner" aria-hidden="true"></span>Play again</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="rankingTitle">
+      <h2 id="rankingTitle">Final standings</h2>
+      <ol class="ranking" id="ranking"></ol>
+    </section>
+
+    <section class="panel" aria-labelledby="wordsTitle">
+      <h2 id="wordsTitle">The words</h2>
+      <p class="panel-note">Each answer, its scramble, and who solved it first.</p>
+      <ol class="word-list" id="words"></ol>
+    </section>
+  </section>
+
+
+  <dialog class="leave-dialog" id="leaveDialog" aria-labelledby="leaveTitle">
+    <form class="leave-card card" method="dialog">
+      <h2 id="leaveTitle">Leave this lobby?</h2>
+      <p class="leave-note" id="leaveNote">You'll go back to the home page.</p>
+      <div class="leave-actions">
+        <button class="btn btn-ghost" value="stay" autofocus>Stay</button>
+        <button class="btn btn-danger" value="leave">Leave</button>
+      </div>
+    </form>
+  </dialog>
 
 </body>
 </html>

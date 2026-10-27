@@ -43,9 +43,10 @@ function createCountdownTimer(seconds, onTick, onComplete) {
     }
   };
 
-  const reset = () => {
+  // from: seconds to start at, if not the full count (e.g. coming back to a word part-way through)
+  const reset = (from = seconds) => {
     stop();
-    remainingTime = seconds;
+    remainingTime = from;
     if (onTick) onTick(remainingTime);
   };
 

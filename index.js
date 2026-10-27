@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const crypto = require('crypto');
 const wordExists = require('word-exists');
 const WORDS = require('./words');
 const { createStore } = require('./store');
@@ -100,7 +101,6 @@ app.get('/icon-512.png', (req, res) => {
 });
 
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
-// app.use('/game/:roomCode/end', express.static(path.join(__dirname, 'end-screen')));  
 // app.use('/admin', express.static(path.join(__dirname, 'edit-menu-app')));
 
 
@@ -122,19 +122,15 @@ app.get('/game/:roomCode', async (req, res) => {
     res.redirect('/');
   }
 });
-app.get('/game/:roomCode/end', async (req, res) => {
-  const room = await findRoom(req.params.roomCode);
-  if (!room) return res.redirect('/');
-  res.sendFile(path.join(__dirname, 'end-screen', 'end.html'));
+// The results used to be a page of their own - they're a screen of the game page now
+app.get('/game/:roomCode/end', (req, res) => {
+  res.redirect(`/game/${encodeURIComponent(req.params.roomCode)}/`);
 });
-
-// Static assets for the end page (no params)
-app.use('/end-screen', express.static(path.join(__dirname, 'end-screen'), { redirect: false }));
 
 // Summary only - sending the full rooms would leak every game's answers
 app.get('/rooms', async (req, res) => {
   const rooms = await liveRooms();
-  res.send(rooms.map(r => ({ roomCode: r.roomCode, players: r.players.map(p => p.name), gameStarted: r.gameStarted })));
+  res.send(rooms.map(r => ({ roomCode: r.roomCode, players: r.players.map(p => p.name), gameStarted: !!r.round })));
 });
 
 
@@ -149,21 +145,52 @@ function generateJoinCode() {
 }
 
 
-// Nobody in the lobby or the game, and nobody reading the results. Play again on the results
-// screen leads back to the room, so the people reading them count as being in it.
-function isEmpty(room) {
-  return room.players.length === 0 && room.viewers.length === 0;
+// A room keeps everyone who's in it, whatever screen they're on: the lobby (ready or not), the round, or its
+// results. Nobody is taken out between rounds - only when they leave, or when their connection has been gone
+// for longer than AWAY_GRACE.
+//
+// { v, roomCode, emptySince,
+//   players: [{ id, name, socketId, status: 'lobby' | 'game' | 'results', ready, awaySince }],
+//   wins: { [player id]: count },
+//   countdown: { token, roster } during the 3-2-1, roster being the ids of the players it's for,
+//   round: { id, words: { regular, jumbled }, startedAt, solves, highest, progress: { [player id]: ... } } while one is played,
+//   results: the last round's, for whoever is still reading them }
+const ROOM_VERSION = 2; // rooms laid out any other way (made before this) count as gone
+
+const LEVEL_SECONDS = 30; // per word, as in game.js
+const MIN_PLAYERS = 2;
+const COUNTDOWN_MS = 4000; // the lobby's 3-2-1-GO
+// A dropped connection (a reload, a phone going to sleep, Vercel closing every WebSocket after about 5 minutes)
+// keeps your place in the room this long
+const AWAY_GRACE = 20 * 1000;
+// Back in a round, you get at least this long to find your feet, whatever was left on the clock
+const MIN_RESUME_SECONDS = 3;
+
+// A player is known by a random token their browser keeps, so a reload, a dropped connection or leaving and
+// coming back finds them in the same place. Everyone else only ever sees this hash of it, so nobody can copy
+// a token out of the player list and play as someone else.
+function playerIdFor(token) {
+  return crypto.createHash('sha256').update(token).digest('hex').slice(0, 16);
 }
 
-// Notes when the room went empty (null while someone is in it). changeRoom does this after every change.
+
+function isEmpty(room) {
+  return room.players.length === 0;
+}
+
+// Notes when the room went empty (null while someone is in it). Someone whose connection dropped is still in
+// it until their grace runs out, so a room everyone dropped out of went empty when the last grace ran out.
+// changeRoom does this after every change.
 function trackEmpty(room) {
-  room.emptySince = isEmpty(room) ? (room.emptySince || Date.now()) : null;
+  if (isEmpty(room)) room.emptySince = room.emptySince || Date.now();
+  else if (room.players.every(p => p.awaySince)) room.emptySince = Math.max(...room.players.map(p => p.awaySince)) + AWAY_GRACE;
+  else room.emptySince = null;
 }
 
 // Judged by the clock rather than a timer per room: a serverless instance (Vercel) is suspended while it
 // has nothing to do, and timers don't fire then
 function isAbandoned(room) {
-  return !!room.emptySince && Date.now() - room.emptySince >= EMPTY_ROOM_TTL;
+  return room.v !== ROOM_VERSION || (!!room.emptySince && Date.now() - room.emptySince >= EMPTY_ROOM_TTL);
 }
 
 // The room, or null if there's no such room. One nobody has been in for too long counts as gone (and is deleted).
@@ -171,31 +198,79 @@ async function findRoom(roomCode) {
   if (typeof roomCode !== 'string') return null;
   const room = await store.get(roomCode);
   if (room && isAbandoned(room)) {
-    await deleteIfAbandoned(roomCode);
+    await tidyRoom(roomCode);
     return null;
   }
   return room;
 }
 
-// Applies change(room) as one step (see store.update). It runs again if another server instance changed the
-// room at the same moment, so it must only edit the room - emit and log afterwards, using what it returns.
-// Resolves to null if there's no such room, otherwise { result, deleted }.
+// Applies change(room) as one step (see store.update), along with the room's own rules (see followRules).
+// It runs again if another server instance changed the room at the same moment, so change must only edit
+// the room - emit and log afterwards, using what it returns. Everyone in the room is sent the new
+// room-state whenever something they can see has changed.
+// Resolves to null if there's no such room, otherwise { result, deleted, state }.
 async function changeRoom(roomCode, change) {
   if (typeof roomCode !== 'string') return null;
   let abandoned = false;
+  let before, after, news;
   const outcome = await store.update(roomCode, (room) => {
     abandoned = isAbandoned(room);
     if (abandoned) return store.DELETE;
+    before = JSON.stringify(publicState(room));
+    const dropped = dropAway(room);
     const result = change(room);
-    if (result !== store.DELETE) trackEmpty(room);
+    if (result === store.DELETE) return result;
+    news = { dropped, ...followRules(room) };
+    trackEmpty(room);
+    after = publicState(room);
     return result;
   });
   if (abandoned) console.log(`Room ${roomCode} deleted - nobody was in it`);
   if (!outcome || abandoned) return null;
-  return { result: outcome.result, deleted: !!outcome.deleted };
+  if (outcome.deleted) return { result: outcome.result, deleted: true, state: null };
+
+  if (JSON.stringify(after) !== before) io.to(roomCode).emit('room-state', after);
+  news.dropped.forEach(name => announceLeft(roomCode, name));
+  if (news.stoppedBy) io.to(roomCode).emit('start-canceled', news.stoppedBy.id, news.stoppedBy.name);
+  if (news.countdown) beginCountdown(roomCode, news.countdown);
+  return { result: outcome.result, deleted: false, state: after };
 }
 
-async function deleteIfAbandoned(roomCode) {
+// What a room does on its own after any change: a round nobody is playing anymore is over (with no winner),
+// the 3-2-1 stops if one of its players isn't ready anymore, and it starts once everyone in the room is ready.
+// Returns what changeRoom has to tell everyone: { stoppedBy, countdown }.
+function followRules(room) {
+  if (room.round && !room.players.some(p => p.status === 'game')) room.round = null;
+
+  let stoppedBy = null;
+  if (room.countdown) {
+    const roster = room.players.filter(p => room.countdown.roster.includes(p.id));
+    const unready = roster.find(p => p.status !== 'lobby' || !p.ready);
+    if (unready || roster.length < MIN_PLAYERS) {
+      room.countdown = null;
+      stoppedBy = unready ? { id: unready.id, name: unready.name } : { id: null, name: '' };
+    }
+  }
+
+  // Everyone - someone still reading the last round's results isn't ready yet
+  const everyoneReady = room.players.length >= MIN_PLAYERS && room.players.every(p => p.status === 'lobby' && p.ready);
+  let countdown = null;
+  if (everyoneReady && !room.countdown && !room.round) {
+    countdown = room.countdown = { token: Math.random().toString(36).slice(2), roster: room.players.map(p => p.id) };
+  }
+  return { stoppedBy, countdown };
+}
+
+// Takes out the players whose connection dropped more than AWAY_GRACE ago, and returns their names. Their
+// progress in a round stays, in case they come back to it (see enterRoom).
+function dropAway(room) {
+  const gone = room.players.filter(p => p.awaySince && Date.now() - p.awaySince >= AWAY_GRACE);
+  room.players = room.players.filter(p => !gone.includes(p));
+  return gone.map(p => p.name);
+}
+
+// Just the room's rules: deletes it if it's been abandoned, and takes out whoever dropped out too long ago
+async function tidyRoom(roomCode) {
   await changeRoom(roomCode, () => {});
 }
 
@@ -204,7 +279,7 @@ async function deleteIfAbandoned(roomCode) {
 // never spends any of the free plan's commands.
 setInterval(async () => {
   try {
-    for (const roomCode of await store.emptySince(Date.now() - EMPTY_ROOM_TTL)) await deleteIfAbandoned(roomCode);
+    for (const roomCode of await store.emptySince(Date.now() - EMPTY_ROOM_TTL)) await tidyRoom(roomCode);
   } catch (err) {
     console.error('Cleaning up rooms failed:', err.message);
   }
@@ -229,53 +304,173 @@ function storageStatus() {
 let liveStats = { at: 0, playing: 0 };
 async function roomsPlaying() {
   if (Date.now() - liveStats.at > 60000) {
-    const playing = (await liveRooms()).filter(r => r.gameStarted && r.players.length > 0).length;
+    const playing = (await liveRooms()).filter(r => r.round && r.players.length > 0).length;
     liveStats = { at: Date.now(), playing };
   }
   return liveStats.playing;
 }
 
-// The room's creator leads whenever they're in it, otherwise whoever has been in the room longest
-function pickLeader(room) {
-  const leader = room.players.find(p => p.isHost) || room.players[0];
-  return leader ? leader.id : null;
-}
 
-// Takes a player out of the room. Returns what to tell everyone (see announceLeft), or null if they weren't in it.
-function removePlayer(room, playerId) {
-  const leavingPlayer = room.players.find(p => p.id === playerId);
-  if (!leavingPlayer) return null;
-  // Keep their progress in case they're only reloading (restored in join-socket-room)
-  if (room.gameStarted) {
-    room.stash[leavingPlayer.name] = { name: leavingPlayer.name, level: leavingPlayer.level, points: leavingPlayer.points, solved: leavingPlayer.solved };
-  }
-  room.players = room.players.filter(p => p.id !== playerId);
-  room.leaderId = pickLeader(room);
-
-  if (room.players.length === 0) {
-    // Nobody is left to finish a game that was in progress
-    room.gameStarted = false;
-    room.startToken = null;
-  }
-  return { id: playerId, name: leavingPlayer.name, players: room.players, leaderId: room.leaderId };
-}
-
-function announceLeft(roomCode, left) {
-  io.to(roomCode).emit('playerLeft', left.name, left.players, left.leaderId);
-  console.log(`Player ${left.name} (${left.id}) left room ${roomCode}`);
-}
-
-// Snapshot for the results screen - players leave the room as they move to that page
-function buildResults(room, winnerId) {
-  const players = room.players
-    .map(p => ({ id: p.id, name: p.name, points: p.points, solved: p.solved, level: p.level }))
-    .concat(Object.values(room.stash).map(p => ({ ...p, left: true })));
-  players.sort((a, b) => (b.id === winnerId) - (a.id === winnerId) || b.level - a.level || b.points - a.points);
+// What everyone in the room sees of it - no tokens, words or answers.
+// status: in the lobby ('ready' or 'notReady'), or 'inGame' while playing the round or reading its results.
+function publicState(room) {
+  const round = room.round;
   return {
-    winnerId,
-    players,
-    words: room.words.regular.map((word, i) => ({ word, scramble: room.words.jumbled[i], first: room.solves[i] || null })),
+    players: room.players.map(p => {
+      const progress = round && round.progress[p.id];
+      return {
+        id: p.id,
+        name: p.name,
+        status: p.status === 'lobby' ? (p.ready ? 'ready' : 'notReady') : 'inGame',
+        away: !!p.awaySince,
+        wins: room.wins[p.id] || 0,
+        level: progress ? progress.level : null,
+        points: progress ? progress.points : null,
+      };
+    }),
+    countdown: room.countdown ? room.countdown.roster : null,
+    playing: !!round,
+    total: round ? round.words.regular.length : 10,
   };
+}
+
+function announceLeft(roomCode, name) {
+  io.to(roomCode).emit('playerLeft', name);
+  console.log(`Player ${name} left room ${roomCode}`);
+}
+
+
+// Each player's clock on their word. It stops while they're away, so they come back to the time they had left.
+function secondsLeftOn(progress) {
+  return LEVEL_SECONDS - Math.floor((Date.now() - progress.levelStartedAt) / 1000);
+}
+
+function pauseClock(room, playerId) {
+  const progress = room.round && room.round.progress[playerId];
+  if (progress && progress.secondsLeft === null) progress.secondsLeft = Math.min(LEVEL_SECONDS, Math.max(0, secondsLeftOn(progress)));
+}
+
+// Starts the clock again and returns the seconds left on it
+function resumeClock(progress) {
+  const left = Math.max(MIN_RESUME_SECONDS, progress.secondsLeft === null ? secondsLeftOn(progress) : progress.secondsLeft);
+  progress.secondsLeft = null;
+  progress.levelStartedAt = Date.now() - (LEVEL_SECONDS - left) * 1000;
+  return left;
+}
+
+
+// Everyone in the room sees the 3-2-1 (the players it's for get the overlay). The words go out when it's
+// done, unless it was stopped in the meantime (see followRules).
+function beginCountdown(roomCode, countdown) {
+  io.to(roomCode).emit('game-starting', countdown.roster);
+  console.log(`Game starting in room: ${roomCode}`);
+  setTimeout(() => {
+    beginRound(roomCode, countdown.token).catch((err) => console.error(`Starting the game in room ${roomCode} failed:`, err.message));
+  }, COUNTDOWN_MS);
+}
+
+async function beginRound(roomCode, token) {
+  let tooFew;
+  const begun = await changeRoom(roomCode, (room) => {
+    tooFew = false;
+    if (!room.countdown || room.countdown.token !== token) return; // stopped, or it's another countdown by now
+    const roster = room.players.filter(p => room.countdown.roster.includes(p.id));
+    room.countdown = null;
+    if (roster.length < MIN_PLAYERS) {
+      tooFew = true;
+      return;
+    }
+
+    const words = getRandomWords(10);
+    const now = Date.now();
+    room.round = { id: token, words: { regular: words, jumbled: jumbleWords(words) }, startedAt: now, solves: words.map(() => null), highest: null, progress: {} };
+    room.results = null;
+    roster.forEach(p => {
+      p.status = 'game';
+      p.ready = false;
+      // Someone whose connection dropped during the 3-2-1 starts with their clock stopped, like any time they're away
+      room.round.progress[p.id] = { name: p.name, level: 0, points: 0, solved: 0, skipped: [], levelStartedAt: now, secondsLeft: p.awaySince ? LEVEL_SECONDS : null };
+    });
+    return { words: room.round.words, roster: roster.map(p => p.id) };
+  });
+  if (tooFew) io.to(roomCode).emit('start-canceled', null, '');
+  if (!begun || !begun.result) return;
+
+  const { words, roster } = begun.result;
+  console.log(`Words for room ${roomCode}:`, words.regular);
+  // Everyone gets it, but only the players in the round play it - the rest stay in the lobby
+  io.to(roomCode).emit('gameWords', { round: token, roster, words: words.jumbled, level: 0, points: 0, skipped: [], secondsLeft: LEVEL_SECONDS, highest: null });
+}
+
+// Snapshot of a finished round for its results screen
+function buildResults(room, winner) {
+  const round = room.round;
+  const inRoom = new Set(room.players.map(p => p.id));
+  const players = Object.entries(round.progress)
+    .map(([id, p]) => ({ id, name: p.name, points: p.points, solved: p.solved, level: p.level, left: !inRoom.has(id) }));
+  players.sort((a, b) => (b.id === winner.id) - (a.id === winner.id) || b.level - a.level || b.points - a.points);
+  return {
+    round: round.id,
+    winnerId: winner.id,
+    winnerName: winner.name,
+    players,
+    words: round.words.regular.map((word, i) => ({ word, scramble: round.words.jumbled[i], first: round.solves[i] || null })),
+  };
+}
+
+
+// Puts a game page's player in its room, or back in their place there: the same screen, and in a round
+// that's still going, the same word with the time they had left. auth comes with the connection (see lobby.js).
+async function enterRoom(socket, { roomCode, token, name }) {
+  name = typeof name === 'string' ? name.trim().slice(0, 20) : '';
+  if (typeof roomCode !== 'string' || typeof token !== 'string' || token.length < 16 || !name) {
+    socket.emit('roomNotFound', roomCode);
+    return;
+  }
+  const id = playerIdFor(token);
+  // Into the socket room before the others can see this player, so no news about the room is missed
+  await socket.join(roomCode);
+
+  const entered = await changeRoom(roomCode, (room) => {
+    let player = room.players.find(p => p.id === id);
+    const back = !!player;
+    // The same browser in another tab: this one takes over
+    const replaced = back && player.socketId && player.socketId !== socket.id ? player.socketId : null;
+    if (!player) {
+      player = { id, name, socketId: null, status: 'lobby', ready: false, awaySince: null };
+      room.players.push(player);
+    }
+    player.name = name;
+    player.socketId = socket.id;
+    player.awaySince = null;
+
+    const you = { id };
+    const progress = room.round && room.round.progress[id];
+    if (progress) {
+      // Still in the round, or back in it after leaving - unless it's over by now
+      player.status = 'game';
+      player.ready = false;
+      you.round = { round: room.round.id, words: room.round.words.jumbled, level: progress.level, points: progress.points, skipped: progress.skipped, secondsLeft: resumeClock(progress), highest: room.round.highest };
+    } else if (player.status === 'results') {
+      you.results = room.results;
+    }
+    return { back, replaced, you };
+  });
+  if (!entered) {
+    await socket.leave(roomCode);
+    socket.emit('roomNotFound', roomCode);
+    return;
+  }
+
+  socket.data.roomCode = roomCode;
+  socket.data.playerId = id;
+  const { back, replaced, you } = entered.result;
+  if (replaced) io.to(replaced).emit('replaced');
+  socket.emit('joined', { ...you, state: entered.state });
+  if (!back) {
+    socket.to(roomCode).emit('new-player', name);
+    console.log(`Player ${name} (${id}) joined room ${roomCode}`);
+  }
 }
 
 function isCreatable(s, t) {
@@ -310,8 +505,16 @@ function handle(socket, event, handler) {
 
 io.on('connection', (socket) => {
   const on = (event, handler) => handle(socket, event, handler);
+  // This socket's player in the room, as long as it's still theirs (another tab can take over - see enterRoom)
+  const me = (room) => room.players.find(p => p.id === socket.data.playerId && p.socketId === socket.id);
 
   console.log("connection: ", socket.id);
+
+  // A game page says which room it's in as it connects (see lobby.js), and that's handled before anything else
+  // it sends - after a dropped connection, the answers and levels it held on to arrive right behind it
+  if (socket.handshake.auth && socket.handshake.auth.roomCode) {
+    queues.set(socket, enterRoom(socket, socket.handshake.auth).catch((err) => console.error('Joining a room failed:', err.message)));
+  }
 
 
   // Counted from the rooms, which every instance shares: people in a lobby, a game or on a results screen.
@@ -319,8 +522,8 @@ io.on('connection', (socket) => {
   // how many servers are listening, so each instance only ever counted its own connections.)
   on('adminConnected', async () => {
     const rooms = await liveRooms();
-    const players = rooms.reduce((n, r) => n + r.players.length + r.viewers.length, 0);
-    socket.emit('currentAliveConnections', players, rooms.filter(r => r.gameStarted).length, storageStatus());
+    const players = rooms.reduce((n, r) => n + r.players.length, 0);
+    socket.emit('currentAliveConnections', players, rooms.filter(r => r.round).length, storageStatus());
   });
 
   // For the home page's "3 rooms playing now"
@@ -331,8 +534,7 @@ io.on('connection', (socket) => {
 
 
   on('createRoom', async () => {
-    // hostToken is this (home page) socket's id - the creator's browser saves it as 'leaderId' to claim the host spot
-    const room = { roomCode: null, players: [], viewers: [], emptySince: null, leaderId: null, hostToken: socket.id, gameStarted: false, startToken: null, words: { regular: [], jumbled: [] }, currentHighestLevel: 0, currentHighestLevelHolder: '', solves: [], stash: {}, results: null, startedAt: 0 };
+    const room = { v: ROOM_VERSION, roomCode: null, players: [], wins: {}, countdown: null, round: null, results: null, emptySince: null };
     trackEmpty(room); // starts empty - the creator's lobby page has to arrive within EMPTY_ROOM_TTL
     do {
       room.roomCode = generateJoinCode();
@@ -351,152 +553,79 @@ io.on('connection', (socket) => {
       socket.emit('roomNotFound', roomCode);
       return;
     }
-    // Players are added when their game page connects (join-socket-room). Adding this home page
+    // Players are added when their game page connects (enterRoom). Adding this home page
     // socket too left a duplicate "ghost" player that later triggered a fake "left the room" alert.
-    // Send the room state to the joining player
-    socket.emit('roomJoined', roomCode, room.players);
+    socket.emit('roomJoined', roomCode);
   });
 
 
-  on('join-socket-room', async (roomCode, playerName, hostToken) => {
-    if (typeof roomCode !== 'string') return socket.emit('roomNotFound', roomCode);
-    // Into the socket room before the others can see this player, so no news about the room is missed
-    await socket.join(roomCode);
-    const joined = await changeRoom(roomCode, (room) => {
-      const player = { id: socket.id, name: playerName, level: 0, points: 0, solved: 0, isHost: !!hostToken && hostToken === room.hostToken };
-      // Back mid-game (e.g. after a reload) - pick up your progress again
-      if (room.gameStarted && room.stash[playerName]) {
-        Object.assign(player, room.stash[playerName]);
-        delete room.stash[playerName];
-        const holder = room.currentHighestLevelHolder;
-        if (holder && holder.name === playerName) holder.id = socket.id;
+  // Game pages from before players joined as they connect, still open when this was deployed: send them home
+  on('join-socket-room', async () => socket.emit('roomNotFound'));
+
+
+
+  // The lobby's Ready button. Once everyone in the room is ready, the round starts (see followRules).
+  on('set-ready', async (ready) => {
+    await changeRoom(socket.data.roomCode, (room) => {
+      const player = me(room);
+      if (player && player.status === 'lobby') player.ready = !!ready;
+    });
+  });
+
+  // Play again on the results screen: back to the lobby, ready for the next round
+  on('play-again', async (ack) => {
+    await changeRoom(socket.data.roomCode, (room) => {
+      const player = me(room);
+      if (player && player.status === 'results') {
+        player.status = 'lobby';
+        player.ready = true;
       }
-      room.players.push(player);
-      room.leaderId = pickLeader(room);
-      return { players: room.players, leaderId: room.leaderId, gameStarted: room.gameStarted };
     });
-    if (!joined) {
+    if (typeof ack === 'function') ack();
+  });
+
+
+
+  // Leaving on purpose (the home button). A round they were in waits for them in case they come back.
+  on('leave-room', async (ack) => {
+    const { roomCode, playerId } = socket.data;
+    if (roomCode) {
+      socket.data.roomCode = null;
       await socket.leave(roomCode);
-      socket.emit('roomNotFound', roomCode);
-      return;
+      const left = await changeRoom(roomCode, (room) => {
+        const player = room.players.find(p => p.id === playerId);
+        if (!player) return;
+        pauseClock(room, playerId);
+        room.players = room.players.filter(p => p !== player);
+        // Leaving on purpose doesn't wait out EMPTY_ROOM_TTL
+        if (isEmpty(room)) return store.DELETE;
+        return player.name;
+      });
+      if (left && left.deleted) console.log(`Room ${roomCode} deleted - the last player left`);
+      else if (left && left.result) announceLeft(roomCode, left.result);
     }
-    socket.data.roomCode = roomCode;
-    const { players, leaderId, gameStarted } = joined.result;
-    console.log(`Player ${playerName} (${socket.id}) joined room ${roomCode}`);
-    socket.to(roomCode).emit('new-player', roomCode, playerName, socket.id, players, leaderId);
-    socket.emit('get-others-in-room', players, leaderId, gameStarted);
+    if (typeof ack === 'function') ack();
   });
 
 
-
-  on('leave-room', async (roomCode, playerId) => {
-    console.log(`Player: ${playerId} left room: ${roomCode}`);
-    let left = null;
-    if (typeof roomCode === 'string') await socket.leave(roomCode);
-    const outcome = await changeRoom(roomCode, (room) => {
-      left = removePlayer(room, socket.id);
-      // Leaving on purpose doesn't wait out EMPTY_ROOM_TTL
-      if (isEmpty(room)) return store.DELETE;
-    });
-    if (!outcome) return;
-    socket.data.roomCode = null;
-    if (left) announceLeft(roomCode, left);
-    if (outcome.deleted) console.log(`Room ${roomCode} deleted - the last player left`);
-  });
-
-
+  // A dropped connection keeps the player's place for AWAY_GRACE - long enough to reload or reconnect
   on('disconnect', async () => {
     console.log("disconnect: ", socket.id);
-
-    // The room this socket was playing in...
-    const { roomCode, viewing } = socket.data;
-    if (roomCode) {
-      let left = null;
-      await changeRoom(roomCode, (room) => {
-        left = removePlayer(room, socket.id);
-      });
-      if (left) announceLeft(roomCode, left);
-    }
-
-    // ...or the room whose results it was reading
-    if (viewing) {
-      await changeRoom(viewing, (room) => {
-        room.viewers = room.viewers.filter(id => id !== socket.id);
-      });
-    }
-  });
-
-
-
-
-  on('starting-game', async (roomCode) => {
-    const starting = await changeRoom(roomCode, (room) => {
-      if (room.gameStarted) return;
-      if (room.leaderId !== socket.id) return;
-      room.gameStarted = true;
-      room.currentHighestLevel = 0;
-      room.currentHighestLevelHolder = '';
-
-      // Generate words for the game
-      let levels = 10; // Default to 10 levels
-      let words = getRandomWords(levels);
-      room.words = { regular: words, jumbled: jumbleWords(words) };
-      room.solves = words.map(() => null);
-      room.stash = {};
-      room.results = null;
-      room.players.forEach(p => { p.level = 0; p.points = 0; p.solved = 0; });
-      // Identifies this countdown, so a canceled one can't still send the words - the cancel may be
-      // handled by another server instance than the one running the countdown
-      room.startToken = Math.random().toString(36).slice(2);
-      return { token: room.startToken, words };
-    });
-    if (!starting || !starting.result) return;
-    console.log(`Words for room ${roomCode}:`, starting.result.words);
-    io.to(roomCode).emit('game-starting');
-    console.log(`Game starting in room: ${roomCode}`);
-
-    // Send everyone the words at the same moment, once the lobby's 3-2-1 countdown is done
-    setTimeout(async () => {
-      try {
-        const begun = await changeRoom(roomCode, (room) => {
-          if (room.startToken !== starting.result.token) return; // canceled, or everyone left
-          room.startToken = null;
-          room.startedAt = Date.now();
-          return room.words.jumbled;
-        });
-        if (begun && begun.result) io.to(roomCode).emit('gameWords', begun.result);
-      } catch (err) {
-        console.error(`Starting the game in room ${roomCode} failed:`, err.message);
-      }
-    }, 4000);
-  });
-
-  on('cancel-start', async (roomCode) => {
-    const canceled = await changeRoom(roomCode, (room) => {
-      // Only during the countdown - once the words are out the game can't be canceled
-      if (room.leaderId !== socket.id || !room.startToken) return;
-      room.startToken = null;
-      room.gameStarted = false;
+    const { roomCode, playerId } = socket.data;
+    if (!roomCode) return;
+    const away = await changeRoom(roomCode, (room) => {
+      const player = room.players.find(p => p.id === playerId);
+      // Already back on another connection
+      if (!player || player.socketId !== socket.id) return false;
+      player.socketId = null;
+      player.awaySince = Date.now();
+      pauseClock(room, playerId);
       return true;
     });
-    if (!canceled || !canceled.result) return;
-    io.to(roomCode).emit('start-canceled');
-    console.log(`Game canceled in room: ${roomCode}`);
-  });
-
-
-
-
-  on('rejoin-game', async (roomCode, myId) => {
-    const room = await findRoom(roomCode);
-    if (!room) return;
-    if (!room.gameStarted) return;
-    console.log(`Player ${myId} rejoining game in room: ${roomCode}`);
-    await socket.join(roomCode);
-    socket.emit('gameWords', room.words.jumbled);
-    // Catch the rejoining player up on who's leading (quietly - it's not a new lead)
-    const holder = room.currentHighestLevelHolder;
-    if (holder) socket.emit('newHighestPlayer', holder.id, holder.name, room.currentHighestLevel, true);
+    // If nothing else happens in the room, this is when it notices they're gone for good
+    if (away && away.result) {
+      setTimeout(() => tidyRoom(roomCode).catch((err) => console.error(`Tidying room ${roomCode} failed:`, err.message)), AWAY_GRACE + 1000);
+    }
   });
 
 
@@ -504,16 +633,16 @@ io.on('connection', (socket) => {
 
   on('answerAttempt', async (data) => {
     if (!data) return;
-    console.log(`Player ${data.name} answered level ${data.level} in room ${data.roomCode}: ${data.answer}`);
-    const answered = await changeRoom(data.roomCode, (room) => {
-      if (!room.gameStarted) return;
-      // Ignore stray submits (e.g. Enter pressed in the lobby) - these used to crash the whole server
-      const word = Number.isInteger(data.level) && room.words.regular[data.level];
+    const { roomCode } = socket.data;
+    const answered = await changeRoom(roomCode, (room) => {
+      const player = me(room);
+      const progress = player && room.round && room.round.progress[player.id];
+      if (!progress) return;
+      // Ignore stray submits - these used to crash the whole server
+      const word = Number.isInteger(data.level) && room.round.words.regular[data.level];
       if (!word || typeof data.answer !== 'string') return;
-      const player = room.players.find(p => p.id === socket.id);
-      if (!player) return;
       // Already past this level (a duplicate submit) - don't score it twice
-      if (data.level < player.level) return;
+      if (data.level < progress.level) return;
       const correctAnswer = word.toLowerCase();
       // Points are kept here rather than trusting the browser's count
       let gained = 0;
@@ -525,68 +654,80 @@ io.on('connection', (socket) => {
       }
 
       if (gained) {
-        player.level = data.level + 1;
-        player.points += gained;
-        player.solved += 1;
-        if (!room.solves[data.level]) {
-          room.solves[data.level] = { name: player.name, seconds: Math.round((Date.now() - room.startedAt) / 1000) };
+        progress.level = data.level + 1;
+        progress.points += gained;
+        progress.solved += 1;
+        progress.levelStartedAt = Date.now();
+        progress.secondsLeft = null;
+        if (!room.round.solves[data.level]) {
+          room.round.solves[data.level] = { name: player.name, seconds: Math.round((Date.now() - room.round.startedAt) / 1000) };
         }
       }
-      return { gained, points: player.points, players: gained ? room.players : null };
+      return { name: player.name, gained, points: progress.points };
     });
     if (!answered || !answered.result) return;
 
-    const { gained, points, players } = answered.result;
-    if (players) io.to(data.roomCode).emit('update-players', players);
+    const { name, gained, points } = answered.result;
+    console.log(`Player ${name} answered level ${data.level} in room ${roomCode}: ${data.answer}`);
     socket.emit('answerResult', gained > 0, data.level, points, gained);
   });
 
 
 
 
+  // level: the one the player has moved on to. skipped: they got there because the clock ran out.
   on('levelCompleted', async (data) => {
-    if (!data) return;
-    console.log(`Player ${data.name} completed level ${data.level} in room ${data.roomCode}`);
-
-    const completed = await changeRoom(data.roomCode, (room) => {
-      // Track progress for the standings, including words skipped when the timer ran out
-      let players = null;
-      const player = room.players.find(p => p.id === socket.id);
-      if (player && Number.isInteger(data.level) && data.level > player.level) {
-        player.level = Math.min(data.level, room.words.regular.length);
-        players = room.players;
+    if (!data || !Number.isInteger(data.level)) return;
+    const { roomCode } = socket.data;
+    const completed = await changeRoom(roomCode, (room) => {
+      const player = me(room);
+      const round = room.round;
+      const progress = player && round && round.progress[player.id];
+      if (!progress) return;
+      // A right answer has already moved them on (answerAttempt) - this is for the clock running out
+      if (data.level > progress.level) {
+        if (data.skipped) progress.skipped.push(data.level - 1);
+        progress.level = Math.min(data.level, round.words.regular.length);
+        progress.levelStartedAt = Date.now();
+        progress.secondsLeft = null;
       }
 
-      if (room.currentHighestLevel >= data.level) return { players, newLeader: false };
-      room.currentHighestLevel = data.level;
-      room.currentHighestLevelHolder = { name: data.name, id: data.id};
-      return { players, newLeader: true };
+      if (round.highest && round.highest.level >= progress.level) return;
+      round.highest = { id: player.id, name: player.name, level: progress.level };
+      return round.highest;
     });
     if (!completed || !completed.result) return;
 
-    const { players, newLeader } = completed.result;
-    if (players) io.to(data.roomCode).emit('update-players', players);
-    if (newLeader) io.to(data.roomCode).emit('newHighestPlayer', data.id, data.name, data.level);
+    const { id, name, level } = completed.result;
+    console.log(`Player ${name} completed level ${level} in room ${roomCode}`);
+    io.to(roomCode).emit('newHighestPlayer', id, name, level);
   });
 
 
 
-  on('gameOver', async (data) => {
-    if (!data) return;
-    const over = await changeRoom(data.roomCode, (room) => {
-      // Only the first player to finish wins - a second, near-simultaneous finish could otherwise change the winner
-      if (!room.gameStarted) return;
-      // ...and only someone who has actually reached the last word
-      const winner = room.players.find(p => p.id === socket.id);
-      if (!winner || winner.level < room.words.regular.length) return;
-      room.gameStarted = false;
-      room.results = buildResults(room, winner.id);
-      return { id: winner.id, name: winner.name };
+  on('gameOver', async () => {
+    const { roomCode } = socket.data;
+    const over = await changeRoom(roomCode, (room) => {
+      const player = me(room);
+      const round = room.round;
+      // Only someone who has actually reached the last word wins - and only the first, since the
+      // round is over (gone) by the time a near-simultaneous second finish arrives
+      const progress = player && round && round.progress[player.id];
+      if (!progress || progress.level < round.words.regular.length) return;
+      room.results = buildResults(room, player);
+      room.wins[player.id] = (room.wins[player.id] || 0) + 1;
+      room.round = null;
+      // Everyone who was playing moves on to the results (still in the game, as far as the lobby can tell,
+      // until they press Play again)
+      room.players.forEach(p => {
+        if (p.status === 'game') p.status = 'results';
+      });
+      return room.results;
     });
     if (!over || !over.result) return;
 
-    console.log(`Player ${over.result.name} won the game in room ${data.roomCode}`);
-    io.to(data.roomCode).emit('playerFinished', over.result.id, over.result.name);
+    console.log(`Player ${over.result.winnerName} won the game in room ${roomCode}`);
+    io.to(roomCode).emit('round-over', over.result);
   });
 
 
@@ -595,22 +736,9 @@ io.on('connection', (socket) => {
 
   on('timeWarning', async (data) => {
     if (!data) return;
-    const room = await findRoom(data.roomCode);
-    if (!room) return;
-    const correctAnswer = room.words.regular[data.level];
-    socket.emit('timeUpdate', correctAnswer);
-  });
-
-
-
-  on('requestResults', async (roomCode) => {
-    // Reading the results counts as being in the room - Play again leads back to it
-    const reading = await changeRoom(roomCode, (room) => {
-      if (!room.viewers.includes(socket.id)) room.viewers.push(socket.id);
-      return room.results;
-    });
-    if (reading) socket.data.viewing = roomCode;
-    socket.emit('results', reading && reading.result ? reading.result : null);
+    const room = await findRoom(socket.data.roomCode);
+    const word = room && room.round && Number.isInteger(data.level) && room.round.words.regular[data.level];
+    if (word) socket.emit('timeUpdate', word);
   });
 
 });

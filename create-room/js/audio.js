@@ -1,7 +1,7 @@
 
 const mute_btn = document.getElementById('mute-button');
 
-let mute_audio = false;
+let mute_audio = localStorage.getItem('muteAudio') === 'true';
 
 // The mute button covers the music and the sound effects in shared/sfx.js
 function showMuteState() {
@@ -22,7 +22,7 @@ mute_btn.addEventListener('click', () => {
     background_audio.muted = false;
     game_audio.muted = false;
     // The browser may have blocked autoplay on load, so start this screen's track now
-    const track = currentWords.length ? game_audio : background_audio;
+    const track = view === 'game' ? game_audio : background_audio;
     track.play().catch((e) => {
       console.log("(UNMUTE) Audio play was prevented:", e);
     });
@@ -38,16 +38,21 @@ mute_btn.addEventListener('click', () => {
 // }, { once: true });
 
 window.addEventListener('load', () => {
-
-  mute_audio = localStorage.getItem('muteAudio') === 'true';
   showMuteState();
+  // You may already be back in a round by now
+  if (view !== 'game') startLobbyAudio();
+});
 
+// The lobby's track, for the lobby and the results
+function startLobbyAudio() {
+  document.getElementById('gameMusic').pause();
   const background_audio = document.getElementById('backgroundMusic');
   background_audio.muted = mute_audio;
+  if (!background_audio.paused) return; // already playing
   background_audio.play().catch((e) => {
-    console.log("(LOAD) Audio play was prevented:", e);
+    console.log("(LOBBY) Audio play was prevented:", e);
   });
-});
+}
 
 
 

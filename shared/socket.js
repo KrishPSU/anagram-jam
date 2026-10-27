@@ -4,5 +4,7 @@
 // connection reaches the same server process. Vercel runs the server as serverless functions and spreads those
 // requests across instances, so connecting often failed or sat for 25 seconds. A WebSocket is one connection,
 // so it doesn't have that problem. Polling is kept as the fallback for networks that block WebSockets.
+//
+// options: anything else for io(), e.g. the game page's auth (see lobby.js)
 
-window.connectSocket = () => io({ transports: ['websocket', 'polling'], tryAllTransports: true });
+window.connectSocket = (options = {}) => io({ transports: ['websocket', 'polling'], tryAllTransports: true, ...options });

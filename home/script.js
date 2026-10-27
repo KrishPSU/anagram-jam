@@ -184,7 +184,6 @@ soloBtn.addEventListener('click', () => {
 socket.on('roomCreated', (roomCode) => {
   if (pending !== 'create') return;
   openGamePage(roomCode);
-  localStorage.setItem('leaderId', socket.id);
 });
 
 socket.on('roomJoined', (roomCode) => {

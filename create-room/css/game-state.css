@@ -66,13 +66,13 @@
 }
 
 
-/* Header: leader on the left, timer on the right, room left for the fixed mute button */
+/* Header: leader on the left, timer on the right, with room left for the fixed home and mute buttons */
 
 .game-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 68px 6px 14px;
+  padding: 10px 68px 6px;
 }
 
 .leader {
@@ -220,6 +220,12 @@
   gap: 16px;
   padding: 8px 16px 72px;
   min-height: 0;
+  --tile-size: 52px;
+  --tile-gap: 8px;
+}
+
+@media (min-width: 600px) {
+  .game-content { --tile-size: 60px; --tile-gap: 10px; }
 }
 
 .progress {
@@ -231,14 +237,11 @@
 }
 
 .answer-slots, .letter-tiles {
-  --tile-size: 52px;
   display: flex;
   justify-content: center;
-  gap: 8px;
-}
-
-@media (min-width: 600px) {
-  .answer-slots, .letter-tiles { --tile-size: 60px; gap: 10px; }
+  gap: var(--tile-gap);
+  /* No pinch-zoom or scrolling here, so two thumbs landing at once are just two taps */
+  touch-action: none;
 }
 
 .slot {
@@ -263,11 +266,8 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-.slot.pop { animation: slotPop 0.25s ease-out; }
-
-@keyframes slotPop {
-  50% { transform: scale(1.12); }
-}
+/* Its tile is still flying in (game.js flyTile) */
+.slot.landing { color: transparent; }
 
 .answer-slots.win .slot {
   background: var(--go);
@@ -306,7 +306,10 @@
   transition: transform 0.15s ease, opacity 0.2s ease;
 }
 
-.letter-tiles .tile:hover { transform: translateY(-2px); }
+/* Only with a real pointer - on phones the hover sticks to the last tile tapped */
+@media (hover: hover) {
+  .letter-tiles .tile:hover { transform: translateY(-2px); }
+}
 .letter-tiles .tile:active { transform: translateY(2px); }
 
 .letter-tiles .tile.used {
@@ -316,6 +319,14 @@
 }
 
 .letter-tiles.nope { animation: shake 0.3s ease; }
+
+/* A copy of a tapped tile on its way to the answer row (game.js flyTile) */
+.tile.flying {
+  position: fixed;
+  z-index: 20;
+  margin: 0;
+  pointer-events: none;
+}
 
 .feedback {
   height: 28px;
@@ -336,9 +347,13 @@
   100% { opacity: 0; transform: translateY(-14px); }
 }
 
+/* Shuffle on the left and delete on the right, like backspace on a phone keyboard. As wide as the
+   longest words (5 letters, see words.js) so the buttons don't move from word to word. */
 .word-actions {
   display: flex;
-  gap: 12px;
+  justify-content: space-between;
+  width: calc(var(--tile-size) * 5 + var(--tile-gap) * 4);
+  max-width: 100%;
 }
 
 .hint {
