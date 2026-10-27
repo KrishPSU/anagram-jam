@@ -29,6 +29,7 @@
   <script src="/shared/toast.js" defer></script>
   <script src="/shared/how-to-play.js" defer></script>
   <script src="script.js" defer></script>
+  <script src="install.js" defer></script>
 
 
   <!-- Service Worker Registration -->
@@ -109,6 +110,12 @@
       </form>
 
       <button class="soon" type="button" id="soloBtn">Solo mode <span>Soon</span></button>
+
+      <!-- Phones and tablets only, until it's installed or the × is tapped (install.js) -->
+      <p class="install-hint" id="installHint" hidden>
+        <button class="install-open" type="button" id="installBtn">📲 Add Anagram Jam to your home screen</button>
+        <button class="install-hide" type="button" id="installHide" aria-label="Don't show this again" title="Don't show this again">×</button>
+      </p>
     </section>
   </main>
 
