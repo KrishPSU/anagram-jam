@@ -77,6 +77,7 @@ function soloRow(entry) {
     note.textContent = ' (shows as Player)';
     name.appendChild(note);
   }
+  cell(entry.words === null ? '' : entry.words);
   cell(entry.points);
   cell(new Date(entry.at).toLocaleString());
 

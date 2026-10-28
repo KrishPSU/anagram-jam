@@ -480,6 +480,8 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   padding: 0;
   list-style: none;
   display: grid;
+  /* As wide as the box, not as the longest row would like - long names are cut short instead */
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
 }
 
@@ -517,8 +519,19 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   text-overflow: ellipsis;
 }
 
+.board-row .words {
+  flex: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wide enough for "120 pts", so the words line up in a column */
 .board-row .pts {
   flex: none;
+  min-width: 4em;
+  text-align: right;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }

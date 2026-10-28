@@ -1,6 +1,6 @@
 // Solo mode's page (the rules are in solo.js at the project root). The rules, the run and its results are screens of
 // this one page, like a room's lobby, round and results are of the game page. This file connects to the server and
-// switches screens; tiles.js is the word on screen, run.js the minute, and results.js what comes after it.
+// switches screens; tiles.js is the word on screen, run.js the run, and results.js what comes after it.
 
 // The leaderboard needs a name - first-time visitors pick one on the home page
 const playerName = localStorage.getItem('name');

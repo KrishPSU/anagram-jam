@@ -15,7 +15,7 @@
         <h2 id="boardTitle">🏆 Solo leaderboard</h2>
         <button class="board-close" aria-label="Close">×</button>
       </div>
-      <p class="board-note">Everyone's best score in one minute.</p>
+      <p class="board-note">Everyone's best score in two minutes.</p>
       <div class="board-status" role="status"></div>
       <ol class="board-list"></ol>
       <p class="board-count"></p>
@@ -72,13 +72,14 @@
       const gap = document.createElement('li');
       gap.className = 'board-gap';
       gap.textContent = '…';
-      rows.push(gap, row({ rank: reply.you.rank, name: localStorage.getItem('name') || 'You', points: reply.you.points, you: true }));
+      rows.push(gap, row({ rank: reply.you.rank, name: localStorage.getItem('name') || 'You', words: reply.you.words, points: reply.you.points, you: true }));
     }
     listEl.replaceChildren(...rows);
     countEl.textContent = `${reply.players} ${reply.players === 1 ? 'player' : 'players'}`;
   }
 
-  function row({ rank, name, points, you }) {
+  // words: how many words the run got (null if that wasn't kept)
+  function row({ rank, name, words, points, you }) {
     const item = document.createElement('li');
     item.className = 'board-row' + (you ? ' you' : '');
     const place = document.createElement('span');
@@ -87,10 +88,17 @@
     const label = document.createElement('span');
     label.className = 'name';
     label.textContent = you ? `${name} (you)` : name;
+    item.append(place, avatarEl(name), label);
+    if (words !== null) {
+      const count = document.createElement('span');
+      count.className = 'words';
+      count.textContent = `${words} ${words === 1 ? 'word' : 'words'}`;
+      item.append(count);
+    }
     const pts = document.createElement('span');
     pts.className = 'pts';
     pts.textContent = `${points} pts`;
-    item.append(place, avatarEl(name), label, pts);
+    item.append(pts);
     return item;
   }
 

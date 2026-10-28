@@ -1,9 +1,9 @@
-// Solo mode: one player against the clock. They get one minute to unscramble as many words as they can, with no
+// Solo mode: one player against the clock. They get two minutes to unscramble as many words as they can, with no
 // skipping, and every 5 words the words get a letter longer - 3 letters to start, up to 10. The hidden word is worth 2
 // points and any other real word made from all the same letters 1, with 1 more for getting it in under 3 seconds.
-// Each player's best goes on a leaderboard everyone can see.
+// Each player's best goes on a leaderboard everyone can see, with how many words it got.
 //
-// The page plays the minute on its own, so nothing waits on the network between words (see solo/js/run.js), and sends
+// The page plays the two minutes on its own, so nothing waits on the network between words (see solo/js/run.js), and sends
 // its answers when the time is up. The words were picked here and every answer is checked again here, so the score
 // that goes on the leaderboard is the server's own - a made-up one can't be sent in.
 
@@ -12,16 +12,16 @@ const WORDS = require('./words');
 const DICTIONARY = require('word-exists/dictionary.json'); // word-exists' own list, as used for rooms' answers
 const { isRude } = require('./names');
 
-const RUN_SECONDS = 60;
+const RUN_SECONDS = 120;
 const FIRST_LENGTH = 3;
 const LONGEST = 10; // words stay this long after that
 const WORDS_PER_LENGTH = 5;
 const QUICK_MS = 3000; // an answer this fast earns the extra point
-// Every word a run can get to. Nobody gets through 40 in a minute - the last five are ten letters long.
+// Every word a run can get to. Nobody gets through 40 in two minutes - the last five are ten letters long.
 const RUN_WORDS = (LONGEST - FIRST_LENGTH + 1) * WORDS_PER_LENGTH;
-// The page's 3-2-1 comes between asking for the run and its minute starting
+// The page's 3-2-1 comes between asking for the run and its clock starting
 const COUNTDOWN_MS = 4000;
-// A run can still be sent in this long after its minute is up - time for a phone whose connection dropped right at
+// A run can still be sent in this long after its time is up - time for a phone whose connection dropped right at
 // the end to get it through (the page keeps trying, and has a Try again button)
 const FINISH_GRACE = 2 * 60 * 1000;
 const RESULTS_TOP = 10; // the top of the leaderboard, as the results screen shows it
@@ -102,7 +102,7 @@ function pickWords() {
 // What a run's answers are worth. answers: { answer, ms } for each word they solved, in order, ms being how long it took
 // them - from its letters showing up to the last one being placed. That's timed on the page, so a slow connection
 // can't cost anyone the quick bonus. Counting stops at the first answer that doesn't hold up, or that couldn't have
-// fitted in the minute.
+// fitted in the time.
 function scoreRun(run, answers) {
   const solved = [];
   let points = 0;
@@ -136,8 +136,9 @@ function shownName(name) {
 const isRunId = (id) => typeof id === 'string' && /^[0-9a-f]{16,64}$/.test(id);
 const isToken = (token) => typeof token === 'string' && token.length >= 16;
 
-// A leaderboard row for a page: no ids (they're the players' token hashes), just whether it's the one asking
-const rowFor = (playerId) => (entry, i) => ({ rank: i + 1, name: shownName(entry.name), points: pointsOf(entry.score), you: entry.id === playerId });
+// A leaderboard row for a page: no ids (they're the players' token hashes), just whether it's the one asking. words:
+// how many words their best got.
+const rowFor = (playerId) => (entry, i) => ({ rank: i + 1, name: shownName(entry.name), words: entry.words, points: pointsOf(entry.score), you: entry.id === playerId });
 
 
 // store: where runs and the leaderboard are kept (see store.js). playerIdFor: who a browser's token is, as in rooms.
@@ -171,10 +172,10 @@ function createSolo({ store, playerIdFor }) {
     };
   }
 
-  // The minute is up: the page sends its answers (see scoreRun), and the run goes on the leaderboard. Asking again
+  // The time is up: the page sends its answers (see scoreRun), and the run goes on the leaderboard. Asking again
   // (the reply got lost) gets the same reply.
   // Replies { status: 'ok', points, solved, stuck, board } - board as placeOnBoard has it - or with status 'gone' (no
-  // such run of theirs, or it's expired) or 'late' (sent in too long after the minute was up).
+  // such run of theirs, or it's expired) or 'late' (sent in too long after the time was up).
   async function finish({ run: id, token, answers } = {}) {
     if (!isRunId(id) || !isToken(token) || !Array.isArray(answers)) return { status: 'gone' };
     let run;
@@ -188,7 +189,7 @@ function createSolo({ store, playerIdFor }) {
     if (Date.now() > run.startedAt + COUNTDOWN_MS + RUN_SECONDS * 1000 + FINISH_GRACE) return { status: 'late' };
 
     const scored = scoreRun(run, answers);
-    run.result = { status: 'ok', ...scored, board: await placeOnBoard(run, scored.points) };
+    run.result = { status: 'ok', ...scored, board: await placeOnBoard(run, scored.points, scored.solved.length) };
     try {
       await store.saveRun(run);
     } catch (err) {
@@ -200,14 +201,14 @@ function createSolo({ store, playerIdFor }) {
 
   // Where the run puts the player, once it's on the leaderboard (only runs that scored go on):
   // { better: the share of the other players' bests it beats, as a whole percent (null when nobody else is on it),
-  //   first: they're the first on the leaderboard, players: how many are on it, rank and best: their best's place
-  //   and points, newBest: this run beat their best, top: the first few rows }
+  //   first: they're the first on the leaderboard, players: how many are on it, rank, best and bestWords: their best's
+  //   place, points and words, newBest: this run beat their best, top: the first few rows }
   // null if the leaderboard can't be reached right now.
-  async function placeOnBoard(run, points) {
+  async function placeOnBoard(run, points, words) {
     let standing;
     try {
       standing = points > 0
-        ? await store.addScore(run.playerId, scoreKey(points, Date.now()), run.name, points * SCORE_SPAN, RESULTS_TOP)
+        ? await store.addScore(run.playerId, scoreKey(points, Date.now()), run.name, words, points * SCORE_SPAN, RESULTS_TOP)
         : await store.leaderboard(RESULTS_TOP, run.playerId);
     } catch (err) {
       console.error('Putting a solo run on the leaderboard failed:', err.message);
@@ -223,13 +224,14 @@ function createSolo({ store, playerIdFor }) {
       players: standing.total,
       rank: onBoard ? standing.rank + 1 : null,
       best: onBoard ? pointsOf(standing.best) : null,
+      bestWords: onBoard ? standing.words : null,
       newBest: points > 0 && standing.before !== null && points > pointsOf(standing.before),
       top: standing.top.map(rowFor(run.playerId)),
     };
   }
 
   // The leaderboard: the first `count` rows (up to 50), and where the player whose browser holds `token` is on it.
-  // Replies { status: 'ok', players, top, you: { rank, points } or null } or { status: 'unavailable' }.
+  // Replies { status: 'ok', players, top, you: { rank, words, points } or null } or { status: 'unavailable' }.
   async function board({ token, count } = {}) {
     const playerId = isToken(token) ? playerIdFor(token) : '';
     count = Number.isInteger(count) ? Math.min(Math.max(count, 0), BOARD_TOP) : BOARD_TOP;
@@ -244,7 +246,7 @@ function createSolo({ store, playerIdFor }) {
       status: 'ok',
       players: board.total,
       top: board.top.map(rowFor(playerId)),
-      you: board.rank === null ? null : { rank: board.rank + 1, points: pointsOf(board.best) },
+      you: board.rank === null ? null : { rank: board.rank + 1, words: board.words, points: pointsOf(board.best) },
     };
   }
 
@@ -276,7 +278,7 @@ function createSolo({ store, playerIdFor }) {
     return {
       status: 'ok',
       players: board.total,
-      top: board.top.map((entry, i) => ({ rank: i + 1, id: entry.id, name: entry.name, hidden: shownName(entry.name) !== entry.name, points: pointsOf(entry.score), at: timeOf(entry.score) })),
+      top: board.top.map((entry, i) => ({ rank: i + 1, id: entry.id, name: entry.name, hidden: shownName(entry.name) !== entry.name, words: entry.words, points: pointsOf(entry.score), at: timeOf(entry.score) })),
     };
   }
 

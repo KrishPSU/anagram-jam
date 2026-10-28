@@ -1,9 +1,8 @@
-// The minute: its clock, the words one after another, and the points. The page checks each answer itself against the
+// The run: its clock, the words one after another, and the points. The page checks each answer itself against the
 // hashes the run came with (see start in solo.js at the project root), so the next word is up straight away - nothing
 // waits on the network until the time is up. Then the server checks every answer again and scores the run itself.
 
-const SECONDS = 60;          // as in solo.js at the project root
-const WORDS_PER_LENGTH = 5;  // as in solo.js
+const WORDS_PER_LENGTH = 5;  // as in solo.js at the project root
 const QUICK_MS = 3000;       // as in solo.js
 const TIMER_RING = 2 * Math.PI * 21; // circumference of the timer ring in solo.html
 
@@ -21,15 +20,15 @@ const quickEl = document.getElementById('quick');
 const feedbackEl = document.getElementById('feedback');
 const tierEls = [...document.querySelectorAll('#tier li')];
 
-let run = null;        // the server's: { run (its id), words (scrambled), hashes, others (see start in solo.js) }
+let run = null;        // the server's: { run (its id), words (scrambled), hashes, others, seconds (see start in solo.js) }
 let level = 0;         // the word on screen
 let points = 0;
 let answers = [];      // { answer, ms, points, quick } for each word solved, in order - the server scores answer and ms
-let endsAt = 0;        // when the minute is up, by Date.now() - which keeps going while the phone is locked
+let endsAt = 0;        // when the time is up, by Date.now() - which keeps going while the phone is locked
 let shownAt = 0;       // when the word on screen came up
 let clock = null;
 let shownSeconds = null;
-let running = false;   // the minute is going ("playing" is taken: it's the music's, in /js/audio.js)
+let running = false;   // the clock is going ("playing" is taken: it's the music's, in /js/audio.js)
 let locked = false;    // celebrating a right answer - no input
 let starting = false;  // waiting on the 3-2-1 and the words
 
@@ -45,7 +44,7 @@ function answerHashes() {
 }
 
 
-// Start, or Play again: the 3-2-1 runs while the words are on their way, so the minute starts right after GO
+// Start, or Play again: the 3-2-1 runs while the words are on their way, so the clock starts right after GO
 async function startRun() {
   if (starting) return;
   starting = true;
@@ -108,7 +107,7 @@ function beginRun(reply) {
   setPoints(0);
   showView('game');
   running = true;
-  endsAt = Date.now() + SECONDS * 1000;
+  endsAt = Date.now() + run.seconds * 1000;
   shownSeconds = null;
   clearInterval(clock);
   clock = setInterval(tick, 200);
@@ -123,7 +122,7 @@ function tick() {
   if (left !== shownSeconds) {
     shownSeconds = left;
     timerTextEl.textContent = left;
-    timerBarEl.style.strokeDashoffset = TIMER_RING * (1 - left / SECONDS);
+    timerBarEl.style.strokeDashoffset = TIMER_RING * (1 - left / run.seconds);
     gameTimerEl.classList.toggle('urgent', left <= 10);
     if (left <= 5 && left > 0 && running) sfx.tick();
   }
@@ -205,7 +204,7 @@ function answerReady(filledAt) {
 
 function nextWord() {
   level++;
-  // Every word there is. Nobody gets this far in a minute, but if they did, that's the run.
+  // Every word there is. Nobody gets this far in two minutes, but if they did, that's the run.
   if (level >= run.words.length) {
     timeUp();
     return;
@@ -216,7 +215,7 @@ function nextWord() {
 }
 
 
-// The minute is up: the word you were on is shown (the server says what it was), then the results
+// The time is up: the word you were on is shown (the server says what it was), then the results
 function timeUp() {
   if (!running) return;
   running = false;

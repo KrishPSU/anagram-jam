@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#232526">
-  <meta name="description" content="One minute to unscramble as many words as you can. How far up the leaderboard can you get?">
+  <meta name="description" content="Two minutes to unscramble as many words as you can. How far up the leaderboard can you get?">
   <title>Solo mode | Anagram Jam</title>
 
   <!-- Favicon (browsers cache these hard - bump ?v= whenever the icon changes) -->
@@ -74,12 +74,12 @@
       <div class="code-tiles" aria-label="Solo">
         <span class="tile" aria-hidden="true">S</span><span class="tile" aria-hidden="true">O</span><span class="tile" aria-hidden="true">L</span><span class="tile" aria-hidden="true">O</span>
       </div>
-      <p class="solo-tagline">One minute to unscramble as many words as you can.</p>
+      <p class="solo-tagline">Two minutes to unscramble as many words as you can.</p>
     </header>
 
     <div class="card solo-card">
       <ul class="solo-rules">
-        <li><span class="solo-rule-icon" aria-hidden="true">⏱</span><span>60 seconds, and the clock never stops. No skipping.</span></li>
+        <li><span class="solo-rule-icon" aria-hidden="true">⏱</span><span>2 minutes, and the clock never stops. No skipping.</span></li>
         <li><span class="solo-rule-icon" aria-hidden="true">🔤</span><span>Every 5 words, the words get a letter longer.</span></li>
         <li><span class="solo-rule-icon" aria-hidden="true">⭐</span><span><b>2 points</b> for the hidden word, <b>1</b> for another real word with the same letters.</span></li>
         <li><span class="solo-rule-icon" aria-hidden="true">⚡</span><span><b>+1</b> if you get it in under 3 seconds.</span></li>
@@ -92,7 +92,7 @@
   </main>
 
 
-  <!-- 3-2-1 before the minute starts. The words are on their way meanwhile (see run.js). -->
+  <!-- 3-2-1 before the clock starts. The words are on their way meanwhile (see run.js). -->
   <div class="overlay" id="countdown" hidden>
     <p class="eyebrow">Get ready</p>
     <div class="count-num" id="countNum">3</div>
@@ -110,7 +110,7 @@
             <circle class="track" cx="24" cy="24" r="21"></circle>
             <circle class="bar" id="timerBar" cx="24" cy="24" r="21"></circle>
           </svg>
-          <span id="timerText">60</span>
+          <span id="timerText">120</span>
         </div>
       </header>
 

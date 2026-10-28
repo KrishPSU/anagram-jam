@@ -18,15 +18,15 @@
 // If Redis stops answering (see fallbackStore), the game carries on with rooms in memory.
 //
 // Solo mode (see solo.js) keeps two things here as well: each run while it's being played (its words, so the
-// answers sent at the end can be checked), and the leaderboard - every player's best score. A leaderboard score is a
-// single number, higher is better (solo.js packs the points and the time into it).
+// answers sent at the end can be checked), and the leaderboard - every player's best score, and how many words it got.
+// A leaderboard score is a single number, higher is better (solo.js packs the points and the time into it).
 
 const DELETE = Symbol('delete room');
 
 // A room nobody touches for this long disappears from Redis even if something went wrong cleaning it up
 const ROOM_TTL = 12 * 60 * 60 * 1000;
 
-// A solo run is a minute long - this leaves plenty of time to send it in after a dropped connection
+// A solo run is two minutes long - this leaves plenty of time to send it in after a dropped connection
 const RUN_TTL = 15 * 60 * 1000;
 
 // emptyRoomTtl: how long a room may stay empty (room.emptySince) before it's gone
@@ -37,7 +37,7 @@ function createStore(redisUrl, { emptyRoomTtl }) {
 function memoryStore() {
   const rooms = new Map(); // roomCode -> JSON
   const runs = new Map();  // solo run id -> { raw: JSON, expiresAt }
-  const scores = new Map(); // player id -> { score, name }: the solo leaderboard
+  const scores = new Map(); // player id -> { score, name, words }: the solo leaderboard
 
   function liveRun(id) {
     const run = runs.get(id);
@@ -54,6 +54,7 @@ function memoryStore() {
       lower: board.filter(entry => entry.score < below).length,
       rank: rank === -1 ? null : rank,
       best: rank === -1 ? null : board[rank].score,
+      words: rank === -1 ? null : board[rank].words,
       top: board.slice(0, top),
     };
   }
@@ -120,19 +121,21 @@ function memoryStore() {
       runs.set(run.id, { raw: JSON.stringify(run), expiresAt: Date.now() + RUN_TTL });
     },
 
-    // Puts score on the leaderboard if it's the player's best, under the name given (their latest), and says where
-    // everyone stands: { before (their best until now, or null), total, lower (players with a score under `below`),
-    // rank (0 = top), best, top: the first `top` entries, as { id, score, name } }
-    async addScore(playerId, score, name, below, top) {
-      const before = scores.has(playerId) ? scores.get(playerId).score : null;
-      scores.set(playerId, { score: before !== null && before >= score ? before : score, name });
-      return { before, ...standings(playerId, top, below) };
+    // Puts score (a run that got `words` words) on the leaderboard if it's the player's best, under the name given
+    // (their latest), and says where everyone stands: { before (their best until now, or null), total, lower (players
+    // with a score under `below`), rank (0 = top), best, words (their best's), top: the first `top` entries, as
+    // { id, score, name, words } }
+    async addScore(playerId, score, name, words, below, top) {
+      const old = scores.get(playerId);
+      const best = old && old.score >= score ? old : { score, words };
+      scores.set(playerId, { score: best.score, name, words: best.words });
+      return { before: old ? old.score : null, ...standings(playerId, top, below) };
     },
 
-    // The first `top` entries and where playerId stands: { total, rank, best, top } as for addScore
+    // The first `top` entries and where playerId stands: { total, rank, best, words, top } as for addScore
     async leaderboard(top, playerId) {
-      const { total, rank, best, top: entries } = standings(playerId, top, -Infinity);
-      return { total, rank, best, top: entries };
+      const { total, rank, best, words, top: entries } = standings(playerId, top, -Infinity);
+      return { total, rank, best, words, top: entries };
     },
 
     // false if they weren't on it
@@ -196,9 +199,13 @@ function redisStore(url, emptyRoomTtl) {
   const runKey = (id) => `anagram:solo:run:${id}`;
   const SCORES = 'anagram:solo:scores'; // sorted set: player id -> their best score
   const NAMES = 'anagram:solo:names';   // hash: player id -> their name
+  // hash: player id -> how many words their best got. Bests from before this was kept (when runs were a minute long)
+  // have none until they're beaten.
+  const WORDS = 'anagram:solo:words';
 
   // Lua for both scripts below: the first ARGV[arg] entries of the leaderboard into `top` (a flat list: id, score,
-  // id, score...), and their names into `names`. (Redis has Lua 5.1, whose unpack later Luas keep in table.)
+  // id, score...), their names into `names` and their words into `words`. (Redis has Lua 5.1, whose unpack later
+  // Luas keep in table.)
   const topLua = (arg) => `
     local unpack = unpack or table.unpack
     local count = tonumber(ARGV[${arg}])
@@ -206,33 +213,43 @@ function redisStore(url, emptyRoomTtl) {
     if count > 0 then top = redis.call('ZREVRANGE', KEYS[1], 0, count - 1, 'WITHSCORES') end
     local ids = {}
     for i = 1, #top, 2 do ids[#ids + 1] = top[i] end
-    local names = {}
-    if #ids > 0 then names = redis.call('HMGET', KEYS[2], unpack(ids)) end`;
+    local names, words = {}, {}
+    if #ids > 0 then
+      names = redis.call('HMGET', KEYS[2], unpack(ids))
+      words = redis.call('HMGET', KEYS[3], unpack(ids))
+    end`;
 
-  // A player's score goes in if it beats their best, and their name is updated either way. Then where everyone stands.
-  // KEYS: SCORES, NAMES. ARGV: player id, score, name, score to count the players under, how many from the top.
+  // A player's score (and its words) goes in if it beats their best, and their name is updated either way. Then where
+  // everyone stands.
+  // KEYS: SCORES, NAMES, WORDS. ARGV: player id, score, name, words, score to count the players under, how many from
+  // the top.
   redis.defineCommand('addSoloScore', {
-    numberOfKeys: 2,
+    numberOfKeys: 3,
     lua: `
       local before = redis.call('ZSCORE', KEYS[1], ARGV[1])
-      if not before or tonumber(ARGV[2]) > tonumber(before) then redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1]) end
+      if not before or tonumber(ARGV[2]) > tonumber(before) then
+        redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1])
+        redis.call('HSET', KEYS[3], ARGV[1], ARGV[4])
+      end
       redis.call('HSET', KEYS[2], ARGV[1], ARGV[3])
-      ${topLua(5)}
-      return { before, redis.call('ZCARD', KEYS[1]), redis.call('ZCOUNT', KEYS[1], '-inf', '(' .. ARGV[4]),
-        redis.call('ZREVRANK', KEYS[1], ARGV[1]), redis.call('ZSCORE', KEYS[1], ARGV[1]), top, names }`,
+      ${topLua(6)}
+      return { before, redis.call('ZCARD', KEYS[1]), redis.call('ZCOUNT', KEYS[1], '-inf', '(' .. ARGV[5]),
+        redis.call('ZREVRANK', KEYS[1], ARGV[1]), redis.call('ZSCORE', KEYS[1], ARGV[1]),
+        redis.call('HGET', KEYS[3], ARGV[1]), top, names, words }`,
   });
 
-  // KEYS: SCORES, NAMES. ARGV: how many from the top, player id ('' for nobody in particular).
+  // KEYS: SCORES, NAMES, WORDS. ARGV: how many from the top, player id ('' for nobody in particular).
   redis.defineCommand('soloLeaderboard', {
-    numberOfKeys: 2,
+    numberOfKeys: 3,
     lua: `
       ${topLua(1)}
-      local rank, best = false, false
+      local rank, best, bestWords = false, false, false
       if ARGV[2] ~= '' then
         rank = redis.call('ZREVRANK', KEYS[1], ARGV[2])
         best = redis.call('ZSCORE', KEYS[1], ARGV[2])
+        bestWords = redis.call('HGET', KEYS[3], ARGV[2])
       end
-      return { redis.call('ZCARD', KEYS[1]), rank, best, top, names }`,
+      return { redis.call('ZCARD', KEYS[1]), rank, best, bestWords, top, names, words }`,
   });
 
   // A script's own error (one of the two above failing) isn't Redis failing, so it mustn't send the rooms to memory
@@ -240,8 +257,8 @@ function redisStore(url, emptyRoomTtl) {
     throw /script/i.test(err.message) ? notRedis(err) : err;
   });
 
-  // The flat list from topLua as { id, score, name }
-  const entries = (top, names) => names.map((name, i) => ({ id: top[i * 2], score: Number(top[i * 2 + 1]), name: name || '' }));
+  // The flat list from topLua as { id, score, name, words }
+  const entries = (top, names, words) => names.map((name, i) => ({ id: top[i * 2], score: Number(top[i * 2 + 1]), name: name || '', words: number(words[i]) }));
   const number = (value) => (value === null ? null : Number(value));
 
   return {
@@ -303,20 +320,22 @@ function redisStore(url, emptyRoomTtl) {
       await redis.set(runKey(run.id), JSON.stringify(run), 'PX', RUN_TTL);
     },
 
-    async addScore(playerId, score, name, below, top) {
-      const [before, total, lower, rank, best, list, names] =
-        await scriptRun(redis.addSoloScore(SCORES, NAMES, playerId, String(score), name, String(below), top));
-      return { before: number(before), total, lower, rank, best: number(best), top: entries(list, names) };
+    async addScore(playerId, score, name, words, below, top) {
+      const [before, total, lower, rank, best, bestWords, list, names, wordsList] = await scriptRun(
+        redis.addSoloScore(SCORES, NAMES, WORDS, playerId, String(score), name, String(words), String(below), top));
+      return { before: number(before), total, lower, rank, best: number(best), words: number(bestWords), top: entries(list, names, wordsList) };
     },
 
     async leaderboard(top, playerId) {
-      const [total, rank, best, list, names] = await scriptRun(redis.soloLeaderboard(SCORES, NAMES, top, playerId || ''));
-      return { total, rank, best: number(best), top: entries(list, names) };
+      const [total, rank, best, bestWords, list, names, wordsList] =
+        await scriptRun(redis.soloLeaderboard(SCORES, NAMES, WORDS, top, playerId || ''));
+      return { total, rank, best: number(best), words: number(bestWords), top: entries(list, names, wordsList) };
     },
 
     async removeScore(playerId) {
       const removed = await redis.zrem(SCORES, playerId);
       await redis.hdel(NAMES, playerId);
+      await redis.hdel(WORDS, playerId);
       return removed === 1;
     },
   };

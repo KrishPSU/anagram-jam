@@ -81,7 +81,7 @@ function showTop(board) {
   if (topPanelEl.hidden) return;
   topListEl.replaceChildren(...board.top.map(rankRow));
   if (board.rank && !board.top.some(row => row.you)) {
-    topListEl.append(el('li', 'rank-row gap', '…'), rankRow({ rank: board.rank, name: playerName, points: board.best, you: true }));
+    topListEl.append(el('li', 'rank-row gap', '…'), rankRow({ rank: board.rank, name: playerName, words: board.bestWords, points: board.best, you: true }));
   }
 }
 
@@ -91,7 +91,7 @@ function rankRow(row) {
     el('span', 'place', row.rank <= 3 ? ['🥇', '🥈', '🥉'][row.rank - 1] : String(row.rank)),
     avatarEl(row.name),
     el('span', 'name', row.you ? `${row.name} (you)` : row.name),
-    el('span', 'stats', `${row.points} pts`),
+    el('span', 'stats', (row.words === null ? '' : `${row.words} ${row.words === 1 ? 'word' : 'words'} · `) + `${row.points} pts`),
   );
   return item;
 }
