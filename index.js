@@ -3,10 +3,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const crypto = require('crypto');
-const wordExists = require('word-exists');
 const WORDS = require('./words');
 const { createStore } = require('./store');
-const { createSolo } = require('./solo');
+const { createSolo, answersFor } = require('./solo');
 
 require('dotenv').config();
 
@@ -166,7 +165,7 @@ const ROOM_VERSION = 2; // rooms laid out any other way (made before this) count
 
 // Game pages say which version they are as they connect. One from another version (still open from before a
 // deploy) can't play with this server, so it's sent home or told to reload - see 'connection'.
-const PAGE_VERSION = 3;
+const PAGE_VERSION = 4;
 
 const LEVEL_SECONDS = 30; // per word, as in game.js
 const MIN_PLAYERS = 2;
@@ -421,7 +420,7 @@ function roundFor(room, progress, secondsLeft) {
   return {
     round: room.round.id,
     words: room.round.words.jumbled,
-    hashes: room.round.words.regular.map(wordHash),
+    ...answerHashes(room.round.words.regular),
     level: progress.level,
     points: progress.points,
     skipped: progress.skipped,
@@ -507,7 +506,7 @@ async function beginRound(roomCode, token, socket) {
   if (started) {
     console.log(`Words for room ${roomCode}:`, started.words.regular);
     // Everyone gets it, but only the players in the round play it - the rest stay in the lobby
-    io.to(roomCode).emit('gameWords', { round: token, roster: started.roster, words: started.words.jumbled, hashes: started.words.regular.map(wordHash), level: 0, points: 0, skipped: [], secondsLeft: LEVEL_SECONDS });
+    io.to(roomCode).emit('gameWords', { round: token, roster: started.roster, words: started.words.jumbled, ...answerHashes(started.words.regular), level: 0, points: 0, skipped: [], secondsLeft: LEVEL_SECONDS });
   }
   return reply;
 }
@@ -586,23 +585,6 @@ async function enterRoom(socket, { roomCode, token, name }) {
     socket.to(roomCode).emit('new-player', name);
     console.log(`Player ${name} (${id}) joined room ${roomCode}`);
   }
-}
-
-function isCreatable(s, t) {
-  if(s.length!==t.length){
-      return false;
-  }
-  let count = new Array(256).fill(0);
-  for(let i=0; i<s.length; i++){
-      count[s.charCodeAt(i)]++;
-      count[t.charCodeAt(i)]--;
-  }
-  for(let i=0; i<count.length; i++){
-      if(count[i]!==0){
-          return false;
-      }
-  }
-  return true;
 }
 
 // Handlers wait on the store now, so two events from one socket could finish out of order (say an answer
@@ -789,9 +771,11 @@ io.on('connection', (socket) => {
 
 
 
-  // An answer to word `level` of round `round`. Replies { status: 'right' | 'wrong', level, points, gained },
-  // or { status: 'over' } if there's no such round anymore (it ended), or 'gone' if this connection isn't in the
-  // room. Asking again about a word already solved - the reply got lost - gets the same reply, scored once.
+  // An answer to word `level` of round `round`. The page checks answers itself (see submitAnswer in game.js) and reports
+  // the right ones here, in order, to be checked again and scored. Replies { status: 'right' | 'wrong', level, points,
+  // gained } - level being the word they're on now - or { status: 'over' } if there's no such round anymore (it ended),
+  // or 'gone' if this connection isn't in the room. Reporting a word again - the reply got lost - gets the same reply,
+  // scored once (or 'skipped', if the clock ran out on it instead).
   on('answerAttempt', async (data, ack) => {
     const reply = replier(ack);
     if (!data || !Number.isInteger(data.level) || typeof data.answer !== 'string') return reply({ status: 'over' });
@@ -806,16 +790,17 @@ io.on('connection', (socket) => {
       if (!progress.gains) progress.gains = [];
       if (data.level < progress.level) {
         const gained = progress.gains[data.level] || 0;
-        return { status: gained ? 'right' : 'skipped', level: data.level, points: progress.points, gained };
+        return { status: gained ? 'right' : 'skipped', level: progress.level, points: progress.points, gained };
       }
       const answer = data.answer.toLowerCase();
       const correctAnswer = word.toLowerCase();
-      // Points are kept here rather than trusting the browser's count
+      // Points are kept here rather than trusting the browser's count - judged on the same words as the page's (see
+      // answerHashes)
       let gained = 0;
 
       if (answer === correctAnswer) {
         gained = 2;
-      } else if (wordExists(answer) && isCreatable(answer, correctAnswer)) {
+      } else if (answersFor(correctAnswer).includes(answer)) {
         gained = 1;
       }
 
@@ -833,7 +818,7 @@ io.on('connection', (socket) => {
           round.solves[data.level] = { name: player.name, seconds: Math.round((Date.now() - round.startedAt) / 1000) };
         }
       }
-      return { status: gained ? 'right' : 'wrong', level: data.level, points: progress.points, gained, name: player.name };
+      return { status: gained ? 'right' : 'wrong', level: progress.level, points: progress.points, gained, name: player.name };
     });
     reply(answered ? answered.result : { status: 'over' });
     if (answered && answered.result.name) {
@@ -841,7 +826,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // The clock ran out on word `level` of round `round`: on to the next one. Replies { status: 'ok', level } with
+  // The clock ran out on word `level` of round `round`: on to the next one. Replies { status: 'ok', level, points } with
   // the level they're on now, or 'over' / 'gone' as for answerAttempt. Getting through the last word this way
   // ends the round too (see followRules).
   on('time-up', async (data, ack) => {
@@ -861,7 +846,7 @@ io.on('connection', (socket) => {
         progress.levelStartedAt = Date.now();
         progress.secondsLeft = null;
       }
-      return { status: 'ok', level: progress.level };
+      return { status: 'ok', level: progress.level, points: progress.points };
     });
     reply(done ? done.result : { status: 'over' });
   });
@@ -953,12 +938,22 @@ function jumbleWord(word) {
   return jumbled;
 }
 
-// A stand-in for a word, so the page can tell its shuffle button never to lay the tiles out as the answer
-// without being sent the answer itself. Same as wordHash in create-room/js/game.js (32-bit FNV-1a).
+// A stand-in for a word, so the page can check answers (and keep its shuffle button from laying the tiles out as the
+// answer) without being sent the answers themselves. Same as wordHash in create-room/js/game.js (32-bit FNV-1a).
 function wordHash(word) {
   let hash = 0x811c9dc5;
   for (const letter of word.toLowerCase()) hash = Math.imul(hash ^ letter.charCodeAt(0), 0x01000193);
   return hash >>> 0;
+}
+
+// The answers as a page gets them, in hashes: each word's own (2 points), and the other real words its letters make (1
+// point). The page checks answers against these itself, so it never waits on the network to know if one is right (see
+// submitAnswer in game.js); each is checked again here as it's reported ('answerAttempt').
+function answerHashes(words) {
+  return {
+    hashes: words.map(wordHash),
+    others: words.map(word => answersFor(word).filter(answer => answer !== word).map(wordHash)),
+  };
 }
 
 // Function to take the selected words and return an array of jumbled words

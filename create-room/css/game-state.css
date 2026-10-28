@@ -295,13 +295,6 @@
   background: rgba(239, 68, 68, 0.3);
 }
 
-/* Waiting on the server's verdict for longer than a moment (game.js submitAnswer) */
-.answer-slots.checking .slot { animation: checking 0.9s ease-in-out infinite; }
-
-@keyframes checking {
-  50% { opacity: 0.45; }
-}
-
 /* The answer shown when time runs out */
 .answer-slots.reveal .slot {
   border-style: solid;

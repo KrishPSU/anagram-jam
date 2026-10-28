@@ -38,28 +38,28 @@ const pointsOf = (score) => Math.floor(score / SCORE_SPAN);
 const timeOf = (score) => SCORE_SPAN - 1 - (score % SCORE_SPAN);
 
 
-// The real words that can be made from all of a solo word's letters, the word itself among them, keyed by its letters
-// in order. Worked out from the dictionary the first time someone plays solo (about a tenth of a second), so starting
-// the server - and the rooms - never waits on it.
-let answerSets = null;
+// The real words that can be made from all of a word's letters, the word itself among them - for the words in words.js,
+// solo's and the rooms' alike (see answerHashes in index.js). Worked out from the dictionary one length at a time, the
+// first time a word that long comes up, so starting the server never waits on it, and the rooms' 3 to 5 letters take a
+// few milliseconds (all of solo's lengths, about a tenth of a second).
+const answerSets = new Map(); // word length -> (its letters in order -> the words they make)
 
 const letterKey = (word) => [...word].sort().join('');
 
 function answersFor(word) {
-  if (!answerSets) {
-    answerSets = new Map();
-    for (let length = FIRST_LENGTH; length <= LONGEST; length++) {
-      WORDS[length].forEach(w => answerSets.set(letterKey(w), []));
-    }
+  let sets = answerSets.get(word.length);
+  if (!sets) {
+    sets = new Map((WORDS[word.length] || []).map(w => [letterKey(w), []]));
     for (const words of Object.values(DICTIONARY)) {
       for (const w of words) {
-        if (w.length < FIRST_LENGTH || w.length > LONGEST) continue;
-        const answers = answerSets.get(letterKey(w));
+        if (w.length !== word.length) continue;
+        const answers = sets.get(letterKey(w));
         if (answers) answers.push(w);
       }
     }
+    answerSets.set(word.length, sets);
   }
-  return answerSets.get(letterKey(word)) || [word];
+  return sets.get(letterKey(word)) || [word];
 }
 
 // Fisher-Yates shuffle (returns a new array), as in index.js

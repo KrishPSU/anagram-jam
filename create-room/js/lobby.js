@@ -35,7 +35,7 @@ const state = {
 
 
 // The server sends a game page from another version home, or has it reload (see PAGE_VERSION in index.js)
-const PAGE_VERSION = 3;
+const PAGE_VERSION = 4;
 
 // The room code, your token and your name go with the connection itself, so the server has you in the room
 // before it handles anything else you send - again after every dropped connection, too. It connects once
