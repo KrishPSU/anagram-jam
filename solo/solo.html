@@ -2,24 +2,46 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#43e97b">
-  <meta name="description" content="Solo mode - Race the clock and improve your skills!">
-  <title>Solo Mode | Anagram Jam</title>
-  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#232526">
+  <meta name="description" content="One minute to unscramble as many words as you can. How far up the leaderboard can you get?">
+  <title>Solo mode | Anagram Jam</title>
+
   <!-- Favicon (browsers cache these hard - bump ?v= whenever the icon changes) -->
   <link rel="icon" type="image/png" href="/icon-192.png?v=2">
-  
+
   <!-- PWA Manifest -->
   <link rel="manifest" href="/manifest.json">
-  
+
   <!-- Apple Touch Icon -->
   <link rel="apple-touch-icon" href="/icon-192.png?v=2">
-  
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- The word screen and the results look and work like a room's, so this borrows the room page's styles
+       (create-room/ is served at the site root) and adds its own on top -->
+  <link rel="stylesheet" href="/shared/theme.css">
+  <link rel="stylesheet" href="/css/game.css">
+  <link rel="stylesheet" href="/css/game-state.css">
+  <link rel="stylesheet" href="/css/results.css">
   <link rel="stylesheet" href="/solo/css/solo.css">
-  
+
+  <script defer src="/shared/socket.js"></script>
+  <script defer src="/shared/toast.js"></script>
+  <script defer src="/shared/sfx.js"></script>
+  <script defer src="/shared/players.js"></script>
+  <script defer src="/solo/js/solo.js"></script>
+  <script defer src="/solo/js/tiles.js"></script>
+  <script defer src="/solo/js/run.js"></script>
+  <script defer src="/solo/js/results.js"></script>
+  <script defer src="/shared/solo-leaderboard.js"></script>
+  <!-- The room page's music, which follows `view` (see solo.js) -->
+  <script defer src="/js/audio.js"></script>
+
+  <script src="/socket.io/socket.io.js"></script>
+
   <!-- Service Worker Registration -->
   <script>
     if ('serviceWorker' in navigator) {
@@ -35,81 +57,124 @@
     }
   </script>
 </head>
-<body>
-  <div class="floating-shapes">
-    <div class="shape"></div>
-    <div class="shape"></div>
-    <div class="shape"></div>
-  </div>
+<body class="solo">
 
-  <div class="game-container">
-    <header class="game-header">
-      <div class="score-display">
-        <span class="score-label">Score</span>
-        <span class="score-value" id="scoreValue">0</span>
+  <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
+
+  <!-- Straight home, except during a run - then it asks first (#leaveDialog) -->
+  <button class="icon-btn home-btn" id="homeBtn" type="button" aria-label="Back to the home page" title="Back to the home page">🏠</button>
+  <button class="icon-btn mute" id="mute-button" type="button" aria-label="Mute sound" aria-pressed="false">🔊</button>
+
+
+  <!-- Before a run: the rules -->
+  <main class="solo-intro" id="introView">
+    <header class="solo-head">
+      <p class="eyebrow">Solo mode</p>
+      <div class="code-tiles" aria-label="Solo">
+        <span class="tile" aria-hidden="true">S</span><span class="tile" aria-hidden="true">O</span><span class="tile" aria-hidden="true">L</span><span class="tile" aria-hidden="true">O</span>
       </div>
+      <p class="solo-tagline">One minute to unscramble as many words as you can.</p>
     </header>
 
-    <main class="game-content">
-      <div class="word-display">
-        <div class="anagram" id="anagramDisplay">ANAGRAM</div>
-        <div class="shuffle" id="shuffleBtn">🔄</div>
-      </div>
+    <div class="card solo-card">
+      <ul class="solo-rules">
+        <li><span class="solo-rule-icon" aria-hidden="true">⏱</span><span>60 seconds, and the clock never stops. No skipping.</span></li>
+        <li><span class="solo-rule-icon" aria-hidden="true">🔤</span><span>Every 5 words, the words get a letter longer.</span></li>
+        <li><span class="solo-rule-icon" aria-hidden="true">⭐</span><span><b>2 points</b> for the hidden word, <b>1</b> for another real word with the same letters.</span></li>
+        <li><span class="solo-rule-icon" aria-hidden="true">⚡</span><span><b>+1</b> if you get it in under 3 seconds.</span></li>
+      </ul>
+      <button class="btn btn-go" id="startBtn" type="button"><span class="spinner" aria-hidden="true"></span>Start</button>
+      <p class="solo-best" id="soloBest"></p>
+    </div>
 
-      <div class="words-container">
-        <h3 class="words-title">Found Words</h3>
-        <div class="words-list" id="wordsList">
-          <!-- Words will be populated here -->
-        </div>
-      </div>
+    <button class="btn btn-glass" type="button" data-solo-leaderboard>🏆 Leaderboard</button>
+  </main>
 
-      <div class="answer-input-container">
-        <input 
-          class="answer-input" 
-          id="answerInput" 
-          type="text" 
-          placeholder="Type your answer" 
-          autocomplete="off"
-          oninput="this.value = this.value.replace(/[^A-Za-z]/g, '')"
-        >
-        <div class="keyboard">
-          <div class="keyboard-row">
-            <button class="key" data-key="Q">Q</button>
-            <button class="key" data-key="W">W</button>
-            <button class="key" data-key="E">E</button>
-            <button class="key" data-key="R">R</button>
-            <button class="key" data-key="T">T</button>
-            <button class="key" data-key="Y">Y</button>
-            <button class="key" data-key="U">U</button>
-            <button class="key" data-key="I">I</button>
-            <button class="key" data-key="O">O</button>
-            <button class="key" data-key="P">P</button>
-          </div>
-          <div class="keyboard-row">
-            <button class="key" data-key="A">A</button>
-            <button class="key" data-key="S">S</button>
-            <button class="key" data-key="D">D</button>
-            <button class="key" data-key="F">F</button>
-            <button class="key" data-key="G">G</button>
-            <button class="key" data-key="H">H</button>
-            <button class="key" data-key="J">J</button>
-            <button class="key" data-key="K">K</button>
-            <button class="key" data-key="L">L</button>
-          </div>
-          <div class="keyboard-row">
-            <button class="key key-wide" data-key="BACKSPACE">⌫</button>
-            <button class="key" data-key="Z">Z</button>
-            <button class="key" data-key="X">X</button>
-            <button class="key" data-key="C">C</button>
-            <button class="key" data-key="V">V</button>
-            <button class="key" data-key="B">B</button>
-            <button class="key" data-key="N">N</button>
-            <button class="key" data-key="M">M</button>
-            <button class="key key-wide" data-key="ENTER">ENTER</button>
-          </div>
-        </div>
-      </div>
-    </main>
+
+  <!-- 3-2-1 before the minute starts. The words are on their way meanwhile (see run.js). -->
+  <div class="overlay" id="countdown" hidden>
+    <p class="eyebrow">Get ready</p>
+    <div class="count-num" id="countNum">3</div>
+    <p class="overlay-wait" id="countWait" role="status" hidden><span class="spinner" aria-hidden="true"></span>Connecting…</p>
   </div>
+
+
+  <!-- The run -->
+  <div class="game-state" id="gameState">
+    <div class="game-ui">
+      <header class="game-header">
+        <div class="solo-score" id="scorePill" aria-live="polite">0 pts</div>
+        <div class="timer" id="gameTimer" role="timer" aria-label="Seconds left">
+          <svg viewBox="0 0 48 48" aria-hidden="true">
+            <circle class="track" cx="24" cy="24" r="21"></circle>
+            <circle class="bar" id="timerBar" cx="24" cy="24" r="21"></circle>
+          </svg>
+          <span id="timerText">60</span>
+        </div>
+      </header>
+
+      <main class="game-content" id="gameContent">
+        <p class="progress"><span id="levelLabel">Word 1</span> · <span class="length-label" id="lengthLabel">3 letters</span></p>
+        <!-- Drains over the first 3 seconds of each word: while it's showing, the word is worth a point more -->
+        <p class="quick" id="quick" aria-hidden="true"><span>⚡ +1</span><i></i></p>
+
+        <div class="answer-slots" id="answerSlots" aria-label="Your answer"></div>
+        <p class="feedback" id="feedback" aria-live="polite"></p>
+        <div class="letter-tiles" id="anagramDisplay" aria-label="Scrambled letters"></div>
+
+        <div class="word-actions">
+          <button class="icon-btn" id="shuffleBtn" type="button" aria-label="Shuffle letters" title="Shuffle (Space)">🔄</button>
+          <button class="icon-btn" id="undoBtn" type="button" aria-label="Remove last letter" title="Remove last letter (Backspace)">⌫</button>
+        </div>
+        <p class="hint">Tap the letters in order, or type them.</p>
+
+        <!-- How far into this word length: a letter longer after the fifth -->
+        <ul class="tier" id="tier" aria-hidden="true"><li></li><li></li><li></li><li></li><li></li></ul>
+      </main>
+    </div>
+  </div>
+
+
+  <!-- After a run: the score, where it puts you, and the words -->
+  <section class="results" id="resultsView" hidden>
+    <section class="winner-card solo-result" aria-labelledby="finalTitle">
+      <p class="eyebrow">Solo · Results</p>
+      <h1 class="solo-final" id="finalTitle"><b id="finalPoints">0</b><span id="finalUnit">points</span></h1>
+      <p class="solo-standing" id="standing"></p>
+      <p class="winner-tag" id="summary"></p>
+      <p class="solo-save" id="saveNote" hidden>
+        <span id="saveText"></span>
+        <button class="btn btn-glass btn-sm" id="saveRetry" type="button"><span class="spinner" aria-hidden="true"></span>Try again</button>
+      </p>
+      <div class="end-actions">
+        <button class="btn btn-go" id="playAgain" type="button"><span class="spinner" aria-hidden="true"></span>Play again</button>
+        <button class="btn btn-glass" type="button" data-solo-leaderboard>🏆 Leaderboard</button>
+      </div>
+    </section>
+
+    <section class="panel" id="topPanel" aria-labelledby="topTitle">
+      <h2 id="topTitle">Leaderboard</h2>
+      <ol class="ranking" id="topList"></ol>
+    </section>
+
+    <section class="panel" aria-labelledby="wordsTitle">
+      <h2 id="wordsTitle">Your words</h2>
+      <ol class="word-list" id="wordList"></ol>
+    </section>
+  </section>
+
+
+  <dialog class="leave-dialog" id="leaveDialog" aria-labelledby="leaveTitle">
+    <form class="leave-card card" method="dialog">
+      <h2 id="leaveTitle">Stop this run?</h2>
+      <p class="leave-note">It won't go on the leaderboard. The clock keeps going while you decide.</p>
+      <div class="leave-actions">
+        <button class="btn btn-ghost" value="stay" autofocus>Keep playing</button>
+        <button class="btn btn-danger" value="leave">Leave</button>
+      </div>
+    </form>
+  </dialog>
+
 </body>
 </html>

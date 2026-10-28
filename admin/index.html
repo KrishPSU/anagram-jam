@@ -36,5 +36,22 @@
     </div>
   </div>
 
+  <!-- Taking players off the solo leaderboard (a rude name, say). Needs the password set as ADMIN_PASSWORD. -->
+  <section class="solo-admin" aria-labelledby="solo_admin_title">
+    <h2 id="solo_admin_title">Solo Leaderboard</h2>
+    <p class="solo-admin-note">Names with common swear words already show as "Player". Remove takes a player off the board until they play again.</p>
+    <form class="solo-admin-form" id="solo_admin_form">
+      <input type="password" id="admin_password" placeholder="Admin password" autocomplete="current-password" aria-label="Admin password">
+      <button type="submit">Show</button>
+    </form>
+    <p class="solo-admin-status" id="solo_admin_status" role="status"></p>
+    <table class="solo-admin-table" id="solo_admin_table" hidden>
+      <thead>
+        <tr><th>#</th><th>Name</th><th>Points</th><th>When</th><th></th></tr>
+      </thead>
+      <tbody id="solo_admin_rows"></tbody>
+    </table>
+  </section>
+
 </body>
 </html>

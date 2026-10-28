@@ -27,8 +27,10 @@
 
   <script src="/shared/socket.js" defer></script>
   <script src="/shared/toast.js" defer></script>
+  <script src="/shared/players.js" defer></script>
   <script src="/shared/how-to-play.js" defer></script>
   <script src="script.js" defer></script>
+  <script src="/shared/solo-leaderboard.js" defer></script>
   <script src="install.js" defer></script>
 
 
@@ -90,6 +92,13 @@
         <div class="mode" id="chooseMode">
           <button class="btn btn-primary" type="submit" id="createBtn"><span class="spinner" aria-hidden="true"></span><span class="btn-label">Create a room</span></button>
           <button class="btn btn-ghost" type="button" id="showJoinBtn">Join with a code</button>
+
+          <p class="or" aria-hidden="true">or</p>
+          <!-- One minute against the clock, and everyone's best (/shared/solo-leaderboard.js) -->
+          <div class="solo-row">
+            <button class="btn btn-ghost" type="button" id="soloBtn">⏱ Play solo</button>
+            <button class="btn btn-ghost" type="button" data-solo-leaderboard>🏆 Leaderboard</button>
+          </div>
         </div>
 
         <div class="mode" id="joinMode" hidden>
@@ -108,8 +117,6 @@
         <!-- Read out by screen readers while a request is waiting on the server -->
         <p class="sr-only" id="busyStatus" role="status"></p>
       </form>
-
-      <button class="soon" type="button" id="soloBtn">Solo mode <span>Soon</span></button>
 
       <!-- Phones and tablets only, until it's installed or the × is tapped (install.js) -->
       <p class="install-hint" id="installHint" hidden>

@@ -24,7 +24,7 @@ let busyTimeout;
 const REQUEST_TIMEOUT = 10000;
 
 // Everything in the form is locked while a request is out, so nothing can change under it
-const formControls = [playerNameInput, ...codeBoxes, createBtn, showJoinBtn, joinBtn, backBtn];
+const formControls = [playerNameInput, ...codeBoxes, createBtn, showJoinBtn, joinBtn, backBtn, soloBtn];
 
 const REQUESTS = {
   create: { button: createBtn, idle: 'Create a room', busy: 'Creating room…' },
@@ -144,19 +144,25 @@ codeBoxes.forEach((box, i) => {
   });
 });
 
-// Enter in any field submits: it creates a room, or joins one when the code boxes are showing
-startForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  if (pending) return;
-
+// The name in the box, kept for the pages that come next - or null, after asking for one
+function takeName() {
   const name = playerNameInput.value.trim();
   if (!name) {
     showError("Please enter your name first");
     playerNameInput.focus();
     shake(playerNameInput);
-    return;
+    return null;
   }
   localStorage.setItem('name', name);
+  return name;
+}
+
+// Enter in any field submits: it creates a room, or joins one when the code boxes are showing
+startForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (pending) return;
+  const name = takeName();
+  if (!name) return;
 
   if (mode === 'join') {
     const code = getCode();
@@ -174,8 +180,11 @@ startForm.addEventListener('submit', (e) => {
   }
 });
 
+// Solo mode is a page of its own, and needs a name for its leaderboard just as a room does
 soloBtn.addEventListener('click', () => {
-  showAlert("Solo mode is coming soon!", 'info');
+  if (pending || !takeName()) return;
+  // The slash saves a redirect, as for the game page
+  document.location.href = '/solo/';
 });
 
 

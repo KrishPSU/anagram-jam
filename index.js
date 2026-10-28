@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const wordExists = require('word-exists');
 const WORDS = require('./words');
 const { createStore } = require('./store');
+const { createSolo } = require('./solo');
 
 require('dotenv').config();
 
@@ -49,6 +50,9 @@ if (store.redis) {
   io.adapter(createAdapter(store.redis, subClient));
 }
 console.log(`Rooms are kept in ${store.redis ? 'Redis' : 'memory'}`);
+
+// Solo mode's runs and leaderboard, kept in the same store (see solo.js)
+const solo = createSolo({ store, playerIdFor });
 
 // The adapter doesn't handle Redis refusing a command (Upstash refuses them all once the free plan is used up):
 // a failed publish or subscribe would crash the server. Messages still reach the players on this instance
@@ -869,6 +873,15 @@ io.on('connection', (socket) => {
     const word = room && room.round && room.round.id === data.round && Number.isInteger(data.level) && room.round.words.regular[data.level];
     reply(word || null);
   });
+
+
+  // Solo mode (see solo.js). Like the game page's requests, each one always replies and is safe to ask for twice.
+  on('solo-start', async (data, ack) => replier(ack)(await solo.start(data || undefined)));
+  on('solo-finish', async (data, ack) => replier(ack)(await solo.finish(data || undefined)));
+  on('solo-board', async (data, ack) => replier(ack)(await solo.board(data || undefined)));
+  // The admin page's, which need the admin password
+  on('admin-solo-board', async (data, ack) => replier(ack)(await solo.adminBoard(data || undefined)));
+  on('admin-solo-remove', async (data, ack) => replier(ack)(await solo.adminRemove(data || undefined)));
 
 });
 

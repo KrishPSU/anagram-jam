@@ -1,5 +1,5 @@
 /* Anagram Jam theme - shared by every page.
-   Each page sets its glow tint with a class on <body>: home, lobby, game or end.
+   Each page sets its glow tint with a class on <body>: home, lobby, game, end or solo.
    Same materials everywhere (backdrop, cards, tiles, font), a different mood per screen. */
 
 :root {
@@ -44,6 +44,7 @@ body.home { --glow-a: rgba(255, 95, 168, 0.40); --glow-b: rgba(255, 170, 90, 0.3
 body.lobby { --toast-top: 64px; }
 body.game { --glow-a: rgba(124, 108, 240, 0.36); --glow-b: rgba(255, 119, 198, 0.16); --glow-c: rgba(80, 160, 255, 0.30); --toast-top: 76px; }
 body.end { --glow-a: rgba(255, 196, 70, 0.28); --glow-b: rgba(255, 95, 168, 0.30); --glow-c: rgba(120, 119, 198, 0.30); }
+body.solo { --glow-a: rgba(16, 185, 129, 0.30); --glow-b: rgba(34, 184, 207, 0.26); --glow-c: rgba(120, 119, 198, 0.30); --toast-top: 64px; }
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -287,7 +288,8 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   70%, 100% { box-shadow: 0 0 0 10px rgba(255, 95, 168, 0); }
 }
 
-.howto-dialog {
+/* ...and the solo leaderboard's box (shared/solo-leaderboard.js) is made the same way */
+.howto-dialog, .board-dialog {
   width: min(calc(100vw - 32px), 420px);
   max-height: none;
   padding: 0;
@@ -296,16 +298,16 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   overflow: visible;
 }
 
-.howto-dialog[open] { animation: popIn 0.2s ease-out; }
+.howto-dialog[open], .board-dialog[open] { animation: popIn 0.2s ease-out; }
 
-.howto-dialog::backdrop {
+.howto-dialog::backdrop, .board-dialog::backdrop {
   background: rgba(16, 14, 24, 0.6);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
 
 /* Scrolls inside itself on short screens */
-.howto-card {
+.howto-card, .board-card {
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
@@ -315,19 +317,19 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   padding: 20px;
 }
 
-.howto-head {
+.howto-head, .board-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.howto-head h2 {
+.howto-head h2, .board-head h2 {
   margin: 0;
   font-weight: 800;
   font-size: 22px;
 }
 
-.howto-close {
+.howto-close, .board-close {
   appearance: none;
   width: 36px;
   height: 36px;
@@ -339,7 +341,7 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   line-height: 1;
   cursor: pointer;
 }
-.howto-close:hover { background: var(--field-line); color: var(--ink); }
+.howto-close:hover, .board-close:hover { background: var(--field-line); color: var(--ink); }
 
 .howto-steps {
   margin: 0;
@@ -449,6 +451,89 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   text-align: center;
   font-size: 13px;
   line-height: 1.4;
+  color: var(--ink-muted);
+}
+
+/* The solo leaderboard's rows */
+.board-note {
+  margin: -10px 0 0;
+  font-size: 14px;
+  color: var(--ink-muted);
+}
+
+.board-status {
+  margin: 0;
+  padding: 16px 0;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+}
+.board-status .spinner { margin-right: 8px; vertical-align: -0.2em; }
+
+.board-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+/* Nothing to list yet (loading, or nobody has played) - no gap left behind for it */
+.board-list:empty, .board-count:empty { display: none; }
+
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 12px;
+  background: var(--field);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.board-row.you { background: var(--you-bg); color: var(--you); }
+
+.board-row .place {
+  width: 30px;
+  flex: none;
+  text-align: center;
+  font-weight: 800;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-row .name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-row .pts {
+  flex: none;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Between the top and your own place further down */
+.board-gap {
+  text-align: center;
+  line-height: 1;
+  color: var(--ink-muted);
+}
+
+.board-count {
+  margin: -6px 0 0;
+  text-align: center;
+  font-size: 13px;
   color: var(--ink-muted);
 }
 

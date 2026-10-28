@@ -16,11 +16,18 @@
 // room's key is set to expire when the room should go, so no polling is needed to clean up.
 //
 // If Redis stops answering (see fallbackStore), the game carries on with rooms in memory.
+//
+// Solo mode (see solo.js) keeps two things here as well: each run while it's being played (its words, so the
+// answers sent at the end can be checked), and the leaderboard - every player's best score. A leaderboard score is a
+// single number, higher is better (solo.js packs the points and the time into it).
 
 const DELETE = Symbol('delete room');
 
 // A room nobody touches for this long disappears from Redis even if something went wrong cleaning it up
 const ROOM_TTL = 12 * 60 * 60 * 1000;
+
+// A solo run is a minute long - this leaves plenty of time to send it in after a dropped connection
+const RUN_TTL = 15 * 60 * 1000;
 
 // emptyRoomTtl: how long a room may stay empty (room.emptySince) before it's gone
 function createStore(redisUrl, { emptyRoomTtl }) {
@@ -29,6 +36,27 @@ function createStore(redisUrl, { emptyRoomTtl }) {
 
 function memoryStore() {
   const rooms = new Map(); // roomCode -> JSON
+  const runs = new Map();  // solo run id -> { raw: JSON, expiresAt }
+  const scores = new Map(); // player id -> { score, name }: the solo leaderboard
+
+  function liveRun(id) {
+    const run = runs.get(id);
+    if (run && run.expiresAt <= Date.now()) runs.delete(id);
+    return runs.get(id);
+  }
+
+  // Where everyone stands, as the Redis version's scripts work it out. below: a score to count the players under.
+  function standings(playerId, top, below) {
+    const board = [...scores].map(([id, entry]) => ({ id, ...entry })).sort((a, b) => b.score - a.score);
+    const rank = board.findIndex(entry => entry.id === playerId);
+    return {
+      total: board.length,
+      lower: board.filter(entry => entry.score < below).length,
+      rank: rank === -1 ? null : rank,
+      best: rank === -1 ? null : board[rank].score,
+      top: board.slice(0, top),
+    };
+  }
 
   return {
     DELETE,
@@ -71,6 +99,45 @@ function memoryStore() {
     // Codes of rooms that have been empty since `before` or earlier (room.emptySince)
     async emptySince(before) {
       return (await this.list()).filter(room => room.emptySince && room.emptySince <= before).map(room => room.roomCode);
+    },
+
+    hasRun: (id) => !!liveRun(id),
+
+    // false if there's already a run with this id
+    async createRun(run) {
+      runs.forEach((_, id) => liveRun(id)); // clears out the expired ones
+      if (runs.has(run.id)) return false;
+      runs.set(run.id, { raw: JSON.stringify(run), expiresAt: Date.now() + RUN_TTL });
+      return true;
+    },
+
+    async getRun(id) {
+      const run = liveRun(id);
+      return run ? JSON.parse(run.raw) : null;
+    },
+
+    async saveRun(run) {
+      runs.set(run.id, { raw: JSON.stringify(run), expiresAt: Date.now() + RUN_TTL });
+    },
+
+    // Puts score on the leaderboard if it's the player's best, under the name given (their latest), and says where
+    // everyone stands: { before (their best until now, or null), total, lower (players with a score under `below`),
+    // rank (0 = top), best, top: the first `top` entries, as { id, score, name } }
+    async addScore(playerId, score, name, below, top) {
+      const before = scores.has(playerId) ? scores.get(playerId).score : null;
+      scores.set(playerId, { score: before !== null && before >= score ? before : score, name });
+      return { before, ...standings(playerId, top, below) };
+    },
+
+    // The first `top` entries and where playerId stands: { total, rank, best, top } as for addScore
+    async leaderboard(top, playerId) {
+      const { total, rank, best, top: entries } = standings(playerId, top, -Infinity);
+      return { total, rank, best, top: entries };
+    },
+
+    // false if they weren't on it
+    async removeScore(playerId) {
+      return scores.delete(playerId);
     },
   };
 }
@@ -126,6 +193,57 @@ function redisStore(url, emptyRoomTtl) {
   // Marks an error that says nothing about Redis itself, so fallbackStore doesn't treat it as Redis failing
   const notRedis = (err) => Object.assign(err, { notRedis: true });
 
+  const runKey = (id) => `anagram:solo:run:${id}`;
+  const SCORES = 'anagram:solo:scores'; // sorted set: player id -> their best score
+  const NAMES = 'anagram:solo:names';   // hash: player id -> their name
+
+  // Lua for both scripts below: the first ARGV[arg] entries of the leaderboard into `top` (a flat list: id, score,
+  // id, score...), and their names into `names`. (Redis has Lua 5.1, whose unpack later Luas keep in table.)
+  const topLua = (arg) => `
+    local unpack = unpack or table.unpack
+    local count = tonumber(ARGV[${arg}])
+    local top = {}
+    if count > 0 then top = redis.call('ZREVRANGE', KEYS[1], 0, count - 1, 'WITHSCORES') end
+    local ids = {}
+    for i = 1, #top, 2 do ids[#ids + 1] = top[i] end
+    local names = {}
+    if #ids > 0 then names = redis.call('HMGET', KEYS[2], unpack(ids)) end`;
+
+  // A player's score goes in if it beats their best, and their name is updated either way. Then where everyone stands.
+  // KEYS: SCORES, NAMES. ARGV: player id, score, name, score to count the players under, how many from the top.
+  redis.defineCommand('addSoloScore', {
+    numberOfKeys: 2,
+    lua: `
+      local before = redis.call('ZSCORE', KEYS[1], ARGV[1])
+      if not before or tonumber(ARGV[2]) > tonumber(before) then redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1]) end
+      redis.call('HSET', KEYS[2], ARGV[1], ARGV[3])
+      ${topLua(5)}
+      return { before, redis.call('ZCARD', KEYS[1]), redis.call('ZCOUNT', KEYS[1], '-inf', '(' .. ARGV[4]),
+        redis.call('ZREVRANK', KEYS[1], ARGV[1]), redis.call('ZSCORE', KEYS[1], ARGV[1]), top, names }`,
+  });
+
+  // KEYS: SCORES, NAMES. ARGV: how many from the top, player id ('' for nobody in particular).
+  redis.defineCommand('soloLeaderboard', {
+    numberOfKeys: 2,
+    lua: `
+      ${topLua(1)}
+      local rank, best = false, false
+      if ARGV[2] ~= '' then
+        rank = redis.call('ZREVRANK', KEYS[1], ARGV[2])
+        best = redis.call('ZSCORE', KEYS[1], ARGV[2])
+      end
+      return { redis.call('ZCARD', KEYS[1]), rank, best, top, names }`,
+  });
+
+  // A script's own error (one of the two above failing) isn't Redis failing, so it mustn't send the rooms to memory
+  const scriptRun = (promise) => promise.catch((err) => {
+    throw /script/i.test(err.message) ? notRedis(err) : err;
+  });
+
+  // The flat list from topLua as { id, score, name }
+  const entries = (top, names) => names.map((name, i) => ({ id: top[i * 2], score: Number(top[i * 2 + 1]), name: name || '' }));
+  const number = (value) => (value === null ? null : Number(value));
+
   return {
     DELETE,
     redis, // the Socket.IO adapter publishes through this connection too
@@ -170,6 +288,36 @@ function redisStore(url, emptyRoomTtl) {
       const raws = await redis.mget(roomCodes.map(roomKey));
       forget(roomCodes.filter((roomCode, i) => raws[i] === null));
       return raws.filter(raw => raw !== null).map(raw => JSON.parse(raw));
+    },
+
+    async createRun(run) {
+      return (await redis.set(runKey(run.id), JSON.stringify(run), 'PX', RUN_TTL, 'NX')) === 'OK';
+    },
+
+    async getRun(id) {
+      const raw = await redis.get(runKey(id));
+      return raw === null ? null : JSON.parse(raw);
+    },
+
+    async saveRun(run) {
+      await redis.set(runKey(run.id), JSON.stringify(run), 'PX', RUN_TTL);
+    },
+
+    async addScore(playerId, score, name, below, top) {
+      const [before, total, lower, rank, best, list, names] =
+        await scriptRun(redis.addSoloScore(SCORES, NAMES, playerId, String(score), name, String(below), top));
+      return { before: number(before), total, lower, rank, best: number(best), top: entries(list, names) };
+    },
+
+    async leaderboard(top, playerId) {
+      const [total, rank, best, list, names] = await scriptRun(redis.soloLeaderboard(SCORES, NAMES, top, playerId || ''));
+      return { total, rank, best: number(best), top: entries(list, names) };
+    },
+
+    async removeScore(playerId) {
+      const removed = await redis.zrem(SCORES, playerId);
+      await redis.hdel(NAMES, playerId);
+      return removed === 1;
     },
   };
 }
@@ -251,6 +399,28 @@ function fallbackStore(redis, memory) {
 
     // Only the rooms kept in memory need sweeping - Redis expires its own
     emptySince: (before) => memory.emptySince(before),
+
+    // Solo runs go where rooms would: one started while Redis isn't answering is kept in memory and played from there
+    async createRun(run) {
+      if (memory.hasRun(run.id)) return false;
+      return attempt(() => redis.createRun(run), () => memory.createRun(run));
+    },
+
+    async getRun(id) {
+      if (memory.hasRun(id)) return memory.getRun(id);
+      return attempt(() => redis.getRun(id), () => null);
+    },
+
+    async saveRun(run) {
+      if (memory.hasRun(run.id)) return memory.saveRun(run);
+      return attempt(() => redis.saveRun(run), () => {});
+    },
+
+    // The leaderboard is only ever the one in Redis - an instance's own in memory would be a different board on every
+    // instance. While Redis isn't answering these resolve to null: the leaderboard can't be reached.
+    addScore: (...args) => attempt(() => redis.addScore(...args), () => null),
+    leaderboard: (...args) => attempt(() => redis.leaderboard(...args), () => null),
+    removeScore: (...args) => attempt(() => redis.removeScore(...args), () => null),
   };
 }
 
