@@ -238,11 +238,12 @@ function timeZone(name) {
 }
 
 
-// app: the Express app the pages and API go on. store: see store.js. solo: see solo.js. rooms: { list, close, remove }
-// from index.js. storageStatus(): where rooms are kept. broadcast(message): to every page open. pageVersion: the game
+// app: the Express app the pages and API go on. store: where its settings, logs, counters and stats are kept (see
+// data.js). solo: see solo.js. rooms: { list, close, remove, health } from index.js. storageStatus(): where rooms are
+// kept. dataStatus(): where the store keeps things right now. broadcast(message): to every page open. pageVersion: the game
 // pages' (see PAGE_VERSION in index.js). secret: something only the server knows, the same on every instance (on
 // Vercel, ADMIN_SESSION_SECRET or the Redis address).
-function createAdmin({ app, store, solo, rooms, storageStatus, broadcast, pageVersion, secret }) {
+function createAdmin({ app, store, solo, rooms, storageStatus, dataStatus, broadcast, pageVersion, secret }) {
   // Without one shared by every instance, this one makes up its own: fine for a single server, but on Vercel a session
   // would only work on the instance that started it
   const sharedSecret = !!secret;
@@ -270,7 +271,7 @@ function createAdmin({ app, store, solo, rooms, storageStatus, broadcast, pageVe
         })
         .then((value) => {
           // A sign-out-everywhere this instance knows about stays in force, even if the store answers without it
-          // (Redis not answering, so the settings come from this instance's empty memory)
+          // (Supabase not answering, so the settings come from this instance's empty memory)
           value = { ...value, sessionsFrom: Math.max(value.sessionsFrom || 0, settingsCache.value.sessionsFrom || 0) };
           settingsCache = { at: Date.now(), value };
           settingsPending = null;
@@ -589,7 +590,8 @@ function createAdmin({ app, store, solo, rooms, storageStatus, broadcast, pageVe
   api.get('/system', async (req, res) => {
     const env = process.env;
     const session = res.locals.session;
-    const [health, [everyone]] = await Promise.all([
+    const [redis, supabase, [everyone]] = await Promise.all([
+      rooms.health().catch(() => null),
       store.health().catch(() => null),
       store.peek(['signin:everyone']),
     ]);
@@ -611,7 +613,9 @@ function createAdmin({ app, store, solo, rooms, storageStatus, broadcast, pageVe
         memoryMb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
         pageVersion,
         storage: storageStatus(),
-        redis: health,
+        redis,
+        data: dataStatus(),
+        supabase,
       },
       security: {
         signedInAt: session.iat,

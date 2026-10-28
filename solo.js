@@ -140,7 +140,7 @@ const isToken = (token) => typeof token === 'string' && token.length >= 16;
 const rowFor = (playerId) => (entry, i) => ({ rank: i + 1, name: shownName(entry.name), words: entry.words, points: pointsOf(entry.score), you: entry.id === playerId });
 
 
-// store: where runs and the leaderboard are kept (see store.js). playerIdFor: who a browser's token is, as in rooms.
+// store: where runs and the leaderboard are kept (see data.js). playerIdFor: who a browser's token is, as in rooms.
 // onFinish(run, scored): told about each run as it's scored, once (for the admin page's log and stats).
 function createSolo({ store, playerIdFor, onFinish = () => {} }) {
 

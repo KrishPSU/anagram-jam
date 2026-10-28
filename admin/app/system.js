@@ -1,4 +1,4 @@
-// The System tab: which deployment is running, how the server and Redis are doing, and the sign-in's security - with
+// The System tab: which deployment is running, how the server, Redis and Supabase are doing, and the sign-in's security - with
 // anything worth fixing called out at the top.
 
 const systemStateEl = document.getElementById('systemState');
@@ -35,10 +35,13 @@ function renderSystem({ deploy, server, security }, entries) {
   ]);
 
   const redis = server.redis ? `${server.redis.latencyMs} ms a command · ${plural(server.redis.keys, 'key')}` : null;
+  const supabase = server.supabase ? `${server.supabase.latencyMs} ms a call` : null;
   const up = server.uptime < 60 ? `${server.uptime}s` : server.uptime < 3600 ? `${Math.floor(server.uptime / 60)} min` : duration(server.uptime * 1000);
   facts(document.getElementById('serverFacts'), [
     ['Rooms kept in', server.storage],
     ['Redis', redis],
+    ['Solo & admin kept in', server.data],
+    ['Supabase', supabase],
     ['Game page version', `${server.pageVersion} (pages from another version reload)`],
     ['This instance', `Up ${up} · ${server.memoryMb} MB`],
     ['Node', server.node],

@@ -14,7 +14,7 @@ async function loadBoard() {
   try {
     const reply = await api('leaderboard');
     if (reply.status !== 'ok') {
-      setState(boardStateEl, "The leaderboard can't be reached right now (Redis isn't answering). Try again in a bit.", { error: true });
+      setState(boardStateEl, "The leaderboard can't be reached right now (Supabase isn't answering). Try again in a bit.", { error: true });
       return;
     }
     boardRows = reply.top;

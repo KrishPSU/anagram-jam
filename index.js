@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const WORDS = require('./words');
 const { createStore } = require('./store');
+const { createData } = require('./data');
 const { createSolo, answersFor } = require('./solo');
 const { createAdmin } = require('./admin');
 
@@ -52,10 +53,26 @@ if (store.redis) {
 }
 console.log(`Rooms are kept in ${store.redis ? 'Redis' : 'memory'}`);
 
-// Solo mode's runs and leaderboard, kept in the same store (see solo.js). Each run scored goes in the admin page's log
-// and stats.
+// The Supabase project solo mode and the admin page keep their things in (see data.js): its address and its secret
+// key (the older service_role key works too). Connecting it through the Vercel integration may add a prefix to the
+// names, so any name ending in these will do.
+function supabaseFromEnv() {
+  const find = (pattern) => {
+    const name = Object.keys(process.env).find(name => pattern.test(name) && process.env[name].trim());
+    return name && process.env[name].trim();
+  };
+  const url = find(/(^|_)SUPABASE_URL$/i);
+  const key = find(/(^|_)SUPABASE_SECRET_KEY$/i) || find(/(^|_)SUPABASE_SERVICE_ROLE_KEY$/i);
+  if (url && !key) console.error('There is a Supabase address but no SUPABASE_SECRET_KEY - ignoring it');
+  return url && key ? { url, key } : undefined;
+}
+
+const data = createData(supabaseFromEnv());
+console.log(`Solo runs, the leaderboard and the admin page's things are kept in ${data.status().store === 'supabase' ? 'Supabase' : 'memory'}`);
+
+// Solo mode's runs and leaderboard (see solo.js). Each run scored goes in the admin page's log and stats.
 const solo = createSolo({
-  store,
+  store: data,
   playerIdFor,
   onFinish: (run, scored) => {
     admin.track('solo', [run.playerId]);
@@ -357,14 +374,23 @@ function storageStatus() {
   return `Memory since ${new Date(status.since).toUTCString().slice(17, 22)} UTC - ${why}`;
 }
 
+// The same for solo mode's and the admin page's things (see data.js)
+function dataStatus() {
+  const status = data.status();
+  if (status.store === 'supabase') return 'Supabase';
+  if (!status.reason) return 'Memory (no Supabase set up)';
+  return `Memory since ${new Date(status.since).toUTCString().slice(17, 22)} UTC - Supabase isn't answering`;
+}
+
 // The admin page and its API (see admin.js). Sessions are signed with a secret every instance shares: one of its
 // own if it's set, otherwise the Redis address (which only the server knows).
 const admin = createAdmin({
   app,
-  store,
+  store: data,
   solo,
-  rooms: { list: liveRooms, close: closeRoom, remove: removeFromRoom },
+  rooms: { list: liveRooms, close: closeRoom, remove: removeFromRoom, health: () => store.health() },
   storageStatus,
+  dataStatus,
   broadcast: (message) => io.emit('announcement', message),
   pageVersion: PAGE_VERSION,
   secret: process.env.ADMIN_SESSION_SECRET || redisUrl,
