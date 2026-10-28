@@ -58,6 +58,8 @@ const CSP = [
   "style-src 'self' https://fonts.googleapis.com",
   'font-src https://fonts.gstatic.com',
   "img-src 'self' data:",
+  // The admin's own manifest, so it installs as its own app - default-src 'none' would block it
+  "manifest-src 'self'",
   "connect-src 'self'",
   "base-uri 'none'",
   "form-action 'self'",
