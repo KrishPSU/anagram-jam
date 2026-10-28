@@ -1,7 +1,7 @@
 // "Add Anagram Jam to your home screen", the quiet line under the start card. Phones and tablets only, and
-// never once the game is installed. Where the browser has its own install box (Chrome, Edge and Samsung
-// Internet on Android), the line opens that. Everywhere else (iPhone, iPad, Firefox) it opens a card with the
-// steps to do it by hand. Its × hides it for good in this browser.
+// never once the game is installed (or in the iPhone app). Where the browser has its own install box (Chrome,
+// Edge and Samsung Internet on Android), the line opens that. Everywhere else (iPhone, iPad, Firefox) it opens a
+// card with the steps to do it by hand. Its × hides it for good in this browser.
 
 (() => {
   const HIDE_KEY = 'hideInstallHint';
@@ -10,7 +10,9 @@
   const openBtn = document.getElementById('installBtn');
   const hideBtn = document.getElementById('installHide');
 
-  const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  // The iPhone app (mobile/) counts: it's the game installed from the App Store
+  const inApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const installed = inApp || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   const touchDevice = matchMedia('(pointer: coarse)').matches;
   if (installed || !touchDevice) return;
 

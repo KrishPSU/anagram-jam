@@ -1,0 +1,16 @@
+App/build
+App/Pods
+App/output
+App/App/public
+DerivedData
+xcuserdata
+# Left behind when `npx cap build ios` fails partway (npm run deploy would otherwise commit them)
+App/*.xcarchive
+App/archive.plist
+
+# Cordova plugins for Capacitor
+capacitor-cordova-ios-plugins
+
+# Generated Config files
+App/App/capacitor.config.json
+App/App/config.xml

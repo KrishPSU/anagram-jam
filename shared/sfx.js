@@ -7,6 +7,11 @@ const sfx = (() => {
 
   const muted = () => localStorage.getItem('muteAudio') === 'true';
 
+  // No iPhone has navigator.vibrate, but the iPhone app (mobile/) has the phone's own haptics through Capacitor's
+  // Haptics plugin. An app installed before the plugin was added doesn't have it, so this checks.
+  const cap = window.Capacitor;
+  const haptics = cap && cap.isPluginAvailable && cap.isPluginAvailable('Haptics') ? cap.Plugins.Haptics : null;
+
   // iPhones: play through the silent switch, like the music did back when it was an <audio> element (Web Audio
   // would otherwise go quiet whenever the switch is on silent)
   try {
@@ -82,8 +87,15 @@ const sfx = (() => {
     hint: () => play([[1047, 0, 0.1, 'sine', 0.1], [1568, 0.06, 0.18, 'sine', 0.07]]),
     // Practice mode's 🤷: here's the word
     shrug: () => play([[587, 0, 0.12, 'sine', 0.1], [440, 0.1, 0.26, 'sine', 0.08]]),
+    // A short buzz for a right answer, a pattern of them for a wrong one. In the app: a tap, or the phone's error buzz.
     buzz: (pattern) => {
-      if (!muted() && navigator.vibrate) navigator.vibrate(pattern);
+      if (muted()) return;
+      if (haptics) {
+        const felt = Array.isArray(pattern) ? haptics.notification({ type: 'ERROR' }) : haptics.impact({ style: 'MEDIUM' });
+        felt.catch(() => {});
+      } else if (navigator.vibrate) {
+        navigator.vibrate(pattern);
+      }
     },
   };
 })();

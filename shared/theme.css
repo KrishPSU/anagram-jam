@@ -110,6 +110,8 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   color: var(--ink);
   font: 900 calc(var(--tile-size) * 0.56) / 1 var(--font);
   box-shadow: var(--shadow-tile);
+  /* iPhones (Safari and the app) only know the prefixed one */
+  -webkit-user-select: none;
   user-select: none;
 }
 .tile.jam { background: var(--jam); color: #fff; }
@@ -315,6 +317,15 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   display: grid;
   gap: 16px;
   padding: 20px;
+}
+
+/* The box is centred, so it keeps the bigger of the top and bottom safe areas clear at both ends: in the iPhone app the
+   page runs under the status bar and home indicator (in a browser tab the page starts below them, and they're 0).
+   It's a block of its own because a line with env() in it always replaces the line before, even where dvh is unknown. */
+@supports (max-height: 100dvh) {
+  .howto-card, .board-card {
+    max-height: calc(100dvh - 32px - 2 * max(env(safe-area-inset-top, 0px), env(safe-area-inset-bottom, 0px)));
+  }
 }
 
 .howto-head, .board-head {

@@ -4,6 +4,9 @@ body {
   /* Prevent zoom and touch issues */
   touch-action: manipulation;
   -webkit-touch-callout: none;
+  /* iPhones (Safari and the app) only know the prefixed one. Fine here: none of the pages using this file has
+     a text box. */
+  -webkit-user-select: none;
   user-select: none;
 }
 

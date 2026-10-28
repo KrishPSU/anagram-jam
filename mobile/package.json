@@ -1,0 +1,19 @@
+{
+  "name": "anagram-jam-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The Anagram Jam iOS app: a Capacitor shell around https://www.anagramjam.com",
+  "scripts": {
+    "sync": "cap sync ios",
+    "open": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.6.0",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/ios": "8.6.0",
+    "@capacitor/splash-screen": "8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0"
+  }
+}

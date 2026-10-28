@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Anagram Jam</title>
+  <!-- The app shows this page (capacitor.config.json server.errorPath) when a page of www.anagramjam.com can't load.
+       It's part of the app, not the site, so everything it needs is in this file: no fonts or scripts from the server. -->
+  <style>
+    :root {
+      --bg-1: #232526;
+      --bg-2: #414345;
+      --on-dark: #ffffff;
+      --on-dark-muted: rgba(255, 255, 255, 0.72);
+      --ink: #111827;
+      --jam: #ff5fa8;
+      --jam-deep: #e0457f;
+      --font: "Arial Rounded MT Bold", "Trebuchet MS", system-ui, -apple-system, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html {
+      min-height: 100%;
+      background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%) fixed;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: calc(24px + env(safe-area-inset-top, 0px)) 24px calc(24px + env(safe-area-inset-bottom, 0px));
+      font-family: var(--font);
+      color: var(--on-dark);
+      text-align: center;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(255, 95, 168, 0.30), transparent 55%),
+        radial-gradient(circle at 80% 75%, rgba(120, 119, 198, 0.34), transparent 55%);
+    }
+
+    main {
+      display: grid;
+      justify-items: center;
+      gap: 18px;
+      max-width: 340px;
+    }
+
+    .tiles {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .tile {
+      display: grid;
+      place-items: center;
+      width: 64px;
+      height: 72px;
+      border-radius: 14px;
+      background: #ffffff;
+      color: var(--ink);
+      font-size: 36px;
+      font-weight: 800;
+      box-shadow: 0 5px 0 rgba(0, 0, 0, 0.28), 0 14px 24px -8px rgba(0, 0, 0, 0.5);
+      transform: rotate(-6deg);
+    }
+
+    .tile.jam {
+      background: var(--jam);
+      color: #ffffff;
+      box-shadow: 0 5px 0 var(--jam-deep), 0 14px 24px -8px rgba(0, 0, 0, 0.5);
+      transform: rotate(5deg) translateY(6px);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.2;
+      text-wrap: balance;
+    }
+
+    p {
+      margin: 0;
+      text-wrap: balance;
+      color: var(--on-dark-muted);
+      font-size: 17px;
+      line-height: 1.45;
+    }
+
+    button {
+      margin-top: 8px;
+      min-width: 200px;
+      padding: 15px 28px;
+      border: 0;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--jam) 0%, var(--jam-deep) 100%);
+      color: #ffffff;
+      font: inherit;
+      font-size: 18px;
+      font-weight: 700;
+      box-shadow: 0 10px 24px -10px rgba(255, 95, 168, 0.8);
+      touch-action: manipulation;
+    }
+
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.7; }
+
+    .status {
+      min-height: 1.45em;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="tiles" aria-hidden="true">
+      <span class="tile">A</span>
+      <span class="tile jam">J</span>
+    </div>
+    <h1>Can't reach Anagram Jam</h1>
+    <p>Check that you're connected to the internet. The game comes back by itself as soon as it can.</p>
+    <button id="retry" type="button">Try again</button>
+    <p class="status" id="status" aria-live="polite"></p>
+  </main>
+
+  <script>
+    (() => {
+      // The same address as server.url in capacitor.config.json (any other one would open in Safari)
+      const SITE = 'https://www.anagramjam.com/';
+      const retryBtn = document.getElementById('retry');
+      const status = document.getElementById('status');
+      let checking = false;
+      let tapped = false;
+
+      // What the app tells this page (see AppViewController.swift): the page that couldn't load after the #, ?again
+      // when it was one this page had just sent the player back to, and &server when the site answered with an error
+      // rather than not at all. Back to that page (a room, say) - unless the site keeps answering it with an error,
+      // then home, and less often.
+      const params = new URLSearchParams(location.search);
+      const brokenPage = params.has('again') && params.has('server');
+      const failed = (() => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ''; } })();
+      const target = !brokenPage && failed.startsWith(SITE) ? failed : SITE;
+
+      // Tries that aren't a tap send the player to the site at most every 5 seconds, so a page that fails again straight
+      // away can't go round in circles. In sessionStorage because every failure loads this page afresh.
+      const storage = (() => { try { return window.sessionStorage; } catch { return null; } })();
+      const sentLately = () => Date.now() - Number((storage && storage.getItem('sentToSiteAt')) || 0) < 5000;
+
+      // The app shows this page again for the next failure, and when only the part after the # differs, WebKit just
+      // changes the # - so it starts over itself
+      window.addEventListener('hashchange', () => location.reload());
+
+      // The launch screen stays up until a page says it's ready - this one counts
+      const cap = window.Capacitor;
+      if (cap && cap.isPluginAvailable && cap.isPluginAvailable('SplashScreen')) {
+        cap.Plugins.SplashScreen.hide().catch(() => {});
+      }
+
+      // Any answer at all (even one this page isn't allowed to read) means the site can be reached again. A connection
+      // that's up but goes nowhere never answers, so each try has a time limit.
+      async function reachable() {
+        const controller = new AbortController();
+        const giveUp = setTimeout(() => controller.abort(), 15000);
+        try {
+          await fetch(SITE, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+          return true;
+        } catch {
+          return false;
+        } finally {
+          clearTimeout(giveUp);
+        }
+      }
+
+      async function check(fromTap) {
+        // A tap during a try that's already going waits for that one's answer
+        if (fromTap) {
+          tapped = true;
+          retryBtn.disabled = true;
+          status.textContent = 'Trying…';
+        }
+        if (checking || (!fromTap && sentLately())) return;
+        checking = true;
+        if (await reachable()) {
+          if (storage) storage.setItem('sentToSiteAt', String(Date.now()));
+          location.replace(target);
+          // Still here a while later means that load didn't happen, so the tries carry on
+          setTimeout(() => { checking = false; }, 30000);
+          return;
+        }
+        checking = false;
+        if (tapped) {
+          tapped = false;
+          retryBtn.disabled = false;
+          status.textContent = 'Still no connection.';
+        }
+      }
+
+      retryBtn.addEventListener('click', () => check(true));
+      window.addEventListener('online', () => check(false));
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') check(false);
+      });
+      setInterval(() => check(false), brokenPage ? 30000 : 5000);
+      check(false);
+    })();
+  </script>
+</body>
+</html>
