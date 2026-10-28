@@ -409,6 +409,7 @@ const admin = createAdmin({
   app,
   store: data,
   solo,
+  daily,
   rooms: { list: liveRooms, close: closeRoom, remove: removeFromRoom, health: () => store.health() },
   storageStatus,
   dataStatus,

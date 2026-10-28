@@ -356,6 +356,7 @@ textarea.input { resize: vertical; line-height: 1.45; }
 }
 .seg button:hover { color: #fff; }
 .seg button[aria-pressed="true"] { background: rgba(255, 255, 255, 0.16); color: #fff; }
+.seg button:disabled { color: var(--muted); opacity: 0.4; cursor: default; }
 
 @media (max-width: 480px) {
   .seg button { padding: 0 9px; font-size: 12px; }
@@ -587,6 +588,72 @@ code {
 .chart-table th, .chart-table td { padding: 6px 10px; border-bottom: 1px solid var(--pane-line); text-align: right; }
 .chart-table th:first-child, .chart-table td:first-child { text-align: left; }
 .chart-table th { position: sticky; top: 0; background: #1b1922; color: var(--muted); font-weight: 600; }
+
+
+/* ---------- Daily Jam ---------- */
+
+.panel-body { display: grid; gap: 16px; }
+
+.jam-levels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 980px) {
+  .jam-levels { grid-template-columns: minmax(0, 1fr); }
+}
+
+.jam-level-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.jam-length { font-weight: 500; font-size: 14px; color: var(--muted); }
+
+.jam-word { display: grid; gap: 8px; }
+.jam-answer { font-size: 13px; line-height: 1.5; color: var(--muted); }
+.jam-answer b { color: #fff; font-size: 16px; letter-spacing: 0.06em; }
+.jam-hidden { font-size: 13px; line-height: 1.5; color: var(--faint); }
+
+/* How many tries it took: one bar per row, its share of those who finished, the number always written beside it */
+.jam-dist { display: grid; gap: 4px; }
+.jam-bar {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) 68px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.jam-bar-label { color: var(--muted); }
+.jam-bar-track { height: 14px; }
+.jam-bar-fill { display: block; height: 100%; border-radius: 0 4px 4px 0; background: var(--chart-bar); }
+.jam-bar-fill.missed { background: rgba(255, 255, 255, 0.30); }
+.jam-bar-count { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.jam-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.jam-facts div { min-width: 0; padding: 8px; border-radius: 10px; background: var(--pane-raised); }
+.jam-facts dt { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jam-facts dd { margin: 2px 0 0; font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+@media (max-width: 420px) {
+  .jam-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.jam-chips { display: grid; gap: 6px; }
+.jam-chips .preview-label { margin-top: 0; }
+.jam-none { font-size: 13px; color: var(--faint); }
+
+.jam-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .jam-bottom { grid-template-columns: minmax(0, 1fr); }
+}
+
+.jam-cell-word { margin-right: 8px; color: var(--muted); letter-spacing: 0.04em; }
 
 
 /* ---------- Activity ---------- */

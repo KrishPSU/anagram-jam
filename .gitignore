@@ -1,3 +1,5 @@
 /node_modules
 # Local settings such as REDIS_URL, which holds the database password
 .env
+# macOS folder settings (npm run deploy commits every new file)
+.DS_Store

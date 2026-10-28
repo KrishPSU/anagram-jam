@@ -3,15 +3,23 @@
 // of its own: main's files minus node_modules (this repo has it from its first commit; Vercel installs it from the
 // lockfile), on top of what's live now. Then it waits for Vercel to say the deploy is done.
 //
-//   npm run deploy                shows what's going live, pushes it, and waits for Vercel
-//   npm run deploy -- --dry-run   shows what would go live, and pushes nothing
+// Anything changed here that isn't committed yet is committed on main first, all of it as one commit - new files too,
+// but never node_modules. It lists what it's about to commit and asks for the commit's message (Enter takes the one it
+// suggests, Ctrl+C stops without committing anything).
+//
+//   npm run deploy                      commits what's changed, shows what's going live, pushes it, waits for Vercel
+//   npm run deploy -- -m "Message"      the same, with that as the commit's message instead of asking
+//   npm run deploy -- --dry-run         shows what would be committed and go live, and changes nothing
 //
 // It stops without pushing if the live repo has anything main never had - something put there some other way - so
-// nothing is overwritten. Talking to the live repo uses the GitHub CLI's sign-in (gh, as KrishSChavan). Only what's
-// committed on main goes live, and main isn't pushed to origin - that's still `git push origin main`.
+// nothing is overwritten. Talking to the live repo uses the GitHub CLI's sign-in (gh, as KrishSChavan). main isn't
+// pushed to origin - that's still `git push origin main`.
 
 const { execFileSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const readline = require('readline/promises');
 
 const LIVE_REPO = 'https://github.com/KrishSChavan/anagram-jam.git';
 const LIVE_NAME = 'KrishSChavan/anagram-jam';
@@ -21,16 +29,20 @@ const DEPLOY_BRANCH = 'live-deploy';              // and what this last put ther
 const LOOK_BACK = 500;  // commits of main's history to search for what's live
 const WAIT_MINUTES = 5; // Vercel's build normally takes about one
 
-const dryRun = process.argv.includes('--dry-run');
+const args = process.argv.slice(2);
+const dryRun = args.includes('--dry-run');
+// -m "Message" or --message "Message"
+const messageAt = args.findIndex(arg => arg === '-m' || arg === '--message');
+const givenMessage = messageAt === -1 ? null : (args[messageAt + 1] || '').trim();
 
 // git signed in through gh, which can reach the live repo (private, and another account from origin's)
 const AS_GH = ['-c', 'credential.helper=', '-c', 'credential.helper=!gh auth git-credential'];
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Runs a command in this folder and returns what it printed. input: fed to it.
-function run(command, args, input) {
-  return execFileSync(command, args, { cwd: path.join(__dirname, '..'), input, encoding: 'utf8', stdio: 'pipe' }).trimEnd();
+// Runs a command in this folder and returns what it printed. input: fed to it. env: its environment, if not this one's.
+function run(command, args, { input, env } = {}) {
+  return execFileSync(command, args, { cwd: path.join(__dirname, '..'), input, env, encoding: 'utf8', stdio: 'pipe' }).trimEnd();
 }
 
 const git = (...args) => run('git', args);
@@ -39,13 +51,93 @@ const short = (commit) => commit.slice(0, 7);
 // A commit's files without node_modules, as a tree
 function treeWithoutModules(commit) {
   const entries = git('ls-tree', '-z', commit).split('\0').filter(entry => entry && !entry.endsWith('\tnode_modules'));
-  return run('git', ['mktree', '-z'], entries.map(entry => entry + '\0').join(''));
+  return run('git', ['mktree', '-z'], { input: entries.map(entry => entry + '\0').join('') });
+}
+
+
+// ---------- Committing what's changed ----------
+
+// What's changed and not committed, outside node_modules, as `git status --short` lists it: [{ line, file }]
+function changes() {
+  return git('status', '--porcelain', '--untracked-files=all', '--', '.', ':(exclude)node_modules').split('\n').filter(Boolean)
+    .map(line => ({ line, file: line.slice(3).split(' -> ').pop().replace(/^"|"$/g, '') }));
+}
+
+// "Change admin.js, daily.js and data.js", "Change admin.js, daily.js and 4 more files"
+function suggestedMessage(changed) {
+  const names = changed.map(c => c.file);
+  if (names.length === 1) return `Change ${names[0]}`;
+  if (names.length <= 3) return `Change ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return `Change ${names.slice(0, 2).join(', ')} and ${names.length - 2} more files`;
+}
+
+// The commit's message: -m's, or asked for (Enter takes the suggestion). Without anyone at the terminal to ask, the
+// suggestion.
+async function commitMessage(suggestion) {
+  if (givenMessage) return givenMessage;
+  if (!process.stdin.isTTY) return suggestion;
+  const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await prompt.question(`Commit message (Enter for "${suggestion}"): `)).trim() || suggestion;
+  } finally {
+    prompt.close();
+  }
+}
+
+// Commits everything changed (outside node_modules) on main, and resolves to main as it is then. A dry run commits
+// nothing: it resolves to the commit it would have made, which no branch points to, so the rest can show what would go
+// live with it.
+async function commitChanges(changed) {
+  const branch = git('branch', '--show-current');
+  if (branch !== 'main') {
+    console.error(`Stopped: there are uncommitted changes, and this is ${branch ? `the ${branch} branch` : 'no branch'}, not main - they'd be committed there.`);
+    console.error('Switch to main first (git switch main), or commit them yourself.');
+    process.exit(1);
+  }
+
+  console.log(dryRun ? 'Uncommitted changes, which a real run commits on main first:' : 'Committing these changes on main first:');
+  changed.forEach(c => console.log(`  ${c.line}`));
+  console.log('');
+  if (dryRun) return previewCommit();
+
+  const message = await commitMessage(suggestedMessage(changed));
+  stageChanges();
+  git('commit', '--quiet', '-m', message);
+  const head = git('rev-parse', 'HEAD');
+  console.log(`Committed ${short(head)}: ${message}\n`);
+  return head;
+}
+
+// Stages everything (new files too - .gitignore keeps out .env and the like) but node_modules, which goes back to
+// what main has. env: another index to stage in, as GIT_INDEX_FILE.
+function stageChanges(env) {
+  run('git', ['add', '--all'], { env });
+  run('git', ['reset', '--quiet', 'main', '--', 'node_modules'], { env });
+}
+
+// The commit committing everything would make, without touching main or what's staged: it's put together in an index
+// of its own
+function previewCommit() {
+  const index = path.join(os.tmpdir(), `anagram-jam-deploy-${process.pid}.index`);
+  const env = { ...process.env, GIT_INDEX_FILE: index };
+  try {
+    run('git', ['read-tree', 'main'], { env });
+    stageChanges(env);
+    const tree = run('git', ['write-tree'], { env });
+    return run('git', ['commit-tree', tree, '-p', 'main', '-m', '(the uncommitted changes)']);
+  } finally {
+    fs.rmSync(index, { force: true });
+  }
 }
 
 
 async function deploy() {
-  const head = git('rev-parse', '--verify', 'main^{commit}');
-  if (git('status', '--porcelain')) console.log("Note: there are uncommitted changes here. Only what's committed on main goes live.\n");
+  let head = git('rev-parse', '--verify', 'main^{commit}');
+  const changed = changes();
+  if (changed.length) head = await commitChanges(changed);
+  if (git('status', '--porcelain', '--', 'node_modules')) {
+    console.log("Note: node_modules has changes. They're left out - Vercel installs packages from the lockfile.\n");
+  }
 
   console.log(`Checking what ${SITE} is running…`);
   git(...AS_GH, 'fetch', '--quiet', LIVE_REPO, `+main:${LIVE_REF}`);
@@ -78,7 +170,7 @@ async function deploy() {
   const message = subjects.length === 1
     ? `${subjects[0]}, from KrishPSU/anagram-jam\n\nmain ${head}\n`
     : `Bring over ${subjects.length} commits from KrishPSU/anagram-jam\n\n${subjects.map(s => `- ${s}`).join('\n')}\n\nmain ${head}\n`;
-  const commit = run('git', ['commit-tree', tree, '-p', live, '-F', '-'], message);
+  const commit = run('git', ['commit-tree', tree, '-p', live, '-F', '-'], { input: message });
   git('update-ref', `refs/heads/${DEPLOY_BRANCH}`, commit);
 
   console.log(`Pushing ${short(commit)} to ${LIVE_NAME}…`);

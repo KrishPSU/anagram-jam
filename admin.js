@@ -1,6 +1,6 @@
 // The admin page (/admin): a sign-in page, and behind it a dashboard of the rooms open right now, the solo leaderboard,
-// stats, a log of games and of sign-ins, and the site's controls (a banner on the home page, pausing new games, a
-// message to everyone playing).
+// how Daily Jam is going, stats, a log of games and of sign-ins, and the site's controls (a banner on the home page,
+// pausing new games, a message to everyone playing).
 //
 // None of it is public. /admin is only the sign-in page until someone signs in with ADMIN_PASSWORD (an environment
 // variable - on Vercel, in the project's Settings → Environment Variables). The dashboard's page, its scripts and
@@ -239,11 +239,11 @@ function timeZone(name) {
 
 
 // app: the Express app the pages and API go on. store: where its settings, logs, counters and stats are kept (see
-// data.js). solo: see solo.js. rooms: { list, close, remove, health } from index.js. storageStatus(): where rooms are
-// kept. dataStatus(): where the store keeps things right now. broadcast(message): to every page open. pageVersion: the game
+// data.js). solo: see solo.js. daily: see daily.js. rooms: { list, close, remove, health } from index.js.
+// storageStatus(): where rooms are kept. dataStatus(): where the store keeps things right now. broadcast(message): to every page open. pageVersion: the game
 // pages' (see PAGE_VERSION in index.js). secret: something only the server knows, the same on every instance (on
 // Vercel, ADMIN_SESSION_SECRET or the Redis address).
-function createAdmin({ app, store, solo, rooms, storageStatus, dataStatus, broadcast, pageVersion, secret }) {
+function createAdmin({ app, store, solo, daily, rooms, storageStatus, dataStatus, broadcast, pageVersion, secret }) {
   // Without one shared by every instance, this one makes up its own: fine for a single server, but on Vercel a session
   // would only work on the instance that started it
   const sharedSecret = !!secret;
@@ -544,6 +544,17 @@ function createAdmin({ app, store, solo, rooms, storageStatus, dataStatus, broad
     const reply = await solo.adminRemove({ id: text(id, 64) });
     if (reply.status === 'ok') noteAction(req, `Took ${text(name, 20) || 'a player'} off the solo leaderboard`);
     res.json(reply);
+  });
+
+  // The Daily Jam tab. Days are dates as players have them ('2026-10-28'): the tab asks for the one it's showing, and
+  // for the last 7 or 30 up to its own today.
+  api.get('/daily/day', async (req, res) => {
+    res.json(await daily.adminDay({ day: req.query.day }));
+  });
+
+  api.get('/daily/days', async (req, res) => {
+    const count = [7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    res.json(await daily.adminDays({ to: req.query.to, count }));
   });
 
   // log: 'game' (rounds and solo runs) or 'security' (sign-ins and what was done here)

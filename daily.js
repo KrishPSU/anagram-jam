@@ -23,6 +23,7 @@ const AHEAD_HOURS = 14;
 // A word opened just before midnight can still be finished after it - for up to this long after the date is over
 // everywhere
 const FINISH_GRACE_HOURS = 24;
+const ADMIN_WRONG_TOP = 8; // the admin page shows this many of a word's most made wrong tries
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -270,7 +271,62 @@ function createDaily({ store, playerIdFor }) {
     return result ? { status: 'ok', result } : { status: 'gone' };
   }
 
-  return { today, open, guess, stats };
+  // For the admin page (see admin.js): a failed read as the status to reply with. 'missing' is Supabase saying it
+  // doesn't have the functions these use - supabase/migrations/20261028200000_daily_jam_admin.sql isn't applied yet.
+  function adminFailed(err) {
+    console.error("Reading Daily Jam's numbers for the admin page failed:", err.message);
+    return { status: err.status === 404 ? 'missing' : 'unavailable' };
+  }
+
+  // How a day went, for the admin page's Daily Jam tab.
+  // Replies { status: 'ok', day, number, players, finished, allDone, allGot, levels } - as dailyAdminDay in data.js has
+  // them, with each level's length too, and answers: the other real words with all its letters, which also get it.
+  // levels is empty until someone opens the day (that's when its words are picked). Or { status } 'bad', 'unavailable'
+  // or 'missing'.
+  async function adminDay({ day } = {}) {
+    if (!isDate(day) || day < FIRST_DAY) return { status: 'bad' };
+    let report;
+    try {
+      report = await store.dailyAdminDay(day, TRIES, ADMIN_WRONG_TOP);
+    } catch (err) {
+      return adminFailed(err);
+    }
+    return {
+      status: 'ok',
+      day,
+      number: numberOf(day),
+      ...report,
+      levels: report.levels.map(l => ({ ...l, length: l.word.length, answers: answersOf(l.word).slice(1) })),
+    };
+  }
+
+  // The `count` days up to `to` (none before Daily Jam #1), newest first, for the admin page's Daily Jam tab.
+  // Replies { status: 'ok', first: Daily Jam #1's day, days: [{ day, number, players, levels }], streaks } - as
+  // dailyAdminDays in data.js has them, with a day nobody played as 0 players and no levels - or { status } 'bad',
+  // 'unavailable' or 'missing'.
+  async function adminDays({ to, count } = {}) {
+    if (!isDate(to) || to < FIRST_DAY || !Number.isInteger(count) || count < 1) return { status: 'bad' };
+    const days = [];
+    for (let i = 0; i < count; i++) {
+      const day = dateAt(Date.parse(to) - i * DAY_MS);
+      if (day < FIRST_DAY) break;
+      days.push(day);
+    }
+    let report;
+    try {
+      report = await store.dailyAdminDays(days[days.length - 1], to);
+    } catch (err) {
+      return adminFailed(err);
+    }
+    return {
+      status: 'ok',
+      first: FIRST_DAY,
+      days: days.map(day => ({ day, number: numberOf(day), players: 0, levels: [], ...report.days.find(d => d.day === day) })),
+      streaks: report.streaks,
+    };
+  }
+
+  return { today, open, guess, stats, adminDay, adminDays };
 }
 
 module.exports = { createDaily, LEVELS, TRIES };

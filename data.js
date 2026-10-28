@@ -103,6 +103,24 @@ function memoryData() {
 
   const streakOf = (playerId) => (dailyStreaks.has(playerId) ? { ...dailyStreaks.get(playerId) } : null);
 
+  // The middle time, or the two middle ones' average (as percentile_cont(0.5)); null for none
+  function median(times) {
+    const sorted = [...times].sort((a, b) => a - b);
+    const middle = sorted.length >> 1;
+    if (!sorted.length) return null;
+    return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+  }
+
+  // [[thing, how many times]], most first, then alphabetically
+  const tally = (things) => [...things.reduce((counts, thing) => counts.set(thing, (counts.get(thing) || 0) + 1), new Map())]
+    .sort(([a, n], [b, m]) => m - n || (a < b ? -1 : a > b ? 1 : 0));
+
+  // Every go at the day's words, with who it was and how many tries it took
+  const playsOn = (day) => [...dailyPlays].filter(([, play]) => play.day === day)
+    .map(([key, play]) => ({ ...play, playerId: key.split(' ')[2], tries: play.guesses.length + 1 }));
+
+  const byLength = (a, b) => a.word.length - b.word.length;
+
   return {
     status: () => ({ store: 'memory', reason: null }),
 
@@ -279,17 +297,86 @@ function memoryData() {
       const done = [...dailyPlays]
         .filter(([key, play]) => key.startsWith(`${day} ${level} `) && play.solved !== null)
         .map(([key, play]) => ({ id: key.split(' ')[2], solved: play.solved, ms: play.ms, tries: play.guesses.length + 1 }));
-      const times = done.filter(d => d.solved).map(d => d.ms).sort((a, b) => a - b);
-      const middle = times.length >> 1;
       const me = done.find(d => d.id === playerId && d.solved);
       return {
         players: done.length,
         got: Array.from({ length: tries }, (_, i) => done.filter(d => d.solved && d.tries === i + 1).length),
         missed: done.filter(d => !d.solved).length,
-        median: !times.length ? null : times.length % 2 ? times[middle] : Math.round((times[middle - 1] + times[middle]) / 2),
+        median: median(done.filter(d => d.solved).map(d => d.ms)),
         solved: (done.find(d => d.id === playerId) || { solved: null }).solved,
         behind: me ? done.filter(d => d.id !== playerId && (!d.solved || d.tries > me.tries || (d.tries === me.tries && d.ms > me.ms))).length : 0,
         streak: streakOf(playerId),
+      };
+    },
+
+    // For the admin page. How a day went: { players (who opened a word), finished (who finished one), allDone (who
+    // finished every one), allGot (who got every one), levels: [{ level, word, scramble, opened, playing (opened, not
+    // finished), got: how many got it on try 1, 2, ... `tries`, missed, median and fastest (ms, of those who got it),
+    // wrong: the `top` wrong tries made most, as [{ guess, count }], others: the other real words it was got with, as
+    // [{ answer, count }] }] } - levels is empty until the day's words are picked
+    async dailyAdminDay(day, tries, top) {
+      const words = wordsOn(day).sort(byLength);
+      const plays = playsOn(day);
+      const people = [...new Set(plays.map(p => p.playerId))].map((playerId) => {
+        const theirs = plays.filter(p => p.playerId === playerId);
+        return { done: theirs.filter(p => p.solved !== null).length, got: theirs.filter(p => p.solved).length };
+      });
+      return {
+        players: people.length,
+        finished: people.filter(p => p.done > 0).length,
+        allDone: people.filter(p => p.done === words.length).length,
+        allGot: people.filter(p => p.got === words.length).length,
+        levels: words.map((w) => {
+          const goes = plays.filter(p => p.level === w.level);
+          const got = goes.filter(p => p.solved);
+          return {
+            level: w.level,
+            word: w.word,
+            scramble: w.scramble,
+            opened: goes.length,
+            playing: goes.filter(p => p.solved === null).length,
+            got: Array.from({ length: tries }, (_, i) => got.filter(p => p.tries === i + 1).length),
+            missed: goes.filter(p => p.solved === false).length,
+            median: median(got.map(p => p.ms)),
+            fastest: got.length ? Math.min(...got.map(p => p.ms)) : null,
+            wrong: tally(goes.flatMap(p => p.guesses)).slice(0, Math.max(top, 0)).map(([guess, count]) => ({ guess, count })),
+            others: tally(got.filter(p => p.answer !== w.word).map(p => p.answer)).map(([answer, count]) => ({ answer, count })),
+          };
+        }),
+      };
+    },
+
+    // For the admin page. Each day from `from` to `to` that has words, newest first: { day, players, levels:
+    // [{ level, word, opened, finished, got }] }. And streaks as of `to`: { going (still on: they finished a word on
+    // `to` or the day before), longest (of those), best (anyone's, ever), ever (players who've finished a word) }.
+    async dailyAdminDays(from, to) {
+      const days = [...dailyWords.keys()].filter(day => day >= from && day <= to).sort().reverse();
+      const streaks = [...dailyStreaks.values()];
+      const going = streaks.filter(streak => daysBetween(streak.lastDay, to) <= 1);
+      return {
+        days: days.map((day) => {
+          const plays = playsOn(day);
+          return {
+            day,
+            players: new Set(plays.map(p => p.playerId)).size,
+            levels: wordsOn(day).sort(byLength).map((w) => {
+              const goes = plays.filter(p => p.level === w.level);
+              return {
+                level: w.level,
+                word: w.word,
+                opened: goes.length,
+                finished: goes.filter(p => p.solved !== null).length,
+                got: goes.filter(p => p.solved).length,
+              };
+            }),
+          };
+        }),
+        streaks: {
+          going: going.length,
+          longest: Math.max(0, ...going.map(streak => streak.current)),
+          best: Math.max(0, ...streaks.map(streak => streak.best)),
+          ever: streaks.length,
+        },
       };
     },
 
@@ -373,6 +460,8 @@ function supabaseData(url, key) {
     dailyPlayer: (day, playerId) => call('daily_player_day', { p_day: day, p_player_id: playerId }),
     dailyStats: (day, level, playerId, tries) =>
       call('daily_stats', { p_day: day, p_level: level, p_player_id: playerId, p_tries: tries }),
+    dailyAdminDay: (day, tries, top) => call('daily_admin_day', { p_day: day, p_tries: tries, p_top: top }),
+    dailyAdminDays: (from, to) => call('daily_admin_days', { p_from: from, p_to: to }),
 
     // How long a call takes to come back
     async health() {
@@ -484,6 +573,8 @@ function fallbackData(supabase, memory) {
     guessDaily: (...args) => attemptDaily(() => supabase.guessDaily(...args)),
     dailyPlayer: (...args) => attemptDaily(() => supabase.dailyPlayer(...args)),
     dailyStats: (...args) => attemptDaily(() => supabase.dailyStats(...args)),
+    dailyAdminDay: (...args) => attemptDaily(() => supabase.dailyAdminDay(...args)),
+    dailyAdminDays: (...args) => attemptDaily(() => supabase.dailyAdminDays(...args)),
 
     health: () => attempt(() => supabase.health(), () => null),
   };

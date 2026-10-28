@@ -24,6 +24,7 @@
   <script defer src="/admin/app/live.js"></script>
   <script defer src="/admin/app/leaderboard.js"></script>
   <script defer src="/admin/app/stats.js"></script>
+  <script defer src="/admin/app/daily.js"></script>
   <script defer src="/admin/app/activity.js"></script>
   <script defer src="/admin/app/controls.js"></script>
   <script defer src="/admin/app/system.js"></script>
@@ -39,6 +40,7 @@
     <nav class="tabs" role="tablist" aria-label="Admin sections">
       <button type="button" role="tab" id="tab-live" aria-controls="panel-live" data-tab="live">Live</button>
       <button type="button" role="tab" id="tab-leaderboard" aria-controls="panel-leaderboard" data-tab="leaderboard">Leaderboard</button>
+      <button type="button" role="tab" id="tab-daily" aria-controls="panel-daily" data-tab="daily">Daily Jam</button>
       <button type="button" role="tab" id="tab-stats" aria-controls="panel-stats" data-tab="stats">Stats</button>
       <button type="button" role="tab" id="tab-activity" aria-controls="panel-activity" data-tab="activity">Activity</button>
       <button type="button" role="tab" id="tab-controls" aria-controls="panel-controls" data-tab="controls">Controls</button>
@@ -101,6 +103,70 @@
       <p class="note">Names with swear words already show as "Player" to everyone (marked below). Remove takes someone off the board until they play again.</p>
       <p class="state" id="boardState" hidden></p>
       <ol class="lb-list" id="boardList"></ol>
+    </section>
+
+    <!-- Daily Jam: how a day's words went, players every day, and streaks (daily.js) -->
+    <section class="panel" id="panel-daily" role="tabpanel" aria-labelledby="tab-daily" hidden>
+      <div class="section-head">
+        <div>
+          <h2 id="jamTitle">Daily Jam</h2>
+          <p class="section-sub" id="jamSub"></p>
+        </div>
+        <div class="section-tools">
+          <label class="check"><input type="checkbox" id="showJamWords"> Show today's words</label>
+          <div class="seg" role="group" aria-label="Which day">
+            <button type="button" id="jamPrev" aria-label="The day before">‹</button>
+            <button type="button" id="jamTodayBtn">Today</button>
+            <button type="button" id="jamNext" aria-label="The day after">›</button>
+          </div>
+          <button class="btn btn-glass btn-sm" id="jamRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <p class="state" id="jamState" hidden></p>
+
+      <div class="panel-body" id="jamBody" hidden>
+        <div class="kpis">
+          <div class="kpi"><p class="kpi-label">Players</p><p class="kpi-value" id="jamPlayers">–</p><p class="kpi-sub" id="jamPlayersSub"></p></div>
+          <div class="kpi"><p class="kpi-label">Words finished</p><p class="kpi-value" id="jamFinished">–</p><p class="kpi-sub" id="jamFinishedSub"></p></div>
+          <div class="kpi"><p class="kpi-label">Got it</p><p class="kpi-value" id="jamGot">–</p><p class="kpi-sub" id="jamGotSub"></p></div>
+          <div class="kpi"><p class="kpi-label">Did all three</p><p class="kpi-value" id="jamAll">–</p><p class="kpi-sub" id="jamAllSub"></p></div>
+        </div>
+
+        <div class="jam-levels" id="jamLevels"></div>
+        <div class="empty" id="jamEmpty" hidden>
+          <p class="empty-title" id="jamEmptyTitle"></p>
+          <p>Its words are picked when the first player opens it.</p>
+        </div>
+
+        <div class="jam-bottom">
+          <section class="pane chart-pane">
+            <div class="chart-head">
+              <div>
+                <h3>Players each day</h3>
+                <p class="section-sub">People who opened at least one word</p>
+              </div>
+              <div class="seg" id="jamRangeSeg" role="group" aria-label="How far back">
+                <button type="button" data-days="7" aria-pressed="false">7 days</button>
+                <button type="button" data-days="30" aria-pressed="true">30 days</button>
+              </div>
+            </div>
+            <div class="chart" id="jamChart"></div>
+            <details class="chart-table">
+              <summary>Show as a table (got it / finished, per word)</summary>
+              <div class="table-wrap"><table id="jamTable"></table></div>
+            </details>
+          </section>
+
+          <section class="pane">
+            <h3>Streaks</h3>
+            <p class="pane-sub">Days in a row with at least one word finished, as of today.</p>
+            <dl class="facts" id="jamStreaks"></dl>
+          </section>
+        </div>
+
+        <p class="note">A day is the date where each player is, so its words are in play for about two days around the world. Wrong tries are arrangements of the letters that aren't in the game's dictionary: a real word there means the dictionary is missing it (try it in Controls → Word checker).</p>
+      </div>
     </section>
 
     <!-- Stats: days and hours (stats.js) -->
