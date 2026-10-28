@@ -4,6 +4,9 @@
 // checked), and the leaderboard - every player's best score, and how many words it got. A leaderboard score is a single
 // number, higher is better (solo.js packs the points and the time into it).
 //
+// Daily Jam (see daily.js) keeps every day's words - the record that keeps a word from coming up again within a year -
+// each player's go at them (their tries and time), and their streaks.
+//
 // The admin page (see admin.js) keeps counters that cap wrong passwords, two short logs (games, and sign-ins with what was
 // done on the page), the site's settings (a banner, games paused), and stats - how many rooms, rounds and solo runs there
 // were each hour, and who played.
@@ -15,7 +18,7 @@
 // Without one (local development), they stay in this process's memory.
 //
 // If Supabase stops answering (see fallbackData), runs and the admin page's things are kept in memory until it does,
-// and the leaderboard can't be reached.
+// and the leaderboard and Daily Jam can't be reached.
 
 // The stats are kept by UTC hour, so the admin page can add them up into days in its own time zone.
 // hourStamp: '2026-10-27T13' for 1pm UTC, as statsFor and uniquePlayers take them.
@@ -26,6 +29,9 @@ const RUN_TTL = 15 * 60 * 1000;
 
 // Give up on a call this quickly, so the game can fall back to memory while Supabase is unreachable or slow
 const CALL_TIMEOUT = 3000;
+
+// Days apart, for Daily Jam's days ('2026-10-28')
+const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / (24 * 60 * 60 * 1000));
 
 // supabase: { url, key } for a Supabase project, or nothing
 function createData(supabase) {
@@ -39,6 +45,9 @@ function memoryData() {
   const logs = new Map();     // log name -> entries, newest first
   const stats = new Map();    // UTC day -> { 'metric:hour': count }
   const players = new Map();  // hourStamp -> Set of player ids
+  const dailyWords = new Map();   // day -> { level -> { level, word, scramble } }
+  const dailyPlays = new Map();   // 'day level playerId' -> { day, level, openedAt, guesses, solved, answer, ms }
+  const dailyStreaks = new Map(); // player id -> { lastDay, current, best }
   let settings = null;
 
   function liveRun(id) {
@@ -60,6 +69,39 @@ function memoryData() {
       top: board.slice(0, top),
     };
   }
+
+  // Daily Jam, as Supabase's functions work it out (see supabase/migrations)
+  const wordsOn = (day) => Object.values(dailyWords.get(day) || {});
+  const wordsNear = (day, gap) => [...dailyWords].filter(([other]) => Math.abs(daysBetween(other, day)) < gap)
+    .flatMap(([other]) => wordsOn(other).map(w => w.word));
+  const playKey = (day, level, playerId) => `${day} ${level} ${playerId}`;
+
+  function playJson(play) {
+    return {
+      level: play.level,
+      guesses: [...play.guesses],
+      solved: play.solved,
+      answer: play.answer,
+      ms: play.ms,
+      elapsed: Date.now() - play.openedAt,
+      word: play.solved === null ? null : dailyWords.get(play.day)[play.level].word,
+    };
+  }
+
+  function countStreak(playerId, day) {
+    const streak = dailyStreaks.get(playerId);
+    if (!streak) {
+      dailyStreaks.set(playerId, { lastDay: day, current: 1, best: 1 });
+      return;
+    }
+    const apart = daysBetween(streak.lastDay, day);
+    if (apart <= 0) return;
+    streak.current = apart === 1 ? streak.current + 1 : 1;
+    streak.best = Math.max(streak.best, streak.current);
+    streak.lastDay = day;
+  }
+
+  const streakOf = (playerId) => (dailyStreaks.has(playerId) ? { ...dailyStreaks.get(playerId) } : null);
 
   return {
     status: () => ({ store: 'memory', reason: null }),
@@ -165,6 +207,92 @@ function memoryData() {
       settings = JSON.stringify(value);
     },
 
+    // Daily Jam. Days are dates as players have them ('2026-10-28').
+
+    // A day's words, as [{ level, word, scramble }] (none until they're picked)
+    async dailyWords(day) {
+      return wordsOn(day).map(w => ({ ...w }));
+    },
+
+    // The words used fewer than `gap` days before or after `day`
+    async dailyWordsNear(day, gap) {
+      return wordsNear(day, gap);
+    },
+
+    // Puts in the words picked for a day ([{ level, word, scramble }]): each only if that level of the day has none yet,
+    // and if the word hasn't been used fewer than `gap` days from it. Resolves to the day's words, as dailyWords.
+    async addDailyWords(day, words, gap) {
+      const levels = dailyWords.get(day) || {};
+      for (const w of words) {
+        if (!levels[w.level] && !wordsNear(day, gap).includes(w.word)) levels[w.level] = { level: w.level, word: w.word, scramble: w.scramble };
+      }
+      dailyWords.set(day, levels);
+      return wordsOn(day).map(w => ({ ...w }));
+    },
+
+    // Opens a level of the day for a player, starting their clock unless it's going already (start false only looks).
+    // Resolves to their go: { level, guesses (the wrong ones), solved (null while playing), answer, ms, elapsed (ms since
+    // they opened it), word (once they've finished) } - or null if they haven't opened it.
+    async openDaily(day, level, playerId, start) {
+      const key = playKey(day, level, playerId);
+      if (start && !dailyPlays.has(key)) {
+        dailyPlays.set(key, { day, level, openedAt: Date.now(), guesses: [], solved: null, answer: null, ms: null });
+        dailyPlays.forEach((play, k) => { if (daysBetween(play.day, day) > 400) dailyPlays.delete(k); });
+      }
+      return dailyPlays.has(key) ? playJson(dailyPlays.get(key)) : null;
+    },
+
+    // Try number `n` (1 for the first) at a level they've opened. right: it's the word or another real word with all its
+    // letters. A try sent twice, one out of order, or a wrong one tried already counts for nothing, and the `tries`-th
+    // wrong one ends it. Resolves to their go, as openDaily, or null if they haven't opened it.
+    async guessDaily(day, level, playerId, n, guess, right, tries) {
+      const play = dailyPlays.get(playKey(day, level, playerId));
+      if (!play) return null;
+      if (play.solved === null && n === play.guesses.length + 1 && !play.guesses.includes(guess)) {
+        if (right) {
+          play.solved = true;
+          play.answer = guess;
+        } else {
+          play.guesses.push(guess);
+          if (n >= tries) play.solved = false;
+        }
+        if (play.solved !== null) {
+          play.ms = Date.now() - play.openedAt;
+          countStreak(playerId, day);
+        }
+      }
+      return playJson(play);
+    },
+
+    // A player's day: { plays: their go at each level they've opened, as openDaily; streak: { lastDay, current, best },
+    // or null if they've never finished one }
+    async dailyPlayer(day, playerId) {
+      const plays = [...dailyPlays].filter(([key]) => key.startsWith(`${day} `) && key.endsWith(` ${playerId}`));
+      return { plays: plays.map(([, play]) => playJson(play)), streak: streakOf(playerId) };
+    },
+
+    // How everyone who's finished a level of the day did: { players, got: how many got it on try 1, 2, ... `tries`,
+    // missed, median: the middle time of those who got it, solved: whether playerId got it (null if they haven't
+    // finished), behind: how many others did worse than them (fewer tries, then faster, is better), streak: playerId's,
+    // as dailyPlayer }
+    async dailyStats(day, level, playerId, tries) {
+      const done = [...dailyPlays]
+        .filter(([key, play]) => key.startsWith(`${day} ${level} `) && play.solved !== null)
+        .map(([key, play]) => ({ id: key.split(' ')[2], solved: play.solved, ms: play.ms, tries: play.guesses.length + 1 }));
+      const times = done.filter(d => d.solved).map(d => d.ms).sort((a, b) => a - b);
+      const middle = times.length >> 1;
+      const me = done.find(d => d.id === playerId && d.solved);
+      return {
+        players: done.length,
+        got: Array.from({ length: tries }, (_, i) => done.filter(d => d.solved && d.tries === i + 1).length),
+        missed: done.filter(d => !d.solved).length,
+        median: !times.length ? null : times.length % 2 ? times[middle] : Math.round((times[middle - 1] + times[middle]) / 2),
+        solved: (done.find(d => d.id === playerId) || { solved: null }).solved,
+        behind: me ? done.filter(d => d.id !== playerId && (!d.solved || d.tries > me.tries || (d.tries === me.tries && d.ms > me.ms))).length : 0,
+        streak: streakOf(playerId),
+      };
+    },
+
     // Nothing to measure without Supabase
     async health() {
       return null;
@@ -189,7 +317,8 @@ function supabaseData(url, key) {
       try {
         message = JSON.parse(body).message || message;
       } catch {}
-      throw new Error(`${name}: ${res.status} ${message}`);
+      // status: Supabase answered, but with an error
+      throw Object.assign(new Error(`${name}: ${res.status} ${message}`), { status: res.status });
     }
     return body ? JSON.parse(body) : null;
   }
@@ -234,6 +363,17 @@ function supabaseData(url, key) {
     getSettings: () => call('get_admin_settings', {}),
     saveSettings: (value) => call('save_admin_settings', { p_value: value }),
 
+    dailyWords: (day) => call('daily_words_for', { p_day: day }),
+    dailyWordsNear: (day, gap) => call('daily_words_near', { p_day: day, p_gap: gap }),
+    addDailyWords: (day, words, gap) => call('add_daily_words', { p_day: day, p_words: words, p_gap: gap }),
+    openDaily: (day, level, playerId, start) =>
+      call('open_daily', { p_day: day, p_level: level, p_player_id: playerId, p_start: start }),
+    guessDaily: (day, level, playerId, n, guess, right, tries) =>
+      call('guess_daily', { p_day: day, p_level: level, p_player_id: playerId, p_try: n, p_guess: guess, p_right: right, p_tries: tries }),
+    dailyPlayer: (day, playerId) => call('daily_player_day', { p_day: day, p_player_id: playerId }),
+    dailyStats: (day, level, playerId, tries) =>
+      call('daily_stats', { p_day: day, p_level: level, p_player_id: playerId, p_tries: tries }),
+
     // How long a call takes to come back
     async health() {
       const started = Date.now();
@@ -259,6 +399,22 @@ function fallbackData(supabase, memory) {
     } catch (err) {
       supabaseFailed(err);
       return onFailure();
+    }
+  }
+
+  // Daily Jam's calls. Its words have to be the same on every instance, so they're only ever Supabase's: while it isn't
+  // answering these reject, and Daily Jam can't be reached. An error Supabase did answer with (say its functions aren't
+  // there yet, in the moment between a deploy and the migration that adds them) isn't Supabase being down, so it
+  // doesn't count toward moving everything else to memory.
+  async function attemptDaily(operation) {
+    if (outage) throw new Error(`Supabase isn't answering (${outage.reason})`);
+    try {
+      const result = await operation();
+      failures = 0;
+      return result;
+    } catch (err) {
+      if (!err.status || err.status >= 500) supabaseFailed(err);
+      throw err;
     }
   }
 
@@ -319,6 +475,16 @@ function fallbackData(supabase, memory) {
     uniquePlayers: (...args) => attempt(() => supabase.uniquePlayers(...args), () => memory.uniquePlayers(...args)),
     getSettings: () => attempt(() => supabase.getSettings(), () => memory.getSettings()),
     saveSettings: (value) => attempt(() => supabase.saveSettings(value), () => memory.saveSettings(value)),
+
+    // Daily Jam's (see attemptDaily)
+    dailyWords: (...args) => attemptDaily(() => supabase.dailyWords(...args)),
+    dailyWordsNear: (...args) => attemptDaily(() => supabase.dailyWordsNear(...args)),
+    addDailyWords: (...args) => attemptDaily(() => supabase.addDailyWords(...args)),
+    openDaily: (...args) => attemptDaily(() => supabase.openDaily(...args)),
+    guessDaily: (...args) => attemptDaily(() => supabase.guessDaily(...args)),
+    dailyPlayer: (...args) => attemptDaily(() => supabase.dailyPlayer(...args)),
+    dailyStats: (...args) => attemptDaily(() => supabase.dailyStats(...args)),
+
     health: () => attempt(() => supabase.health(), () => null),
   };
 }

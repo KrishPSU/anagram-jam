@@ -7,6 +7,7 @@ const WORDS = require('./words');
 const { createStore } = require('./store');
 const { createData } = require('./data');
 const { createSolo, answersFor, practiceWords } = require('./solo');
+const { createDaily } = require('./daily');
 const { createAdmin } = require('./admin');
 
 require('dotenv').config();
@@ -80,6 +81,9 @@ const solo = createSolo({
   },
 });
 
+// Daily Jam's words, and how everyone does on them (see daily.js)
+const daily = createDaily({ store: data, playerIdFor });
+
 // The adapter doesn't handle Redis refusing a command (Upstash refuses them all once the free plan is used up):
 // a failed publish or subscribe would crash the server. Messages still reach the players on this instance
 // either way, and while rooms are being kept in memory there's no point publishing at all.
@@ -110,6 +114,7 @@ app.use('/', express.static(path.join(__dirname, 'home')));
 // /admin is admin.js's, behind its sign-in
 app.use('/solo', express.static(path.join(__dirname, 'solo')));
 app.use('/practice', express.static(path.join(__dirname, 'practice')));
+app.use('/daily', express.static(path.join(__dirname, 'daily')));
 app.use('/shared', express.static(path.join(__dirname, 'shared')));
 
 // Serve PWA files (manifest.json and service worker)
@@ -149,6 +154,10 @@ app.get('/solo', (req, res) => {
 
 app.get('/practice', (req, res) => {
   res.sendFile(path.join(__dirname, 'practice', 'practice.html'));
+});
+
+app.get('/daily', (req, res) => {
+  res.sendFile(path.join(__dirname, 'daily', 'daily.html'));
 });
 
 // Practice mode's words, all of them at once (see practiceWords in solo.js): the page asks once and deals from them for
@@ -965,6 +974,17 @@ io.on('connection', (socket) => {
   });
   on('solo-finish', async (data, ack) => replier(ack)(await solo.finish(data || undefined)));
   on('solo-board', async (data, ack) => replier(ack)(await solo.board(data || undefined)));
+
+  // Daily Jam (see daily.js), the same way. While new games are paused from the admin page, only a word that's been
+  // opened already can be.
+  on('daily-today', async (data, ack) => replier(ack)(await daily.today(data || undefined)));
+  on('daily-open', async (data, ack) => {
+    const { paused, pausedMessage } = await admin.forPlayers();
+    const reply = await daily.open(data || undefined, { paused });
+    replier(ack)(reply.status === 'paused' ? { ...reply, message: pausedMessage } : reply);
+  });
+  on('daily-guess', async (data, ack) => replier(ack)(await daily.guess(data || undefined)));
+  on('daily-stats', async (data, ack) => replier(ack)(await daily.stats(data || undefined)));
 
 });
 

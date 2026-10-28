@@ -1,9 +1,9 @@
 // The word on screen: its letters as tiles to tap or type, and the answer row they go into. It works like the room
 // page's (create-room/js/game.js) - same picking, flying and shuffling - but solo words go up to 10 letters, so a long
 // word's tiles shrink to fit the screen, and go onto two rows rather than get too small to tap. Practice mode uses it too.
-// The page's own script (run.js, or practice.js) decides when letters can be picked (canPick) and typed (canType),
-// what a full answer row is worth (answerReady), and what ? on a keyboard does (helpKey) - in solo mode it uses a hint
-// (giveLetter).
+// The page's own script (run.js, practice.js or Daily Jam's play.js) decides when letters can be picked (canPick) and
+// typed (canType), what a full answer row is worth (answerReady), and what ? on a keyboard does (helpKey) - in solo mode
+// it uses a hint (giveLetter). It can also hear about every change to the answer row (slotsChanged), if it has one.
 
 const tilesEl = document.getElementById('anagramDisplay');
 const slotsEl = document.getElementById('answerSlots');
@@ -96,6 +96,7 @@ function renderSlots(text) {
     slot.textContent = letters[i] || '';
     slot.setAttribute('aria-label', !text && i < given ? `${letters[i]}, from a hint` : letters[i] ? `Remove ${letters[i]}` : `Empty space ${i + 1}`);
   });
+  if (typeof slotsChanged === 'function') slotsChanged();
 }
 
 const calmMotion = matchMedia('(prefers-reduced-motion: reduce)');

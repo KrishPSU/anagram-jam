@@ -329,8 +329,8 @@
 /* Two to a row: a little less padding, so the labels fit on a small phone */
 .solo-row .btn { min-width: 0; padding: 0 10px; white-space: nowrap; }
 
-/* "Leaderboard" leaves no room for a third across, so practice gets a row of its own */
-.solo-row .practice-btn { grid-column: 1 / -1; }
+/* The day's words: a touch of pink, since they're new every day */
+.solo-row .daily-btn { border-color: #fbcfe8; background: linear-gradient(135deg, #fff1f7, #fff7ed); }
 
 /* Add to home screen (install.js). Quiet, under the start card. */
 

@@ -1,0 +1,415 @@
+/* Daily Jam (daily.html). Today's list is laid out like solo mode's rules screen and the word like a solo word, so
+   solo.css and the room page's styles do most of it. This is today's list of words, the tries and the ✓, and the box
+   after a word. */
+
+/* A sunrise for a new day's words */
+body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.28); --glow-c: rgba(124, 108, 240, 0.30); --toast-top: 64px; }
+
+
+/* Today's list */
+
+/* While it loads, or if it can't */
+.daily-status {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  text-align: center;
+}
+
+.daily-status p {
+  margin: 0;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+}
+
+.daily-status .spinner { margin-right: 8px; vertical-align: -0.2em; }
+
+.daily-levels {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+/* One word: its level and length on the left, how you're doing on it on the right */
+.daily-level {
+  appearance: none;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 16px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  border: 2px solid var(--field-line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.daily-level:hover { transform: translateY(-1px); }
+.daily-level:active { transform: translateY(1px); }
+.daily-level:disabled { cursor: default; transform: none; }
+
+.level-name {
+  font-weight: 800;
+  font-size: 17px;
+}
+
+.level-length {
+  grid-row: 2;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.level-state {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  justify-self: end;
+  font-weight: 800;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.daily-level.new { border-color: transparent; background: linear-gradient(135deg, #fff1f7, #fff7ed); }
+.daily-level.new .level-state { color: var(--jam-deep); }
+.daily-level.going .level-state { color: #b45309; }
+.daily-level.got { background: #ecfdf5; border-color: #a7f3d0; }
+.daily-level.got .level-state { color: #047857; }
+.daily-level.missed { background: var(--field); }
+.daily-level.missed .level-state { color: var(--ink-muted); letter-spacing: 0.04em; }
+
+/* Waiting on the server to open it */
+.daily-level.opening .level-state { visibility: hidden; }
+.daily-level.opening::after {
+  content: "";
+  grid-column: 2;
+  grid-row: 1 / 3;
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--jam);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* Your streak, and when the next words come */
+.daily-foot {
+  margin: -6px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--on-dark-muted);
+}
+
+.daily-foot b { color: #fff; font-variant-numeric: tabular-nums; }
+
+.daily-streak {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--glass);
+  color: #fde68a;
+  font-weight: 800;
+}
+
+
+/* A word */
+
+.daily-clock {
+  margin-left: auto;
+  min-width: 64px;
+  text-align: center;
+}
+
+/* One for each try, red once it's used */
+.daily-tries {
+  margin: -6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  gap: 8px;
+}
+
+.daily-tries li {
+  width: 28px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  transition: background 0.25s ease;
+}
+
+.daily-tries li.used { background: var(--bad); }
+
+/* Longer than solo mode's, so it can wrap on a phone */
+.game-content .hint { text-align: center; text-wrap: balance; }
+
+/* On its way to the server to be checked */
+.answer-slots.checking .slot { animation: checking 0.8s ease-in-out infinite; }
+
+@keyframes checking {
+  50% { opacity: 0.55; }
+}
+
+/* ✓, where solo mode's hint is: lit once every letter is in */
+.check .powerup-icon {
+  font-weight: 900;
+  font-size: 26px;
+  color: #fff;
+}
+
+.check.ready {
+  background: rgba(16, 185, 129, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 20px rgba(52, 211, 153, 0.45);
+}
+
+.check.ready .powerup-icon { opacity: 1; filter: none; }
+
+.check.nope { animation: shake 0.35s ease; }
+
+/* The wrong tries so far, under the buttons */
+.daily-missed {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.daily-missed li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-decoration: line-through;
+  text-decoration-color: rgba(254, 202, 202, 0.6);
+}
+
+.daily-missed li::before { content: "✗ "; text-decoration: none; display: inline-block; margin-right: 2px; }
+
+
+/* The box after a word (result.js) - made like the solo leaderboard's (board-* in /shared/theme.css) */
+
+.result-card { gap: 14px; text-align: center; }
+
+/* Opened by Enter, the box itself has the focus - its buttons show it when tabbed to, not the whole box */
+.result-dialog:focus-visible { outline: none; }
+
+.result-eyebrow {
+  margin: 0;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.result-title {
+  margin: -6px 0 0;
+  font-weight: 900;
+  font-size: 26px;
+  line-height: 1.15;
+}
+
+/* The word, as tiles that fit the box at any length */
+.result-word {
+  --tile-size: min(36px, calc((min(100vw - 32px, 420px) - 40px - (var(--letters) - 1) * 4px) / var(--letters)));
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.result-word .tile { box-shadow: 0 2px 0 rgba(0, 0, 0, 0.18); }
+.result-word.got .tile { background: var(--go); color: #fff; }
+.result-word.missed .tile { background: var(--field); color: var(--ink); }
+
+.result-note {
+  margin: -4px 0 0;
+  font-size: 14px;
+  color: var(--ink-muted);
+}
+
+.result-status {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.result-status p {
+  margin: 0;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink-muted);
+}
+
+.result-status .spinner { margin-right: 8px; vertical-align: -0.2em; }
+
+.result-numbers {
+  display: grid;
+  gap: 14px;
+}
+
+.result-standing {
+  margin: 0;
+  justify-self: center;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: var(--field);
+  font-weight: 800;
+  font-size: 16px;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.result-standing.great { background: #d1fae5; color: #047857; }
+
+/* Your time, today's average and your streak, side by side */
+.result-tiles {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.result-tiles div {
+  padding: 10px 6px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+  border-radius: 12px;
+  background: var(--field);
+}
+
+.result-tiles dt {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.result-tiles dd {
+  margin: 0;
+  font-weight: 800;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-tiles dd small {
+  display: block;
+  margin-top: 2px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.result-compare {
+  margin: -6px 0 0;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink-muted);
+}
+
+/* How today's players did: a bar each for 1, 2 and 3 tries and missed, all one neutral color but yours */
+.result-breakdown { text-align: left; }
+
+.result-breakdown h3 {
+  margin: 0 0 8px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.bars {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.bars li {
+  display: grid;
+  grid-template-columns: 58px 1fr 34px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.bar-label {
+  font-weight: 600;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.bar-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Square where it starts, rounded at the end that shows the count */
+.bar {
+  height: 20px;
+  flex: none;
+  max-width: calc(100% - 32px);
+  border-radius: 0 4px 4px 0;
+  background: #cfd3db;
+}
+
+.bar-count {
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.bars li.you .bar { background: var(--you); }
+.bars li.you .bar-label { color: var(--ink); font-weight: 800; }
+
+.bar-you {
+  font-weight: 800;
+  font-size: 12px;
+  color: var(--you);
+}
+
+.result-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.result-next {
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.result-next b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* For getting the word - as in the room page's results.css, which this page doesn't load */
+.confetti {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 50;
+  pointer-events: none;
+}

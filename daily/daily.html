@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#232526">
+  <meta name="description" content="Three words a day, the same for everyone. Three tries at each, no hints. How do you stack up?">
+  <title>Daily Jam | Anagram Jam</title>
+
+  <!-- Favicon (browsers cache these hard - bump ?v= whenever the icon changes) -->
+  <link rel="icon" type="image/png" href="/icon-192.png?v=2">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json">
+
+  <!-- Apple Touch Icon -->
+  <link rel="apple-touch-icon" href="/icon-192.png?v=2">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <!-- The word screen is solo mode's, so this borrows its styles and the room page's (create-room/ is served at the site
+       root), and adds its own on top -->
+  <link rel="stylesheet" href="/shared/theme.css">
+  <link rel="stylesheet" href="/css/game.css">
+  <link rel="stylesheet" href="/css/game-state.css">
+  <link rel="stylesheet" href="/solo/css/solo.css">
+  <link rel="stylesheet" href="/daily/css/daily.css">
+
+  <script defer src="/shared/socket.js"></script>
+  <script defer src="/shared/toast.js"></script>
+  <script defer src="/shared/sfx.js"></script>
+  <script defer src="/daily/js/daily.js"></script>
+  <script defer src="/solo/js/tiles.js"></script>
+  <script defer src="/daily/js/play.js"></script>
+  <script defer src="/daily/js/result.js"></script>
+  <!-- The room page's music, which follows `view` (see daily.js) -->
+  <script defer src="/js/audio.js"></script>
+
+  <script src="/socket.io/socket.io.js"></script>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('Service Worker registered successfully:', registration.scope);
+          })
+          .catch((error) => {
+            console.log('Service Worker registration failed:', error);
+          });
+      });
+    }
+  </script>
+</head>
+<body class="daily">
+
+  <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
+
+  <!-- Home from today's words. On a word it's a back arrow, and asks first (#leaveDialog). -->
+  <button class="icon-btn home-btn" id="homeBtn" type="button" aria-label="Back to the home page" title="Back to the home page">🏠</button>
+  <button class="icon-btn mute" id="mute-button" type="button" aria-label="Mute sound" aria-pressed="false">🔊</button>
+
+
+  <!-- Today: its three words, easy to hard -->
+  <main class="solo-intro daily-intro" id="dayView">
+    <header class="solo-head">
+      <p class="eyebrow" id="dayNumber">Daily Jam</p>
+      <div class="code-tiles" aria-label="Daily Jam">
+        <span class="tile" aria-hidden="true">D</span><span class="tile" aria-hidden="true">A</span><span class="tile" aria-hidden="true">I</span><span class="tile" aria-hidden="true">L</span><span class="tile" aria-hidden="true">Y</span>
+      </div>
+      <p class="solo-tagline" id="dayDate">Three words a day, the same for everyone.</p>
+    </header>
+
+    <div class="card solo-card daily-card">
+      <!-- While today's words load, or if they can't be -->
+      <div class="daily-status" id="dayStatus" role="status">
+        <p id="dayStatusText"><span class="spinner" aria-hidden="true"></span>Getting today's words…</p>
+        <button class="btn btn-ghost btn-sm" id="dayRetry" type="button" hidden>Try again</button>
+      </div>
+
+      <ul class="daily-levels" id="levelList" hidden>
+        <li><button class="daily-level" type="button" data-level="easy"><span class="level-name">Easy</span><span class="level-length">5 letters</span><span class="level-state"></span></button></li>
+        <li><button class="daily-level" type="button" data-level="medium"><span class="level-name">Medium</span><span class="level-length">7 letters</span><span class="level-state"></span></button></li>
+        <li><button class="daily-level" type="button" data-level="hard"><span class="level-name">Hard</span><span class="level-length">9 letters</span><span class="level-state"></span></button></li>
+      </ul>
+
+      <ul class="solo-rules">
+        <li><span class="solo-rule-icon" aria-hidden="true">🎯</span><span><b>3 tries</b> at each word, and no hints.</span></li>
+        <li><span class="solo-rule-icon" aria-hidden="true">⏱</span><span>The clock starts when you open a word, and it doesn't stop.</span></li>
+        <li><span class="solo-rule-icon" aria-hidden="true">🏅</span><span>Fewer tries wins, then a faster time.</span></li>
+      </ul>
+    </div>
+
+    <p class="daily-foot">
+      <span class="daily-streak" id="dayStreak" hidden></span>
+      <span>New words in <b class="next-in" id="dayNextIn">--:--:--</b></span>
+    </p>
+  </main>
+
+
+  <!-- A word -->
+  <div class="game-state" id="gameState">
+    <div class="game-ui">
+      <header class="game-header">
+        <div class="solo-score" id="levelPill">Easy</div>
+        <div class="solo-score daily-clock" id="clock" role="timer" aria-label="Time on this word">0:00</div>
+      </header>
+
+      <main class="game-content" id="gameContent">
+        <p class="progress"><span id="playNumber">Daily Jam</span> · <span id="lengthLabel">5 letters</span></p>
+        <!-- One for each try: used ones turn red -->
+        <ol class="daily-tries" id="tries" aria-label="3 tries left"><li></li><li></li><li></li></ol>
+
+        <div class="answer-slots" id="answerSlots" aria-label="Your answer"></div>
+        <p class="feedback" id="feedback" aria-live="polite"></p>
+        <div class="letter-tiles" id="anagramDisplay" aria-label="Scrambled letters"></div>
+
+        <div class="word-actions">
+          <button class="icon-btn" id="shuffleBtn" type="button" aria-label="Shuffle letters" title="Shuffle (Space)">🔄</button>
+          <!-- Where solo mode's hint is: a try only counts once you check it, so a slip of the finger doesn't use one -->
+          <button class="powerup check" id="checkBtn" type="button" aria-label="Check this try" title="Check (Enter)">
+            <span class="powerup-icon" aria-hidden="true">✓</span>
+          </button>
+          <button class="icon-btn" id="undoBtn" type="button" aria-label="Remove last letter" title="Remove last letter (Backspace)">⌫</button>
+        </div>
+        <p class="hint">Use every letter, then tap ✓ to check. Only checked tries count.</p>
+
+        <!-- Your wrong tries so far -->
+        <ol class="daily-missed" id="missedList" aria-label="Wrong tries"></ol>
+      </main>
+    </div>
+  </div>
+
+
+  <!-- After a word, got or not (result.js). Made like the solo leaderboard's box (board-* in /shared/theme.css). -->
+  <dialog class="board-dialog result-dialog" id="resultDialog" aria-labelledby="resultTitle">
+    <form class="board-card card result-card" method="dialog">
+      <div class="board-head">
+        <p class="result-eyebrow" id="resultEyebrow">Daily Jam</p>
+        <button class="board-close" value="close" aria-label="Close">×</button>
+      </div>
+
+      <h2 class="result-title" id="resultTitle"></h2>
+      <div class="result-word" id="resultWord" aria-hidden="true"></div>
+      <p class="result-note" id="resultNote" hidden></p>
+
+      <!-- Loading, or couldn't load today's numbers -->
+      <div class="result-status" id="resultStatus" role="status" hidden>
+        <p id="resultStatusText"></p>
+        <button class="btn btn-ghost btn-sm" id="resultRetry" type="button" hidden>Try again</button>
+      </div>
+
+      <div class="result-numbers" id="resultNumbers">
+        <p class="result-standing" id="resultStanding"></p>
+
+        <dl class="result-tiles">
+          <div><dt>Your time</dt><dd id="resultTime">-</dd></div>
+          <div><dt>Today's average</dt><dd id="resultMedian">-</dd></div>
+          <div><dt>Streak</dt><dd id="resultStreak">-</dd></div>
+        </dl>
+        <p class="result-compare" id="resultCompare"></p>
+
+        <section class="result-breakdown" aria-labelledby="breakdownTitle">
+          <h3 id="breakdownTitle">How today's players did</h3>
+          <ol class="bars" id="bars"></ol>
+        </section>
+      </div>
+
+      <div class="result-actions">
+        <button class="btn btn-primary" id="shareBtn" type="button">Share</button>
+        <button class="btn btn-ghost" value="close">Done</button>
+      </div>
+      <p class="result-next">New words in <b class="next-in" id="resultNextIn">--:--:--</b></p>
+    </form>
+  </dialog>
+
+
+  <dialog class="leave-dialog" id="leaveDialog" aria-labelledby="leaveTitle">
+    <form class="leave-card card" method="dialog">
+      <h2 id="leaveTitle">Leave this word?</h2>
+      <p class="leave-note">The clock keeps going while you're away, and the tries you've used still count.</p>
+      <div class="leave-actions">
+        <button class="btn btn-ghost" value="stay" autofocus>Keep playing</button>
+        <button class="btn btn-danger" value="leave">Leave</button>
+      </div>
+    </form>
+  </dialog>
+
+</body>
+</html>
