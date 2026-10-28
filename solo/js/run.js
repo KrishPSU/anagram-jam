@@ -47,6 +47,14 @@ function canPick() {
   return running && !locked;
 }
 
+// Typing goes to the word (tiles.js) while it's on screen - and not behind the "Stop this run?" box
+function canType() {
+  return view === 'game' && running && !leaveDialog.open;
+}
+
+// ? on a keyboard (tiles.js)
+const helpKey = useHint;
+
 // The hidden word's hash and the other real words', for the word on screen (tiles.js shuffles clear of them)
 function answerHashes() {
   return run ? [run.hashes[level], ...run.others[level]] : [];

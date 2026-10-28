@@ -1,8 +1,9 @@
 // The word on screen: its letters as tiles to tap or type, and the answer row they go into. It works like the room
 // page's (create-room/js/game.js) - same picking, flying and shuffling - but solo words go up to 10 letters, so a long
-// word's tiles shrink to fit the screen, and go onto two rows rather than get too small to tap.
-// run.js decides when input is allowed (canPick) and what a full answer row is worth (answerReady), and when a hint
-// is used (giveLetter).
+// word's tiles shrink to fit the screen, and go onto two rows rather than get too small to tap. Practice mode uses it too.
+// The page's own script (run.js, or practice.js) decides when letters can be picked (canPick) and typed (canType),
+// what a full answer row is worth (answerReady), and what ? on a keyboard does (helpKey) - in solo mode it uses a hint
+// (giveLetter).
 
 const tilesEl = document.getElementById('anagramDisplay');
 const slotsEl = document.getElementById('answerSlots');
@@ -272,10 +273,10 @@ undoBtn.addEventListener('click', undoLetter);
 
 
 // Typing on a real keyboard, as on the room page (create-room/js/keyboard.js): letters pick a matching tile,
-// Backspace takes the last one back and Space shuffles. A full row checks itself. ? uses a hint.
+// Backspace takes the last one back and Space shuffles. A full row checks itself. ? is the page's (helpKey).
 document.addEventListener('keydown', (event) => {
-  // Leave browser shortcuts alone, and only type while a word is on screen (and not behind the "Stop this run?" box)
-  if (event.metaKey || event.ctrlKey || event.altKey || view !== 'game' || !running || leaveDialog.open) return;
+  // Leave browser shortcuts alone, and only type while the page says so
+  if (event.metaKey || event.ctrlKey || event.altKey || !canType()) return;
 
   if (/^[a-z]$/i.test(event.key)) {
     event.preventDefault();
@@ -289,6 +290,6 @@ document.addEventListener('keydown', (event) => {
     if (event.key === ' ') shuffleTiles();
   } else if (event.key === '?' || event.key === '/') {
     event.preventDefault();
-    useHint();
+    helpKey();
   }
 });

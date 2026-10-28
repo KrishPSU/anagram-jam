@@ -11,6 +11,7 @@ const showJoinBtn = document.getElementById('showJoinBtn');
 const joinBtn = document.getElementById('joinBtn');
 const backBtn = document.getElementById('backBtn');
 const soloBtn = document.getElementById('soloBtn');
+const practiceBtn = document.getElementById('practiceBtn');
 const busyStatusEl = document.getElementById('busyStatus');
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -24,7 +25,7 @@ let busyTimeout;
 const REQUEST_TIMEOUT = 10000;
 
 // Everything in the form is locked while a request is out, so nothing can change under it
-const formControls = [playerNameInput, ...codeBoxes, createBtn, showJoinBtn, joinBtn, backBtn, soloBtn];
+const formControls = [playerNameInput, ...codeBoxes, createBtn, showJoinBtn, joinBtn, backBtn, soloBtn, practiceBtn];
 
 const REQUESTS = {
   create: { button: createBtn, idle: 'Create a room', busy: 'Creating room…' },
@@ -185,6 +186,12 @@ soloBtn.addEventListener('click', () => {
   if (pending || !takeName()) return;
   // The slash saves a redirect, as for the game page
   document.location.href = '/solo/';
+});
+
+// Practice has no leaderboard, so it needs no name
+practiceBtn.addEventListener('click', () => {
+  if (pending) return;
+  document.location.href = '/practice/';
 });
 
 

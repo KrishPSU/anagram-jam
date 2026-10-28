@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const WORDS = require('./words');
 const { createStore } = require('./store');
 const { createData } = require('./data');
-const { createSolo, answersFor } = require('./solo');
+const { createSolo, answersFor, practiceWords } = require('./solo');
 const { createAdmin } = require('./admin');
 
 require('dotenv').config();
@@ -109,6 +109,7 @@ app.use(express.static(path.join(__dirname, 'create-room')));
 app.use('/', express.static(path.join(__dirname, 'home')));
 // /admin is admin.js's, behind its sign-in
 app.use('/solo', express.static(path.join(__dirname, 'solo')));
+app.use('/practice', express.static(path.join(__dirname, 'practice')));
 app.use('/shared', express.static(path.join(__dirname, 'shared')));
 
 // Serve PWA files (manifest.json and service worker)
@@ -144,6 +145,17 @@ app.get('/', (req, res) => {
 
 app.get('/solo', (req, res) => {
   res.sendFile(path.join(__dirname, 'solo', 'solo.html'));
+});
+
+app.get('/practice', (req, res) => {
+  res.sendFile(path.join(__dirname, 'practice', 'practice.html'));
+});
+
+// Practice mode's words, all of them at once (see practiceWords in solo.js): the page asks once and deals from them for
+// as long as it's open. They're the same for everyone until the next deploy, so Vercel's CDN can answer for a day.
+app.get('/practice/words.json', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400');
+  res.json(practiceWords());
 });
 
 app.get('/game/:roomCode', async (req, res) => {

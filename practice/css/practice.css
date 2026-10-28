@@ -1,0 +1,38 @@
+/* Practice mode (practice.html). It's solo mode's word screen without the clock, so solo.css and the room page's
+   styles do most of it. This is the 🤷 button in the hint's place, and what shows while the words load. */
+
+
+/* 🤷, between shuffle and delete: solo mode's glass circle, always there to tap */
+.shrug .powerup-icon {
+  opacity: 1;
+  filter: none;
+}
+
+.shrug.shrugging .powerup-icon { animation: shrug 0.5s ease; }
+
+@keyframes shrug {
+  30% { transform: translateY(-4px) rotate(-10deg) scale(1.18); }
+  65% { transform: rotate(8deg) scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shrug.shrugging .powerup-icon { animation: none; }
+}
+
+
+/* Getting the words - or a Try again button, if they didn't come */
+.practice-load {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.practice-load p {
+  margin: 0;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--on-dark-muted);
+}
+
+.practice-load .spinner { margin-right: 8px; vertical-align: -0.2em; }

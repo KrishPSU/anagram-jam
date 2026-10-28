@@ -100,6 +100,17 @@ function pickWords() {
   return words.slice(0, RUN_WORDS);
 }
 
+// Practice mode's words (see practice/js/practice.js): every word a run can deal, by length, each as [the word, ...the
+// other real words its letters make]. Practice has no clock and no leaderboard, so there's nothing to keep from the
+// page - it gets the words themselves, deals them on its own, and shows you one when you give up on it.
+function practiceWords() {
+  const lists = {};
+  for (let length = FIRST_LENGTH; length <= LONGEST; length++) {
+    lists[length] = WORDS[length].map(word => [word, ...answersFor(word).filter(w => w !== word)]);
+  }
+  return lists;
+}
+
 
 // What a run's answers are worth. answers: { answer, ms, hints } for each word they solved, in order, ms being how long
 // it took them - from its letters showing up to the last one being placed - and hints how many hints they used on it.
@@ -302,4 +313,4 @@ function createSolo({ store, playerIdFor, onFinish = () => {} }) {
   return { start, finish, board, adminBoard, adminRemove };
 }
 
-module.exports = { createSolo, scoreRun, scramble, answersFor, RUN_WORDS };
+module.exports = { createSolo, scoreRun, scramble, answersFor, practiceWords, RUN_WORDS };
