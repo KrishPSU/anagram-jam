@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#232526">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin | Anagram Jam</title>
+
+  <!-- Favicon (browsers cache these hard - bump ?v= whenever the icon changes) -->
+  <link rel="icon" type="image/png" href="/icon-192.png?v=2">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/shared/theme.css">
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+
+  <!-- Only served to someone signed in (see admin.js). core.js first: the tabs register with it. -->
+  <script defer src="/shared/toast.js"></script>
+  <script defer src="/shared/players.js"></script>
+  <script defer src="/admin/app/core.js"></script>
+  <script defer src="/admin/app/live.js"></script>
+  <script defer src="/admin/app/leaderboard.js"></script>
+  <script defer src="/admin/app/stats.js"></script>
+  <script defer src="/admin/app/activity.js"></script>
+  <script defer src="/admin/app/controls.js"></script>
+  <script defer src="/admin/app/system.js"></script>
+</head>
+<body class="admin">
+
+  <header class="topbar">
+    <a class="brand" href="/admin#live">
+      <span class="brand-tiles" aria-hidden="true"><span class="tile">A</span><span class="tile jam">J</span></span>
+      <span class="brand-name">Admin</span>
+    </a>
+
+    <nav class="tabs" role="tablist" aria-label="Admin sections">
+      <button type="button" role="tab" id="tab-live" aria-controls="panel-live" data-tab="live">Live</button>
+      <button type="button" role="tab" id="tab-leaderboard" aria-controls="panel-leaderboard" data-tab="leaderboard">Leaderboard</button>
+      <button type="button" role="tab" id="tab-stats" aria-controls="panel-stats" data-tab="stats">Stats</button>
+      <button type="button" role="tab" id="tab-activity" aria-controls="panel-activity" data-tab="activity">Activity</button>
+      <button type="button" role="tab" id="tab-controls" aria-controls="panel-controls" data-tab="controls">Controls</button>
+      <button type="button" role="tab" id="tab-system" aria-controls="panel-system" data-tab="system">System</button>
+    </nav>
+
+    <div class="session">
+      <span class="session-left" id="sessionLeft"></span>
+      <button class="btn btn-glass btn-sm" id="signOutBtn" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main class="panels">
+
+    <!-- Live: who's playing right now (live.js) -->
+    <section class="panel" id="panel-live" role="tabpanel" aria-labelledby="tab-live" hidden>
+      <div class="kpis">
+        <div class="kpi"><p class="kpi-label">Players in rooms</p><p class="kpi-value" id="kpiPlayers">–</p></div>
+        <div class="kpi"><p class="kpi-label">Playing a round</p><p class="kpi-value" id="kpiPlaying">–</p></div>
+        <div class="kpi"><p class="kpi-label">Rooms open</p><p class="kpi-value" id="kpiRooms">–</p></div>
+        <div class="kpi"><p class="kpi-label">Rounds going</p><p class="kpi-value" id="kpiGames">–</p></div>
+      </div>
+
+      <div class="status-lines">
+        <p class="status-line" id="deployLine" hidden><i class="dot" aria-hidden="true"></i><b id="deployTitle"></b><span id="deployText"></span></p>
+        <p class="status-line warn" id="pausedLine" hidden><i class="dot" aria-hidden="true"></i><b>New games are paused</b><span>Nobody can create a room or start a solo run.</span><button class="link-btn" type="button" data-goto="controls">Change</button></p>
+      </div>
+
+      <div class="section-head">
+        <h2>Rooms</h2>
+        <div class="section-tools">
+          <label class="check"><input type="checkbox" id="showWords"> Show the words</label>
+          <span class="updated" id="liveUpdated"></span>
+          <button class="btn btn-glass btn-sm" id="livePauseBtn" type="button">Pause updates</button>
+        </div>
+      </div>
+
+      <p class="state" id="liveState" hidden></p>
+      <div class="rooms" id="roomList"></div>
+      <div class="empty" id="roomsEmpty" hidden>
+        <p class="empty-title">No rooms open right now</p>
+        <p>A room shows up here the moment someone creates one.</p>
+      </div>
+    </section>
+
+    <!-- Leaderboard: the solo board, with removing and exporting (leaderboard.js) -->
+    <section class="panel" id="panel-leaderboard" role="tabpanel" aria-labelledby="tab-leaderboard" hidden>
+      <div class="section-head">
+        <div>
+          <h2>Solo leaderboard</h2>
+          <p class="section-sub" id="boardSummary"></p>
+        </div>
+        <div class="section-tools">
+          <input class="input input-sm" type="search" id="boardSearch" placeholder="Find a name" aria-label="Find a name" autocomplete="off">
+          <button class="btn btn-glass btn-sm" id="exportCsvBtn" type="button">Export CSV</button>
+          <button class="btn btn-glass btn-sm" id="exportJsonBtn" type="button">JSON</button>
+          <button class="btn btn-glass btn-sm" id="boardRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+      <p class="note">Names with swear words already show as "Player" to everyone (marked below). Remove takes someone off the board until they play again.</p>
+      <p class="state" id="boardState" hidden></p>
+      <ol class="lb-list" id="boardList"></ol>
+    </section>
+
+    <!-- Stats: days and hours (stats.js) -->
+    <section class="panel" id="panel-stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
+      <div class="section-head">
+        <div>
+          <h2>Stats</h2>
+          <p class="section-sub" id="statsSub"></p>
+        </div>
+        <div class="seg" id="rangeSeg" role="group" aria-label="How far back">
+          <button type="button" data-days="7" aria-pressed="false">7 days</button>
+          <button type="button" data-days="30" aria-pressed="true">30 days</button>
+        </div>
+      </div>
+
+      <div class="kpis" id="statsKpis">
+        <div class="kpi"><p class="kpi-label">Players</p><p class="kpi-value" id="statPlayers">–</p><p class="kpi-sub" id="statPlayersToday"></p></div>
+        <div class="kpi"><p class="kpi-label">Rounds played</p><p class="kpi-value" id="statRounds">–</p><p class="kpi-sub" id="statRoundsToday"></p></div>
+        <div class="kpi"><p class="kpi-label">Solo runs</p><p class="kpi-value" id="statSolo">–</p><p class="kpi-sub" id="statSoloToday"></p></div>
+        <div class="kpi"><p class="kpi-label">Rooms created</p><p class="kpi-value" id="statRooms">–</p><p class="kpi-sub" id="statRoomsToday"></p></div>
+      </div>
+
+      <section class="pane chart-pane" id="dailyPane">
+        <div class="chart-head">
+          <h3 id="dailyTitle">Players each day</h3>
+          <div class="seg" id="metricSeg" role="group" aria-label="What to chart">
+            <button type="button" data-metric="players" aria-pressed="true">Players</button>
+            <button type="button" data-metric="rounds" aria-pressed="false">Rounds</button>
+            <button type="button" data-metric="solo" aria-pressed="false">Solo runs</button>
+            <button type="button" data-metric="rooms" aria-pressed="false">Rooms</button>
+          </div>
+        </div>
+        <div class="chart" id="dailyChart"></div>
+        <details class="chart-table">
+          <summary>Show as a table</summary>
+          <div class="table-wrap"><table id="dailyTable"></table></div>
+        </details>
+      </section>
+
+      <section class="pane chart-pane" id="hourPane">
+        <div class="chart-head">
+          <div>
+            <h3>When people play</h3>
+            <p class="section-sub">Rounds and solo runs started, by hour of the day</p>
+          </div>
+        </div>
+        <div class="chart" id="hourChart"></div>
+      </section>
+
+      <p class="note" id="statsNote"></p>
+    </section>
+
+    <!-- Activity: the games log and the sign-ins log (activity.js) -->
+    <section class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" hidden>
+      <div class="section-head">
+        <h2>Activity</h2>
+        <div class="section-tools">
+          <div class="seg" id="logSeg" role="group" aria-label="Which log">
+            <button type="button" data-log="game" aria-pressed="true">Games</button>
+            <button type="button" data-log="security" aria-pressed="false">Sign-ins &amp; changes</button>
+          </div>
+          <button class="btn btn-glass btn-sm" id="activityRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+      <p class="state" id="activityState" hidden></p>
+      <ol class="feed" id="feed"></ol>
+    </section>
+
+    <!-- Controls: the banner, pausing, a message to everyone, the word checker (controls.js) -->
+    <section class="panel" id="panel-controls" role="tabpanel" aria-labelledby="tab-controls" hidden>
+      <div class="section-head">
+        <h2>Controls</h2>
+      </div>
+      <div class="pane-grid">
+        <section class="pane">
+          <h3>Home page banner</h3>
+          <p class="pane-sub">A line above the start card on the home page, for news or a heads-up.</p>
+          <form class="stack" id="bannerForm">
+            <label class="sr-only" for="bannerText">Banner text</label>
+            <textarea class="input" id="bannerText" maxlength="160" rows="3" placeholder="New: solo mode! Two minutes, how many words can you get?"></textarea>
+            <div class="form-row">
+              <span class="count" id="bannerCount">0 / 160</span>
+              <button class="btn btn-glass btn-sm" id="bannerClearBtn" type="button">Take down</button>
+              <button class="btn btn-primary btn-sm" id="bannerSaveBtn" type="submit">Save banner</button>
+            </div>
+          </form>
+          <p class="preview-label">On the home page now</p>
+          <p class="notice-preview" id="bannerNow"></p>
+        </section>
+
+        <section class="pane">
+          <h3>Pause new games</h3>
+          <label class="switch">
+            <input type="checkbox" id="pauseToggle" role="switch">
+            <span class="switch-track" aria-hidden="true"></span>
+            <span class="switch-label" id="pauseLabel">New games can start</span>
+          </label>
+          <p class="pane-sub">While this is on, nobody can create a room or start a solo run. Rooms already open keep playing. People see the banner, or "New games are paused for a few minutes" if there isn't one. Handy before a deploy: pause, wait for Live to say it's safe, deploy, unpause.</p>
+        </section>
+
+        <section class="pane">
+          <h3>Message everyone</h3>
+          <p class="pane-sub">Pops up for 10 seconds on every Anagram Jam page that's open right now: the home page, rooms and solo (<span id="reachCount">…</span>).</p>
+          <form class="inline-form" id="broadcastForm">
+            <label class="sr-only" for="broadcastText">Message</label>
+            <input class="input" id="broadcastText" maxlength="160" autocomplete="off" placeholder="Quick restart in 2 minutes - games pick up where they left off">
+            <button class="btn btn-primary btn-sm" id="broadcastBtn" type="submit">Send</button>
+          </form>
+        </section>
+
+        <section class="pane">
+          <h3>Word checker</h3>
+          <p class="pane-sub">For "why didn't my word count?". Type a word, or the letters someone had.</p>
+          <form class="inline-form" id="wordForm">
+            <label class="sr-only" for="wordInput">Word or letters</label>
+            <input class="input" id="wordInput" maxlength="15" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="e.g. listen">
+            <button class="btn btn-glass btn-sm" type="submit">Check</button>
+          </form>
+          <div class="word-result" id="wordResult" aria-live="polite"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- System: the deployment, the server and sign-in security (system.js) -->
+    <section class="panel" id="panel-system" role="tabpanel" aria-labelledby="tab-system" hidden>
+      <div class="section-head">
+        <h2>System</h2>
+        <div class="section-tools">
+          <button class="btn btn-glass btn-sm" id="systemRefreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
+      <p class="state" id="systemState" hidden></p>
+      <div class="pane-grid" id="systemGrid" hidden>
+        <section class="pane">
+          <h3>Deployment</h3>
+          <dl class="facts" id="deployFacts"></dl>
+        </section>
+        <section class="pane">
+          <h3>Server</h3>
+          <dl class="facts" id="serverFacts"></dl>
+        </section>
+        <section class="pane span-all">
+          <h3>Security</h3>
+          <div class="warnings" id="securityWarnings"></div>
+          <dl class="facts" id="securityFacts"></dl>
+          <div class="form-row form-row-start">
+            <button class="btn btn-glass btn-sm" id="signOutAllBtn" type="button">Sign out everywhere else</button>
+          </div>
+          <p class="pane-sub">To change the password: on Vercel, open the project's Settings → Environment Variables, change ADMIN_PASSWORD and redeploy. That signs everyone out, this browser included.</p>
+        </section>
+      </div>
+    </section>
+
+  </main>
+
+</body>
+</html>

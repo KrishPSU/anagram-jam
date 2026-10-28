@@ -7,4 +7,11 @@
 //
 // options: anything else for io(), e.g. the game page's auth (see lobby.js)
 
-window.connectSocket = (options = {}) => io({ transports: ['websocket', 'polling'], tryAllTransports: true, ...options });
+window.connectSocket = (options = {}) => {
+  const socket = io({ transports: ['websocket', 'polling'], tryAllTransports: true, ...options });
+  // A message sent to everyone from the admin page (see admin.js), on whatever page they're on
+  socket.on('announcement', (message) => {
+    if (typeof message === 'string' && window.showAlert) window.showAlert(message, 'info', 10000);
+  });
+  return socket;
+};

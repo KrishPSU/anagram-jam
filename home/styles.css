@@ -201,6 +201,26 @@
   gap: 8px;
 }
 
+/* The admin page's banner, above the start card - amber while new games are paused */
+.notice {
+  width: 100%;
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  background: rgba(20, 18, 28, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.notice.paused { border-color: rgba(251, 191, 36, 0.6); background: rgba(120, 80, 0, 0.45); }
+
 .field-label {
   font-weight: 600;
   font-size: 12px;

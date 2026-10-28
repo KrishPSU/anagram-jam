@@ -1,5 +1,5 @@
-// One toast at a time, shared by every page: showAlert(message, type)
-// type is 'error' (default), 'warning', 'success' or 'info'
+// One toast at a time, shared by every page: showAlert(message, type, ms)
+// type is 'error' (default), 'warning', 'success' or 'info'; ms is how long it stays up (4 seconds unless said)
 
 (() => {
   const ICONS = { error: '❌', warning: '⚠️', success: '✅', info: '💬' };
@@ -24,14 +24,14 @@
 
   let hideTimeout;
 
-  window.showAlert = (message, type = 'error') => {
+  window.showAlert = (message, type = 'error', ms = 4000) => {
     if (!stack.isConnected) document.body.appendChild(stack);
     icon.textContent = ICONS[type] || '';
     text.textContent = message;
     toast.className = 'toast show ' + type;
     // Restart the clock so an earlier toast's timer can't cut this one short
     clearTimeout(hideTimeout);
-    hideTimeout = setTimeout(window.hideAlert, 4000);
+    hideTimeout = setTimeout(window.hideAlert, ms);
   };
 
   window.hideAlert = () => {

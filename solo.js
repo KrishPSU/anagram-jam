@@ -7,7 +7,6 @@
 // its answers when the time is up. The words were picked here and every answer is checked again here, so the score
 // that goes on the leaderboard is the server's own - a made-up one can't be sent in.
 
-const crypto = require('crypto');
 const WORDS = require('./words');
 const DICTIONARY = require('word-exists/dictionary.json'); // word-exists' own list, as used for rooms' answers
 const { isRude } = require('./names');
@@ -26,7 +25,7 @@ const COUNTDOWN_MS = 4000;
 const FINISH_GRACE = 2 * 60 * 1000;
 const RESULTS_TOP = 10; // the top of the leaderboard, as the results screen shows it
 const BOARD_TOP = 50;   // and as the leaderboard itself does
-const ADMIN_TOP = 100;
+const ADMIN_TOP = 1000; // the admin page's, all of it for some time to come (and what its export holds)
 const RUN_VERSION = 1; // runs laid out any other way (from before a deploy) count as gone
 
 // A leaderboard score as the store keeps it: one number, higher is better. Points first, then - on the same points -
@@ -142,7 +141,8 @@ const rowFor = (playerId) => (entry, i) => ({ rank: i + 1, name: shownName(entry
 
 
 // store: where runs and the leaderboard are kept (see store.js). playerIdFor: who a browser's token is, as in rooms.
-function createSolo({ store, playerIdFor }) {
+// onFinish(run, scored): told about each run as it's scored, once (for the admin page's log and stats).
+function createSolo({ store, playerIdFor, onFinish = () => {} }) {
 
   // A new run for the player whose browser holds `token`. The page makes up the run's id, so asking twice (the reply
   // got lost) gets the same run back rather than a second one.
@@ -196,6 +196,7 @@ function createSolo({ store, playerIdFor }) {
       console.error('Saving a solo result failed:', err.message);
     }
     console.log(`Solo run by ${run.name}: ${scored.points} points, ${scored.solved.length} words`);
+    onFinish(run, scored);
     return run.result;
   }
 
@@ -251,23 +252,11 @@ function createSolo({ store, playerIdFor }) {
   }
 
 
-  // For the admin page: taking someone off the leaderboard needs the password in ADMIN_PASSWORD (an environment
-  // variable - on Vercel, in the project's settings). Without one set, there's no admin at all.
-  // Replies { status: 'unset' | 'wrong' } when it isn't let in.
-  async function allowed(password) {
-    const expected = process.env.ADMIN_PASSWORD;
-    if (!expected) return 'unset';
-    const digest = (text) => crypto.createHash('sha256').update(String(text)).digest();
-    if (typeof password === 'string' && crypto.timingSafeEqual(digest(password), digest(expected))) return null;
-    // Slows down anyone guessing
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return 'wrong';
-  }
+  // For the admin page, which only calls these for someone signed in (see admin.js).
 
-  // The top of the leaderboard with each player's id and their name as typed. Replies { status: 'ok', players, top }.
-  async function adminBoard({ password } = {}) {
-    const refused = await allowed(password);
-    if (refused) return { status: refused };
+  // The top of the leaderboard with each player's id and their name as typed. Replies { status: 'ok', players, top } or
+  // { status: 'unavailable' }.
+  async function adminBoard() {
     let board;
     try {
       board = await store.leaderboard(ADMIN_TOP, '');
@@ -282,10 +271,9 @@ function createSolo({ store, playerIdFor }) {
     };
   }
 
-  // Takes player `id` off the leaderboard. They're back on it if they play again. Replies { status: 'ok' }.
-  async function adminRemove({ password, id } = {}) {
-    const refused = await allowed(password);
-    if (refused) return { status: refused };
+  // Takes player `id` off the leaderboard. They're back on it if they play again. Replies { status: 'ok' } or
+  // { status: 'unavailable' }.
+  async function adminRemove({ id } = {}) {
     if (typeof id !== 'string') return { status: 'ok' };
     let removed;
     try {

@@ -20,8 +20,19 @@
 // Solo mode (see solo.js) keeps two things here as well: each run while it's being played (its words, so the
 // answers sent at the end can be checked), and the leaderboard - every player's best score, and how many words it got.
 // A leaderboard score is a single number, higher is better (solo.js packs the points and the time into it).
+//
+// And the admin page (see admin.js) keeps its own things here: counters that cap wrong passwords, two short logs (games,
+// and sign-ins with what was done on the page), the site's settings (a banner, games paused), and stats - how many
+// rooms, rounds and solo runs there were each hour, and who played (as HyperLogLogs, which count players without
+// keeping their ids).
 
 const DELETE = Symbol('delete room');
+
+// The stats are kept by UTC hour, so the admin page can add them up into days in its own time zone.
+// hourStamp: '2026-10-27T13' for 1pm UTC, as statsFor and uniquePlayers take them.
+const hourStamp = (at) => new Date(at).toISOString().slice(0, 13);
+const STATS_TTL = 400 * 24 * 60 * 60 * 1000;   // a year of rooms, rounds and runs
+const PLAYERS_TTL = 35 * 24 * 60 * 60 * 1000;  // a month of who played (an hour's count is a key of its own)
 
 // A room nobody touches for this long disappears from Redis even if something went wrong cleaning it up
 const ROOM_TTL = 12 * 60 * 60 * 1000;
@@ -38,6 +49,11 @@ function memoryStore() {
   const rooms = new Map(); // roomCode -> JSON
   const runs = new Map();  // solo run id -> { raw: JSON, expiresAt }
   const scores = new Map(); // player id -> { score, name, words }: the solo leaderboard
+  const counters = new Map(); // name -> { count, resetAt }
+  const logs = new Map();     // log name -> entries, newest first
+  const stats = new Map();    // UTC day -> { 'metric:hour': count }
+  const players = new Map();  // hourStamp -> Set of player ids
+  let settings = null;
 
   function liveRun(id) {
     const run = runs.get(id);
@@ -141,6 +157,71 @@ function memoryStore() {
     // false if they weren't on it
     async removeScore(playerId) {
       return scores.delete(playerId);
+    },
+
+    // Counts one more against `name`, starting a window of windowMs if there isn't one. Resolves to { count, resetsIn }:
+    // the count so far this window, and the ms until it starts again from nothing.
+    async bump(name, windowMs) {
+      const now = Date.now();
+      let counter = counters.get(name);
+      if (!counter || counter.resetAt <= now) counters.set(name, counter = { count: 0, resetAt: now + windowMs });
+      counter.count++;
+      return { count: counter.count, resetsIn: counter.resetAt - now };
+    },
+
+    // Where each of `names` stands, as bump has it ({ count: 0, resetsIn: 0 } for one with no window going)
+    async peek(names) {
+      const now = Date.now();
+      return names.map((name) => {
+        const counter = counters.get(name);
+        return counter && counter.resetAt > now ? { count: counter.count, resetsIn: counter.resetAt - now } : { count: 0, resetsIn: 0 };
+      });
+    },
+
+    // Adds an entry to the front of log `name`, keeping the newest `keep`
+    async log(name, entry, keep) {
+      logs.set(name, [entry, ...(logs.get(name) || [])].slice(0, keep));
+    },
+
+    async logs(name, count) {
+      return (logs.get(name) || []).slice(0, count);
+    },
+
+    // One more of `metric` this hour, and the players (ids) who were in it
+    async track(metric, playerIds, at) {
+      const day = hourStamp(at).slice(0, 10);
+      const field = `${metric}:${hourStamp(at).slice(11)}`;
+      const counts = stats.get(day) || {};
+      counts[field] = (counts[field] || 0) + 1;
+      stats.set(day, counts);
+      if (playerIds.length) {
+        const hour = players.get(hourStamp(at)) || new Set();
+        playerIds.forEach(id => hour.add(id));
+        players.set(hourStamp(at), hour);
+      }
+    },
+
+    // The counts for each UTC day ('2026-10-27'), as { 'metric:hour': count }
+    async statsFor(days) {
+      return days.map(day => ({ ...(stats.get(day) || {}) }));
+    },
+
+    // How many different players there were in each group of hours (hourStamps)
+    async uniquePlayers(groups) {
+      return groups.map(hours => new Set(hours.flatMap(hour => [...(players.get(hour) || [])])).size);
+    },
+
+    async getSettings() {
+      return settings && JSON.parse(settings);
+    },
+
+    async saveSettings(value) {
+      settings = JSON.stringify(value);
+    },
+
+    // Nothing to measure without Redis
+    async health() {
+      return null;
     },
   };
 }
@@ -261,6 +342,35 @@ function redisStore(url, emptyRoomTtl) {
   const entries = (top, names, words) => names.map((name, i) => ({ id: top[i * 2], score: Number(top[i * 2 + 1]), name: name || '', words: number(words[i]) }));
   const number = (value) => (value === null ? null : Number(value));
 
+  // The admin page's (see memoryStore for what each one is)
+  const counterKey = (name) => `anagram:admin:count:${name}`;
+  const logKey = (name) => `anagram:admin:log:${name}`;
+  const SETTINGS = 'anagram:admin:settings';
+  const statsKey = (day) => `anagram:stats:${day}`;
+  const playersKey = (hour) => `anagram:stats:players:${hour}`;
+
+  // KEYS: the counter. ARGV: its window in ms. Replies { count, ms until the window is over }.
+  redis.defineCommand('bumpCounter', {
+    numberOfKeys: 1,
+    lua: `
+      local count = redis.call('INCR', KEYS[1])
+      if count == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+      local ttl = redis.call('PTTL', KEYS[1])
+      if ttl < 0 then
+        redis.call('PEXPIRE', KEYS[1], ARGV[1])
+        ttl = tonumber(ARGV[1])
+      end
+      return { count, ttl }`,
+  });
+
+  // A pipeline's replies, failing like a single command would if any of its commands failed (Upstash bills each one)
+  async function replies(pipeline) {
+    const results = await pipeline.exec();
+    const failed = results.find(([err]) => err);
+    if (failed) throw failed[0];
+    return results.map(([, reply]) => reply);
+  }
+
   return {
     DELETE,
     redis, // the Socket.IO adapter publishes through this connection too
@@ -337,6 +447,71 @@ function redisStore(url, emptyRoomTtl) {
       await redis.hdel(NAMES, playerId);
       await redis.hdel(WORDS, playerId);
       return removed === 1;
+    },
+
+    async bump(name, windowMs) {
+      const [count, resetsIn] = await scriptRun(redis.bumpCounter(counterKey(name), windowMs));
+      return { count, resetsIn };
+    },
+
+    async peek(names) {
+      const pipeline = redis.pipeline();
+      names.forEach(name => pipeline.get(counterKey(name)).pttl(counterKey(name)));
+      const results = await replies(pipeline);
+      return names.map((_, i) => {
+        const count = Number(results[i * 2]) || 0;
+        return count ? { count, resetsIn: Math.max(0, results[i * 2 + 1]) } : { count: 0, resetsIn: 0 };
+      });
+    },
+
+    async log(name, entry, keep) {
+      await replies(redis.pipeline().lpush(logKey(name), JSON.stringify(entry)).ltrim(logKey(name), 0, keep - 1));
+    },
+
+    async logs(name, count) {
+      return (await redis.lrange(logKey(name), 0, count - 1)).map(raw => JSON.parse(raw));
+    },
+
+    async track(metric, playerIds, at) {
+      const hour = hourStamp(at);
+      const pipeline = redis.pipeline()
+        .hincrby(statsKey(hour.slice(0, 10)), `${metric}:${hour.slice(11)}`, 1)
+        .pexpire(statsKey(hour.slice(0, 10)), STATS_TTL);
+      if (playerIds.length) pipeline.pfadd(playersKey(hour), ...playerIds).pexpire(playersKey(hour), PLAYERS_TTL);
+      await replies(pipeline);
+    },
+
+    async statsFor(days) {
+      if (!days.length) return [];
+      const pipeline = redis.pipeline();
+      days.forEach(day => pipeline.hgetall(statsKey(day)));
+      return (await replies(pipeline)).map(counts => Object.fromEntries(Object.entries(counts || {}).map(([field, n]) => [field, Number(n)])));
+    },
+
+    async uniquePlayers(groups) {
+      const asked = groups.filter(hours => hours.length);
+      if (!asked.length) return groups.map(() => 0);
+      const pipeline = redis.pipeline();
+      asked.forEach(hours => pipeline.pfcount(...hours.map(playersKey)));
+      const counts = await replies(pipeline);
+      return groups.map(hours => (hours.length ? counts.shift() : 0));
+    },
+
+    async getSettings() {
+      const raw = await redis.get(SETTINGS);
+      return raw === null ? null : JSON.parse(raw);
+    },
+
+    async saveSettings(value) {
+      await redis.set(SETTINGS, JSON.stringify(value));
+    },
+
+    // How long a command takes to come back, and how many keys there are
+    async health() {
+      const started = Date.now();
+      await redis.get('anagram:check');
+      const latencyMs = Date.now() - started;
+      return { latencyMs, keys: await redis.dbsize() };
     },
   };
 }
@@ -440,6 +615,19 @@ function fallbackStore(redis, memory) {
     addScore: (...args) => attempt(() => redis.addScore(...args), () => null),
     leaderboard: (...args) => attempt(() => redis.leaderboard(...args), () => null),
     removeScore: (...args) => attempt(() => redis.removeScore(...args), () => null),
+
+    // The admin page's. While Redis isn't answering, this instance keeps its own in memory: its own count of wrong
+    // passwords (so guessing is still capped), and its own log, stats and settings until Redis is back.
+    bump: (...args) => attempt(() => redis.bump(...args), () => memory.bump(...args)),
+    peek: (...args) => attempt(() => redis.peek(...args), () => memory.peek(...args)),
+    log: (...args) => attempt(() => redis.log(...args), () => memory.log(...args)),
+    logs: (...args) => attempt(() => redis.logs(...args), () => memory.logs(...args)),
+    track: (...args) => attempt(() => redis.track(...args), () => memory.track(...args)),
+    statsFor: (...args) => attempt(() => redis.statsFor(...args), () => memory.statsFor(...args)),
+    uniquePlayers: (...args) => attempt(() => redis.uniquePlayers(...args), () => memory.uniquePlayers(...args)),
+    getSettings: () => attempt(() => redis.getSettings(), () => memory.getSettings()),
+    saveSettings: (value) => attempt(() => redis.saveSettings(value), () => memory.saveSettings(value)),
+    health: () => attempt(() => redis.health(), () => null),
   };
 }
 

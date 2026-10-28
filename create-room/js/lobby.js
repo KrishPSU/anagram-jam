@@ -48,8 +48,9 @@ if (state.roomCode && localStorage.getItem('name')) {
   document.addEventListener('DOMContentLoaded', () => socket.connect());
 }
 
-socket.on('roomNotFound', () => {
-  window.location.href = "/";
+// why: 'closed' or 'removed' when it was done from the admin page - the home page says so
+socket.on('roomNotFound', (roomCode, why) => {
+  window.location.href = why === 'closed' || why === 'removed' ? '/?removed=' + why : '/';
 });
 
 // This page is older than the server (it was open during a deploy): load the new one. At most once a minute,

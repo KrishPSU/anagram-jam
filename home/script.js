@@ -208,6 +208,23 @@ socket.on('roomNotFound', (roomCode) => {
   focusFirstEmptyBox();
 });
 
+// New games are paused from the admin page
+socket.on('roomRefused', (message) => {
+  if (pending !== 'create') return;
+  setBusy(null);
+  showAlert(message, 'info', 6000);
+  createBtn.focus();
+});
+
+// Sent here from a room the admin page closed, or took you out of (see lobby.js)
+const removedFrom = new URLSearchParams(window.location.search).get('removed');
+if (removedFrom) {
+  history.replaceState(null, '', '/');
+  document.addEventListener('DOMContentLoaded', () => {
+    showAlert(removedFrom === 'closed' ? 'That room was closed.' : 'You were taken out of that room.', 'info', 6000);
+  });
+}
+
 function openGamePage(roomCode) {
   // The spinner keeps going until the lobby replaces this page - just stop the timeout
   clearTimeout(busyTimeout);
@@ -232,10 +249,18 @@ socket.on('connect', requestLiveStats);
 setInterval(() => { if (!document.hidden) requestLiveStats(); }, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) requestLiveStats(); });
 
-// Hidden when nobody is playing, so it never says "0 rooms"
-socket.on('liveStats', ({ playing }) => {
+const noticeEl = document.getElementById('notice');
+const noticeTextEl = document.getElementById('noticeText');
+
+// Hidden when nobody is playing, so it never says "0 rooms". The banner comes with it (see admin.js).
+socket.on('liveStats', ({ playing, announcement, paused }) => {
   liveStatsEl.hidden = !playing;
   liveTextEl.textContent = playing === 1 ? '1 room playing now' : `${playing} rooms playing now`;
+
+  const notice = announcement || (paused ? 'New games are paused for a few minutes. Try again soon!' : '');
+  noticeEl.hidden = !notice;
+  noticeEl.classList.toggle('paused', !!paused);
+  noticeTextEl.textContent = notice || '';
 });
 
 

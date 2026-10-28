@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const WORDS = require('./words');
 const { createStore } = require('./store');
 const { createSolo, answersFor } = require('./solo');
+const { createAdmin } = require('./admin');
 
 require('dotenv').config();
 
@@ -37,7 +38,8 @@ function redisUrlFromEnv() {
 }
 
 // Rooms live in Redis when there is one (see store.js), otherwise in this process's memory
-const store = createStore(redisUrlFromEnv(), { emptyRoomTtl: EMPTY_ROOM_TTL });
+const redisUrl = redisUrlFromEnv();
+const store = createStore(redisUrl, { emptyRoomTtl: EMPTY_ROOM_TTL });
 if (store.redis) {
   // Broadcasts reach players connected to other server instances too. Loaded only here, like ioredis in
   // store.js, so running without Redis never depends on these packages.
@@ -50,8 +52,16 @@ if (store.redis) {
 }
 console.log(`Rooms are kept in ${store.redis ? 'Redis' : 'memory'}`);
 
-// Solo mode's runs and leaderboard, kept in the same store (see solo.js)
-const solo = createSolo({ store, playerIdFor });
+// Solo mode's runs and leaderboard, kept in the same store (see solo.js). Each run scored goes in the admin page's log
+// and stats.
+const solo = createSolo({
+  store,
+  playerIdFor,
+  onFinish: (run, scored) => {
+    admin.track('solo', [run.playerId]);
+    admin.log({ type: 'solo', name: run.name, points: scored.points, words: scored.solved.length });
+  },
+});
 
 // The adapter doesn't handle Redis refusing a command (Upstash refuses them all once the free plan is used up):
 // a failed publish or subscribe would crash the server. Messages still reach the players on this instance
@@ -80,7 +90,7 @@ server.listen(PORT || 3000, () => {
 // Serve static assets for home (if present) and for game pages
 app.use(express.static(path.join(__dirname, 'create-room')));
 app.use('/', express.static(path.join(__dirname, 'home')));
-app.use('/admin', express.static(path.join(__dirname, 'admin')));
+// /admin is admin.js's, behind its sign-in
 app.use('/solo', express.static(path.join(__dirname, 'solo')));
 app.use('/shared', express.static(path.join(__dirname, 'shared')));
 
@@ -132,13 +142,7 @@ app.get('/game/:roomCode/end', (req, res) => {
   res.redirect(`/game/${encodeURIComponent(req.params.roomCode)}/`);
 });
 
-// Summary only - sending the full rooms would leak every game's answers
-app.get('/rooms', async (req, res) => {
-  const rooms = await liveRooms();
-  res.send(rooms.map(r => ({ roomCode: r.roomCode, players: r.players.map(p => p.name), gameStarted: !!r.round })));
-});
-
-
+// The list of rooms that used to be here (/rooms) gave out every room's code to anyone - it's on the admin page now
 
 
 
@@ -154,13 +158,14 @@ function generateJoinCode() {
 // results. Nobody is taken out between rounds - only when they leave, or when their connection has been gone
 // for longer than AWAY_GRACE.
 //
-// { v, roomCode, emptySince,
+// { v, roomCode, createdAt, emptySince,
 //   players: [{ id, name, socketId, status: 'lobby' | 'game' | 'results', ready, awaySince }],
 //   wins: { [player id]: count },
+//   removed: ids of the players the admin page took out, who can't come back in,
 //   countdown: { token, roster, at } during the 3-2-1, roster being the ids of the players it's for,
 //   round: { id, words: { regular, jumbled }, startedAt, solves, progress: { [player id]: ... } } while one is played,
 //   results: the last round's, for whoever is still reading them }
-// (Rooms from before 'at', gains and scoredAt were added still work: those count as missing.)
+// (Rooms from before 'at', gains, scoredAt, createdAt and removed were added still work: those count as missing.)
 const ROOM_VERSION = 2; // rooms laid out any other way (made before this) count as gone
 
 // Game pages say which version they are as they connect. One from another version (still open from before a
@@ -245,8 +250,10 @@ async function changeRoom(roomCode, change) {
   news.dropped.forEach(name => announceLeft(roomCode, name));
   if (news.stoppedBy) io.to(roomCode).emit('start-canceled', news.stoppedBy.id, news.stoppedBy.name);
   if (news.roundOver) {
-    console.log(`Round over in room ${roomCode}: ${news.roundOver.finisherName} finished, ${news.roundOver.winnerName} won`);
-    io.to(roomCode).emit('round-over', news.roundOver);
+    const results = news.roundOver;
+    console.log(`Round over in room ${roomCode}: ${results.finisherName} finished, ${results.winnerName} won`);
+    io.to(roomCode).emit('round-over', results);
+    admin.log({ type: 'round', room: roomCode, winner: results.winnerName, tied: results.tied, players: results.players.map(p => ({ name: p.name, points: p.points, left: p.left })) });
   }
   if (news.countdown) beginCountdown(roomCode, news.countdown);
   return { result: outcome.result, deleted: false, state: after };
@@ -341,13 +348,61 @@ async function liveRooms() {
 }
 
 // For the admin page: where rooms are kept right now, and why when it isn't Redis. Kept vague on purpose -
-// the page is public, and Redis errors can name the database's host.
+// Redis errors can name the database's host.
 function storageStatus() {
   const status = store.status();
   if (status.store === 'redis') return 'Redis';
   if (!status.reason) return 'Memory (no Redis set up)';
   const why = /max requests limit/i.test(status.reason) ? "the free plan's commands for the month are used up" : "Redis isn't answering";
   return `Memory since ${new Date(status.since).toUTCString().slice(17, 22)} UTC - ${why}`;
+}
+
+// The admin page and its API (see admin.js). Sessions are signed with a secret every instance shares: one of its
+// own if it's set, otherwise the Redis address (which only the server knows).
+const admin = createAdmin({
+  app,
+  store,
+  solo,
+  rooms: { list: liveRooms, close: closeRoom, remove: removeFromRoom },
+  storageStatus,
+  broadcast: (message) => io.emit('announcement', message),
+  pageVersion: PAGE_VERSION,
+  secret: process.env.ADMIN_SESSION_SECRET || redisUrl,
+});
+
+// For the admin page: closes a room and sends everyone in it home. Resolves to { players: their names }, or null if
+// there's no such room.
+async function closeRoom(roomCode) {
+  const room = await findRoom(roomCode);
+  if (!room) return null;
+  const closed = await changeRoom(roomCode, () => store.DELETE);
+  if (!closed) return null;
+  // Pages from before the reason was sent just go home
+  io.to(roomCode).emit('roomNotFound', roomCode, 'closed');
+  io.in(roomCode).socketsLeave(roomCode);
+  console.log(`Room ${roomCode} closed from the admin page`);
+  return { players: room.players.map(p => p.name) };
+}
+
+// For the admin page: takes a player out of a room and sends them home, and they can't come back into it (see
+// enterRoom). A round they were in counts them as having left. Resolves to { name }, or null if they weren't in it.
+async function removeFromRoom(roomCode, playerId) {
+  let gone = null;
+  const removed = await changeRoom(roomCode, (room) => {
+    gone = room.players.find(p => p.id === playerId) || null;
+    if (!gone) return;
+    pauseClock(room, playerId);
+    room.players = room.players.filter(p => p !== gone);
+    room.removed = [...(room.removed || []), playerId];
+    if (isEmpty(room)) return store.DELETE;
+  });
+  if (!removed || !gone) return null;
+  if (gone.socketId) {
+    io.to(gone.socketId).emit('roomNotFound', roomCode, 'removed');
+    io.in(gone.socketId).socketsLeave(roomCode);
+  }
+  if (!removed.deleted) announceLeft(roomCode, gone.name);
+  return { name: gone.name };
 }
 
 // The home page asks about once a minute per visitor, so a count up to a minute old will do - working
@@ -505,6 +560,7 @@ async function beginRound(roomCode, token, socket) {
   const { started, reply } = begun.result;
   if (started) {
     console.log(`Words for room ${roomCode}:`, started.words.regular);
+    admin.track('rounds', started.roster);
     // Everyone gets it, but only the players in the round play it - the rest stay in the lobby
     io.to(roomCode).emit('gameWords', { round: token, roster: started.roster, words: started.words.jumbled, ...answerHashes(started.words.regular), level: 0, points: 0, skipped: [], secondsLeft: LEVEL_SECONDS });
   }
@@ -548,6 +604,8 @@ async function enterRoom(socket, { roomCode, token, name }) {
   await socket.join(roomCode);
 
   const entered = await changeRoom(roomCode, (room) => {
+    // Taken out of this room from the admin page
+    if ((room.removed || []).includes(id)) return { refused: true };
     let player = room.players.find(p => p.id === id);
     const back = !!player;
     // The same browser in another tab: this one takes over
@@ -570,9 +628,9 @@ async function enterRoom(socket, { roomCode, token, name }) {
     }
     return { back, replaced, you: { id, ...placeOf(room, player, secondsLeft) } };
   });
-  if (!entered) {
+  if (!entered || entered.result.refused) {
     await socket.leave(roomCode);
-    socket.emit('roomNotFound', roomCode);
+    socket.emit('roomNotFound', roomCode, entered ? 'removed' : undefined);
     return;
   }
 
@@ -623,30 +681,31 @@ io.on('connection', (socket) => {
   }
 
 
-  // Counted from the rooms, which every instance shares: people in a lobby, a game or on a results screen.
-  // (Asking the other instances via io.fetchSockets() doesn't work on Upstash - it can't tell the adapter
-  // how many servers are listening, so each instance only ever counted its own connections.)
-  on('adminConnected', async () => {
-    const rooms = await liveRooms();
-    const players = rooms.reduce((n, r) => n + r.players.length, 0);
-    socket.emit('currentAliveConnections', players, rooms.filter(r => r.round).length, storageStatus());
-  });
+  // (The admin page's counts used to come from here, to anyone who asked - they're behind its sign-in now: see admin.js)
 
-  // For the home page's "3 rooms playing now"
+  // For the home page's "3 rooms playing now", and the banner set on the admin page (paused: new games can't start)
   on('getLiveStats', async () => {
-    socket.emit('liveStats', { playing: await roomsPlaying() });
+    const { announcement, paused } = await admin.forPlayers();
+    socket.emit('liveStats', { playing: await roomsPlaying(), announcement, paused });
   });
 
 
 
   on('createRoom', async () => {
-    const room = { v: ROOM_VERSION, roomCode: null, players: [], wins: {}, countdown: null, round: null, results: null, emptySince: null };
+    // Paused from the admin page. Home pages from before this was sent give up waiting after a few seconds.
+    const { paused, pausedMessage } = await admin.forPlayers();
+    if (paused) {
+      socket.emit('roomRefused', pausedMessage);
+      return;
+    }
+    const room = { v: ROOM_VERSION, roomCode: null, createdAt: Date.now(), players: [], wins: {}, countdown: null, round: null, results: null, emptySince: null };
     trackEmpty(room); // starts empty - the creator's lobby page has to arrive within EMPTY_ROOM_TTL
     do {
       room.roomCode = generateJoinCode();
     } while (!(await store.create(room)));
     socket.emit('roomCreated', room.roomCode);
     console.log(`Room ${room.roomCode} created`);
+    admin.track('rooms');
   });
 
 
@@ -861,12 +920,13 @@ io.on('connection', (socket) => {
 
 
   // Solo mode (see solo.js). Like the game page's requests, each one always replies and is safe to ask for twice.
-  on('solo-start', async (data, ack) => replier(ack)(await solo.start(data || undefined)));
+  // A new run can't start while new games are paused from the admin page.
+  on('solo-start', async (data, ack) => {
+    const { paused, pausedMessage } = await admin.forPlayers();
+    replier(ack)(paused ? { status: 'paused', message: pausedMessage } : await solo.start(data || undefined));
+  });
   on('solo-finish', async (data, ack) => replier(ack)(await solo.finish(data || undefined)));
   on('solo-board', async (data, ack) => replier(ack)(await solo.board(data || undefined)));
-  // The admin page's, which need the admin password
-  on('admin-solo-board', async (data, ack) => replier(ack)(await solo.adminBoard(data || undefined)));
-  on('admin-solo-remove', async (data, ack) => replier(ack)(await solo.adminRemove(data || undefined)));
 
 });
 

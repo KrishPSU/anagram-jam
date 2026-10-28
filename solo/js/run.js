@@ -58,6 +58,11 @@ async function startRun() {
   countdownEl.hidden = true;
   starting = false;
   setStarting(false);
+  // Paused from the admin page
+  if (reply && reply.status === 'paused') {
+    showAlert(reply.message, 'info', 6000);
+    return;
+  }
   if (!reply || reply.status !== 'ok') {
     showAlert("Couldn't reach the game. Try again.");
     return;
