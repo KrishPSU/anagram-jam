@@ -4,7 +4,9 @@
 
 const WORDS_PER_LENGTH = 5;  // as in solo.js at the project root
 const QUICK_MS = 3000;       // as in solo.js
+const HINT_EVERY = 3;        // as in solo.js
 const TIMER_RING = 2 * Math.PI * 21; // circumference of the timer ring in solo.html
+const HINT_RING = 2 * Math.PI * 25;  // and of the hint button's
 
 const startBtn = document.getElementById('startBtn');
 const countdownEl = document.getElementById('countdown');
@@ -19,11 +21,18 @@ const lengthLabelEl = document.getElementById('lengthLabel');
 const quickEl = document.getElementById('quick');
 const feedbackEl = document.getElementById('feedback');
 const tierEls = [...document.querySelectorAll('#tier li')];
+const hintBtn = document.getElementById('hintBtn');
+const hintBarEl = document.getElementById('hintBar');
+const hintCountEl = document.getElementById('hintCount');
 
-let run = null;        // the server's: { run (its id), words (scrambled), hashes, others, seconds (see start in solo.js) }
+let run = null;        // the server's: { run (its id), words (scrambled), hashes, others, prefixes, seconds (see start in solo.js) }
 let level = 0;         // the word on screen
 let points = 0;
-let answers = [];      // { answer, ms, points, quick } for each word solved, in order - the server scores answer and ms
+let answers = [];      // { answer, ms, hints, points, quick } for each word solved, in order - the server scores answer,
+                       // ms and hints
+let quickWords = 0;    // got in under 3 seconds without a hint - every HINT_EVERY of them earn a hint
+let hintsLeft = 0;     // earned and not used yet
+let wordHints = 0;     // used on the word on screen, which can't get the quick point now
 let endsAt = 0;        // when the time is up, by Date.now() - which keeps going while the phone is locked
 let shownAt = 0;       // when the word on screen came up
 let clock = null;
@@ -109,7 +118,10 @@ function beginRun(reply) {
   run = reply;
   level = 0;
   answers = [];
+  quickWords = 0;
+  hintsLeft = 0;
   setPoints(0);
+  showHint();
   showView('game');
   running = true;
   endsAt = Date.now() + run.seconds * 1000;
@@ -146,6 +158,7 @@ function setPoints(value) {
 
 function showLevel() {
   locked = false;
+  wordHints = 0;
   const scramble = run.words[level];
   levelLabelEl.textContent = `Word ${level + 1}`;
   lengthLabelEl.textContent = `${scramble.length} letters`;
@@ -162,8 +175,10 @@ function restart(el, className) {
   el.classList.add(className);
 }
 
-function showFeedback(text) {
+// note: a smaller line than the points, for a few words of explanation
+function showFeedback(text, note = false) {
   feedbackEl.textContent = text;
+  feedbackEl.classList.toggle('note', note);
   restart(feedbackEl, 'show');
 }
 
@@ -190,10 +205,11 @@ function answerReady(filledAt) {
   }
 
   const ms = filledAt - shownAt;
-  const quick = ms < QUICK_MS;
+  const quick = ms < QUICK_MS && !wordHints;
   const gained = worth + (quick ? 1 : 0);
-  answers.push({ answer, ms, points: gained, quick });
+  answers.push({ answer, ms, hints: wordHints, points: gained, quick });
   setPoints(points + gained);
+  if (quick) countQuick();
   locked = true;
   quickEl.classList.remove('running');
   slotsEl.classList.add('win');
@@ -206,6 +222,56 @@ function answerReady(filledAt) {
     if (running && level === at) nextWord();
   }, 400);
 }
+
+
+// Hints. One more quick word toward the next - and every HINT_EVERY-th earns one.
+function countQuick() {
+  quickWords++;
+  const earned = quickWords % HINT_EVERY === 0;
+  if (earned) {
+    hintsLeft++;
+    hintBtn.classList.remove('nope');
+    restart(hintBtn, 'earned');
+    sfx.powerUp();
+  }
+  showHint(earned);
+}
+
+// The hint button: its ring fills a third for each quick word toward the next hint, and it lights up while there's
+// one to use (with how many, past one). full: show the ring full - one was just earned - and empty it a moment later.
+function showHint(full = false) {
+  const toward = full ? HINT_EVERY : quickWords % HINT_EVERY;
+  hintBarEl.style.strokeDashoffset = HINT_RING * (1 - toward / HINT_EVERY);
+  if (full) setTimeout(() => showHint(), 700);
+  hintBtn.classList.toggle('ready', hintsLeft > 0);
+  hintCountEl.hidden = hintsLeft < 2;
+  hintCountEl.textContent = `×${hintsLeft}`;
+  const need = HINT_EVERY - (quickWords % HINT_EVERY);
+  hintBtn.setAttribute('aria-label', hintsLeft
+    ? `Hint: fill in the next letter (${hintsLeft} left)`
+    : `Hint: ${need} more ${need === 1 ? 'word' : 'words'} in under 3 seconds to earn one`);
+}
+
+// The hint button, or ?: the hidden word's next letter (giveLetter in tiles.js). With none earned yet, it says how far
+// off the next one is.
+function useHint() {
+  if (!canPick()) return;
+  if (!hintsLeft) {
+    const need = HINT_EVERY - (quickWords % HINT_EVERY);
+    showFeedback(`${need} more ⚡ ${need === 1 ? 'word' : 'words'} for a hint`, true);
+    hintBtn.classList.remove('earned');
+    restart(hintBtn, 'nope');
+    return;
+  }
+  if (!giveLetter([...run.prefixes[level], run.hashes[level]])) return;
+  hintsLeft--;
+  wordHints++;
+  // No quick point for this word now
+  quickEl.classList.remove('running');
+  sfx.hint();
+  showHint();
+}
+
 
 function nextWord() {
   level++;
@@ -252,7 +318,7 @@ async function finishRun() {
 // The answers, for the server to score. Resolves to its reply, or null if it couldn't be reached (results.js has a
 // Try again button that sends it again - the server replies the same however many times it's asked).
 function sendRun() {
-  const sent = answers.map(({ answer, ms }) => ({ answer, ms }));
+  const sent = answers.map(({ answer, ms, hints }) => ({ answer, ms, hints }));
   return request('solo-finish', { run: run.run, token: playerToken(), answers: sent }, { tries: 4 }).catch(() => null);
 }
 
@@ -266,3 +332,4 @@ function stopRun() {
 
 
 startBtn.addEventListener('click', startRun);
+hintBtn.addEventListener('click', useHint);

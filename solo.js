@@ -1,7 +1,9 @@
 // Solo mode: one player against the clock. They get two minutes to unscramble as many words as they can, with no
 // skipping, and every 5 words the words get a letter longer - 3 letters to start, up to 10. The hidden word is worth 2
 // points and any other real word made from all the same letters 1, with 1 more for getting it in under 3 seconds.
-// Each player's best goes on a leaderboard everyone can see, with how many words it got.
+// Every 3 words got in under 3 seconds earn a 💡 hint, which fills in the hidden word's next letter - a word got with a
+// hint's help gets no quick point, and doesn't count toward the next hint. Each player's best goes on a leaderboard
+// everyone can see, with how many words it got.
 //
 // The page plays the two minutes on its own, so nothing waits on the network between words (see solo/js/run.js), and sends
 // its answers when the time is up. The words were picked here and every answer is checked again here, so the score
@@ -16,6 +18,7 @@ const FIRST_LENGTH = 3;
 const LONGEST = 10; // words stay this long after that
 const WORDS_PER_LENGTH = 5;
 const QUICK_MS = 3000; // an answer this fast earns the extra point
+const HINT_EVERY = 3;  // and this many of them (without a hint) earn a hint
 // Every word a run can get to. Nobody gets through 40 in two minutes - the last five are ten letters long.
 const RUN_WORDS = (LONGEST - FIRST_LENGTH + 1) * WORDS_PER_LENGTH;
 // The page's 3-2-1 comes between asking for the run and its clock starting
@@ -98,24 +101,31 @@ function pickWords() {
 }
 
 
-// What a run's answers are worth. answers: { answer, ms } for each word they solved, in order, ms being how long it took
-// them - from its letters showing up to the last one being placed. That's timed on the page, so a slow connection
-// can't cost anyone the quick bonus. Counting stops at the first answer that doesn't hold up, or that couldn't have
-// fitted in the time.
+// What a run's answers are worth. answers: { answer, ms, hints } for each word they solved, in order, ms being how long
+// it took them - from its letters showing up to the last one being placed - and hints how many hints they used on it.
+// That's timed on the page, so a slow connection can't cost anyone the quick bonus. Counting stops at the first answer
+// that doesn't hold up, that couldn't have fitted in the time, or that used hints they hadn't earned yet.
 function scoreRun(run, answers) {
   const solved = [];
   let points = 0;
   let spent = 0;
+  let quickWords = 0; // got in under 3 seconds without a hint - every HINT_EVERY of them earn a hint
+  let hintsUsed = 0;
   for (const [level, sent] of answers.slice(0, run.words.length).entries()) {
     const word = run.words[level];
     const answer = sent && typeof sent.answer === 'string' ? sent.answer.toLowerCase() : '';
     const ms = sent && Number.isFinite(sent.ms) ? Math.max(0, Math.round(sent.ms)) : null;
+    // Pages from before hints don't send any
+    const hints = sent && sent.hints !== undefined ? sent.hints : 0;
     const worth = answer === word ? 2 : answersFor(word).includes(answer) ? 1 : 0;
     if (!worth || ms === null || spent + ms > RUN_SECONDS * 1000) break;
+    if (!Number.isInteger(hints) || hints < 0 || hintsUsed + hints > Math.floor(quickWords / HINT_EVERY)) break;
     spent += ms;
-    const quick = ms < QUICK_MS;
+    hintsUsed += hints;
+    const quick = ms < QUICK_MS && !hints;
+    if (quick) quickWords++;
     points += worth + (quick ? 1 : 0);
-    solved.push({ word, scramble: run.scrambles[level], answer, points: worth + (quick ? 1 : 0), quick, ms });
+    solved.push({ word, scramble: run.scrambles[level], answer, points: worth + (quick ? 1 : 0), quick, ms, hints });
   }
   const stuck = solved.length < run.words.length ? { word: run.words[solved.length], scramble: run.scrambles[solved.length] } : null;
   return { points, solved, stuck };
@@ -146,7 +156,7 @@ function createSolo({ store, playerIdFor, onFinish = () => {} }) {
 
   // A new run for the player whose browser holds `token`. The page makes up the run's id, so asking twice (the reply
   // got lost) gets the same run back rather than a second one.
-  // Replies { status: 'ok', run, words (scrambled), hashes, others, seconds } or { status: 'bad' }.
+  // Replies { status: 'ok', run, words (scrambled), hashes, others, prefixes, seconds } or { status: 'bad' }.
   async function start({ run: id, token, name } = {}) {
     name = cleanName(name);
     if (!isRunId(id) || !isToken(token) || !name) return { status: 'bad' };
@@ -168,6 +178,9 @@ function createSolo({ store, playerIdFor, onFinish = () => {} }) {
       // The answers in hashes only: the hidden word's, and the other real words' (1 point each)
       hashes: run.words.map(wordHash),
       others: run.words.map(word => answersFor(word).filter(w => w !== word).map(wordHash)),
+      // And the hidden word's first letter's, its first two's, and so on (all but the whole word, which is in hashes):
+      // what a hint works out the next letter from, on the page
+      prefixes: run.words.map(word => [...word].slice(0, -1).map((_, i) => wordHash(word.slice(0, i + 1)))),
       seconds: RUN_SECONDS,
     };
   }

@@ -24,7 +24,9 @@ function showResults(reply) {
 
   const solved = saved ? reply.solved : answers.map((a, i) => ({ ...a, scramble: run.words[i] }));
   const quick = solved.filter(s => s.quick).length;
+  const hints = solved.reduce((sum, s) => sum + (s.hints || 0), 0);
   summaryEl.textContent = solved.length ? `${solved.length} ${solved.length === 1 ? 'word' : 'words'} · ${quick} under 3 seconds` : '';
+  if (hints) summaryEl.textContent += ` · ${hints} ${hints === 1 ? 'hint' : 'hints'}`;
 
   showStanding(reply, total);
   showTop(saved ? reply.board : null);
@@ -103,7 +105,7 @@ function showWords(solved, stuck) {
     const note = `from ${s.scramble.toUpperCase()}` + (s.word && s.answer !== s.word ? ` · the hidden word was ${s.word.toUpperCase()}` : '');
     row.append(
       el('span', 'word', s.answer.toUpperCase()),
-      el('span', 'first', `+${s.points}${s.quick ? ' ⚡' : ''} · ${(s.ms / 1000).toFixed(1)}s`),
+      el('span', 'first', `+${s.points}${s.quick ? ' ⚡' : ''}${s.hints ? ' 💡' : ''} · ${(s.ms / 1000).toFixed(1)}s`),
       el('span', 'scramble', note),
     );
     return row;

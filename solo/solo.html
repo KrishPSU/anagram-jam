@@ -83,6 +83,7 @@
         <li><span class="solo-rule-icon" aria-hidden="true">🔤</span><span>Every 5 words, the words get a letter longer.</span></li>
         <li><span class="solo-rule-icon" aria-hidden="true">⭐</span><span><b>2 points</b> for the hidden word, <b>1</b> for another real word with the same letters.</span></li>
         <li><span class="solo-rule-icon" aria-hidden="true">⚡</span><span><b>+1</b> if you get it in under 3 seconds.</span></li>
+        <li><span class="solo-rule-icon" aria-hidden="true">💡</span><span>Every <b>3</b> of those earns a <b>hint</b>: it fills in the next letter, but that word gets no +1.</span></li>
       </ul>
       <button class="btn btn-go" id="startBtn" type="button"><span class="spinner" aria-hidden="true"></span>Start</button>
       <p class="solo-best" id="soloBest"></p>
@@ -125,6 +126,15 @@
 
         <div class="word-actions">
           <button class="icon-btn" id="shuffleBtn" type="button" aria-label="Shuffle letters" title="Shuffle (Space)">🔄</button>
+          <!-- The hint: its ring fills a third for each word got in under 3 seconds, and a full ring earns one (run.js) -->
+          <button class="powerup" id="hintBtn" type="button" title="Hint (?)">
+            <svg viewBox="0 0 54 54" aria-hidden="true">
+              <circle class="track" cx="27" cy="27" r="25"></circle>
+              <circle class="bar" id="hintBar" cx="27" cy="27" r="25"></circle>
+            </svg>
+            <span class="powerup-icon" aria-hidden="true">💡</span>
+            <span class="powerup-count" id="hintCount" aria-hidden="true" hidden></span>
+          </button>
           <button class="icon-btn" id="undoBtn" type="button" aria-label="Remove last letter" title="Remove last letter (Backspace)">⌫</button>
         </div>
         <p class="hint">Tap the letters in order, or type them.</p>

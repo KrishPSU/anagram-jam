@@ -1,7 +1,8 @@
 // The word on screen: its letters as tiles to tap or type, and the answer row they go into. It works like the room
 // page's (create-room/js/game.js) - same picking, flying and shuffling - but solo words go up to 10 letters, so a long
 // word's tiles shrink to fit the screen, and go onto two rows rather than get too small to tap.
-// run.js decides when input is allowed (canPick) and what a full answer row is worth (answerReady).
+// run.js decides when input is allowed (canPick) and what a full answer row is worth (answerReady), and when a hint
+// is used (giveLetter).
 
 const tilesEl = document.getElementById('anagramDisplay');
 const slotsEl = document.getElementById('answerSlots');
@@ -15,6 +16,7 @@ const MIN_TILE = 40;
 let tiles = [];      // { letter, used, el } in the order the server scrambled them
 let order = [];      // display order of `tiles` (changes on shuffle)
 let picked = [];     // indexes into `tiles`, in the order they were picked
+let given = 0;       // how many of the picked, from the first, a hint put there - they can't be taken back
 let slots = [];      // the answer row's spaces, kept for the whole word so their animations aren't cut off
 let flights = new Set(); // tiles still flying to the answer row - each entry lands its tile right away
 
@@ -44,6 +46,7 @@ function showWord(scramble) {
   });
   order = tiles.map((_, i) => i);
   picked = [];
+  given = 0;
   tilesEl.replaceChildren(...tiles.map(t => t.el));
   slots = tiles.map((_, i) => {
     const slot = document.createElement('button');
@@ -88,8 +91,9 @@ function renderSlots(text) {
     // toggle rather than reset the class, so a slot still waiting on its flying tile keeps 'landing'
     slot.classList.add('slot');
     slot.classList.toggle('filled', !!letters[i]);
+    slot.classList.toggle('given', !text && i < given);
     slot.textContent = letters[i] || '';
-    slot.setAttribute('aria-label', letters[i] ? `Remove ${letters[i]}` : `Empty space ${i + 1}`);
+    slot.setAttribute('aria-label', !text && i < given ? `${letters[i]}, from a hint` : letters[i] ? `Remove ${letters[i]}` : `Empty space ${i + 1}`);
   });
 }
 
@@ -165,7 +169,7 @@ function typeLetter(letter) {
 }
 
 function removeAt(slotIndex) {
-  if (!canPick() || slotIndex >= picked.length) return;
+  if (!canPick() || slotIndex < given || slotIndex >= picked.length) return;
   landAll();
   const [i] = picked.splice(slotIndex, 1);
   tiles[i].used = false;
@@ -175,18 +179,42 @@ function removeAt(slotIndex) {
 }
 
 function undoLetter() {
-  if (picked.length) removeAt(picked.length - 1);
+  if (picked.length > given) removeAt(picked.length - 1);
 }
 
+// Every letter off the answer row but the ones a hint gave
 function clearAnswer() {
+  takeBack(given);
+}
+
+// The letters in the answer row's spaces from `from` on go back to the tiles
+function takeBack(from) {
   landAll();
-  picked.forEach(i => {
+  picked.splice(from).forEach(i => {
     tiles[i].used = false;
     tiles[i].el.classList.remove('used');
   });
-  picked = [];
   slotsEl.className = 'answer-slots';
   renderSlots();
+}
+
+// A hint: the hidden word's next letter, straight after the letters in the answer row that are right so far (any after
+// those go back first). steps: the hashes of the hidden word's first letter, its first two, and so on up to the whole
+// word (see start in solo.js at the project root). Returns whether there was a letter to give.
+function giveLetter(steps) {
+  // A full row is about to be checked - unless it's been marked wrong already
+  if (!canPick() || (picked.length === tiles.length && !slotsEl.classList.contains('wrong'))) return false;
+  const spelled = currentAnswer();
+  let right = given;
+  while (right < picked.length && wordHash(spelled.slice(0, right + 1)) === steps[right]) right++;
+  // The first tile on screen with the letter that comes next, from the ones not staying in the row
+  const staying = picked.slice(0, right);
+  const next = order.find(i => !staying.includes(i) && wordHash(spelled.slice(0, right) + tiles[i].letter) === steps[right]);
+  if (next === undefined) return false;
+  takeBack(right);
+  given = right + 1;
+  pickTile(next);
+  return true;
 }
 
 // What the answer row spells
@@ -206,6 +234,7 @@ function clearWord() {
   landAll();
   tiles = [];
   picked = [];
+  given = 0;
   slots = [];
   tilesEl.replaceChildren();
   slotsEl.replaceChildren();
@@ -243,7 +272,7 @@ undoBtn.addEventListener('click', undoLetter);
 
 
 // Typing on a real keyboard, as on the room page (create-room/js/keyboard.js): letters pick a matching tile,
-// Backspace takes the last one back and Space shuffles. A full row checks itself.
+// Backspace takes the last one back and Space shuffles. A full row checks itself. ? uses a hint.
 document.addEventListener('keydown', (event) => {
   // Leave browser shortcuts alone, and only type while a word is on screen (and not behind the "Stop this run?" box)
   if (event.metaKey || event.ctrlKey || event.altKey || view !== 'game' || !running || leaveDialog.open) return;
@@ -258,5 +287,8 @@ document.addEventListener('keydown', (event) => {
     // preventDefault so a focused button isn't pressed as well
     event.preventDefault();
     if (event.key === ' ') shuffleTiles();
+  } else if (event.key === '?' || event.key === '/') {
+    event.preventDefault();
+    useHint();
   }
 });

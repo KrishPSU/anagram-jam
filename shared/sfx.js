@@ -77,6 +77,9 @@ const sfx = (() => {
     wrong: () => play([[220, 0, 0.16, 'sawtooth', 0.07], [180, 0.12, 0.2, 'sawtooth', 0.07]]),
     timeUp: () => play([[392, 0, 0.16], [262, 0.14, 0.28]]),
     win: () => play([[523, 0, 0.12], [659, 0.11, 0.12], [784, 0.22, 0.12], [1047, 0.33, 0.35]]),
+    // Solo mode's hints: one earned (just after the right answer's sound), and one used
+    powerUp: () => play([[1175, 0.2, 0.08, 'sine', 0.1], [1568, 0.27, 0.08, 'sine', 0.1], [2093, 0.34, 0.22, 'sine', 0.08]]),
+    hint: () => play([[1047, 0, 0.1, 'sine', 0.1], [1568, 0.06, 0.18, 'sine', 0.07]]),
     buzz: (pattern) => {
       if (!muted() && navigator.vibrate) navigator.vibrate(pattern);
     },
