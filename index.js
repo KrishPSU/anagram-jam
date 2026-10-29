@@ -116,6 +116,7 @@ app.use('/solo', express.static(path.join(__dirname, 'solo')));
 app.use('/practice', express.static(path.join(__dirname, 'practice')));
 app.use('/daily', express.static(path.join(__dirname, 'daily')));
 app.use('/shared', express.static(path.join(__dirname, 'shared')));
+app.use('/info', express.static(path.join(__dirname, 'info')));
 
 // Serve PWA files (manifest.json and service worker)
 app.get('/manifest.json', (req, res) => {
@@ -158,6 +159,15 @@ app.get('/practice', (req, res) => {
 
 app.get('/daily', (req, res) => {
   res.sendFile(path.join(__dirname, 'daily', 'daily.html'));
+});
+
+// The privacy policy and the help page (info/), linked from the home page - the App Store asks for both
+app.get('/privacy', (req, res) => {
+  res.sendFile(path.join(__dirname, 'info', 'privacy.html'));
+});
+
+app.get('/support', (req, res) => {
+  res.sendFile(path.join(__dirname, 'info', 'support.html'));
 });
 
 // Practice mode's words, all of them at once (see practiceWords in solo.js): the page asks once and deals from them for
