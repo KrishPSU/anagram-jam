@@ -9,9 +9,15 @@
 //
 // Every try is checked here and kept as it's made, so nothing can be undone by reloading - the page carries on with the
 // tries that are left, and the clock where it was.
+//
+// A player's plays and streak are their browser's (its token, hashed) unless they've signed in - then they're their
+// account's, the same on every device (see account.js). The day's players stand on a leaderboard too (see board): most
+// words got, then fewest tries, then fastest - under the name they go by.
 
 const DICTIONARY = require('word-exists/dictionary.json'); // word-exists' own list, as used for rooms' answers
 const DAILY_WORDS = require('./daily-words');
+const { isRude } = require('./names');
+const { shownName } = require('./solo');
 
 const LEVELS = { easy: 5, medium: 7, hard: 9 }; // word lengths
 const TRIES = 3;
@@ -24,6 +30,8 @@ const AHEAD_HOURS = 14;
 // everywhere
 const FINISH_GRACE_HOURS = 24;
 const ADMIN_WRONG_TOP = 8; // the admin page shows this many of a word's most made wrong tries
+const BOARD_TOP = 50;      // the most rows of the day's leaderboard a page gets at once (as solo's, see solo.js)
+const BOARD_OFFSET_MAX = 1000000; // further down it than anyone will ever be
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -103,8 +111,18 @@ function streakFor(streak, day) {
 }
 
 
-// store: where the words and goes are kept (see data.js). playerIdFor: who a browser's token is, as in rooms.
-function createDaily({ store, playerIdFor }) {
+// A row of the day's leaderboard for a page: no ids (they're the players' token hashes, or their account ids), just
+// whether it's the one asking. got: words got, tries: all the tries on those (null if none), ms: all the time on those
+// (null if none), finished: words done, got or not. account: which provider they're signed in with, or null.
+const boardRowFor = (playerId, offset) => (row, i) => ({
+  rank: offset + i + 1, name: shownName(row.name), got: row.got, tries: row.tries, ms: row.ms, finished: row.finished, you: row.id === playerId, account: row.account || null,
+});
+
+
+// store: where the words and goes are kept (see data.js). identify(token): who a browser's token is - the device, and
+// the account it's signed in to, if any (see account.js) - so plays and streaks go under the account when there is one.
+// displayName(identity, name): the name to show them as - their account's, else the one they typed.
+function createDaily({ store, identify, displayName }) {
   // The days asked about lately, each as a promise of its words: { level -> { word, scramble, answers } }. A day's
   // words never change once they're picked.
   const puzzles = new Map();
@@ -179,7 +197,7 @@ function createDaily({ store, playerIdFor }) {
     if (!isToday(day)) return { status: 'not-today' };
     let mine;
     try {
-      mine = await store.dailyPlayer(day, playerIdFor(token));
+      mine = await store.dailyPlayer(day, (await identify(token)).id);
     } catch (err) {
       console.error("Reading a player's Daily Jam failed:", err.message);
       return { status: 'unavailable' };
@@ -196,20 +214,23 @@ function createDaily({ store, playerIdFor }) {
 
   // Opens one of the day's words: its letters, and the player's clock starts - unless it's going already, when opening
   // it again (say after a reload) carries on where they were. paused: new games are paused from the admin page, so only
-  // a word they'd opened already can be.
+  // a word they'd opened already can be. name: the one the player typed, for the day's leaderboard (their account's is
+  // used instead if they're signed in).
   // Replies { status: 'ok', scramble, hashes, play, result } - hashes: the word's and any other real word's with all its
   // letters, so the page's shuffle never spells one; play as playFor has it; result as resultFor, once it's done - or
   // { status } 'bad', 'not-today', 'paused' or 'unavailable'.
-  async function open({ day, level, token } = {}, { paused = false } = {}) {
+  async function open({ day, level, token, name } = {}, { paused = false } = {}) {
     if (!LEVELS[level] || !isToken(token)) return { status: 'bad' };
     // A word opened before midnight carries on after it, but a new one is today's
     if (!isToday(day, FINISH_GRACE_HOURS)) return { status: 'not-today' };
-    const playerId = playerIdFor(token);
+    // Looked up afresh: a go is written under this id (see identify in account.js)
+    const identity = await identify(token, true);
+    const playerId = identity.id;
     let puzzle;
     let play;
     try {
       puzzle = await puzzleFor(day);
-      play = await store.openDaily(day, level, playerId, !paused && isToday(day));
+      play = await store.openDaily(day, level, playerId, !paused && isToday(day), displayName(identity, name));
     } catch (err) {
       console.error('Opening a Daily Jam word failed:', err.message);
       return { status: 'unavailable' };
@@ -235,7 +256,7 @@ function createDaily({ store, playerIdFor }) {
       return { status: 'bad' };
     }
     if (!isToday(day, FINISH_GRACE_HOURS)) return { status: 'not-today' };
-    const playerId = playerIdFor(token);
+    const playerId = (await identify(token)).id;
     const answer = guess.toLowerCase();
     let play;
     try {
@@ -263,7 +284,7 @@ function createDaily({ store, playerIdFor }) {
     if (!isToday(day, FINISH_GRACE_HOURS)) return { status: 'not-today' };
     let result;
     try {
-      result = await resultFor(day, level, playerIdFor(token));
+      result = await resultFor(day, level, (await identify(token)).id);
     } catch (err) {
       console.error("Reading Daily Jam's stats failed:", err.message);
       return { status: 'unavailable' };
@@ -271,11 +292,59 @@ function createDaily({ store, playerIdFor }) {
     return result ? { status: 'ok', result } : { status: 'gone' };
   }
 
+  // The day's leaderboard: everyone who has finished at least one of its words, by words got, then fewest tries on
+  // those, then least time on them - `count` rows (1 to 50) from `offset` rows down (0 being the top), and where the
+  // player whose browser holds `token` is on it. `day` is the page's date; yesterday's still shows for a while after
+  // midnight, like a word opened before it can still be finished.
+  // Replies { status: 'ok', players, offset, top, you: { rank, name, got, tries, ms, finished, account } or null } - top
+  // as boardRowFor has it, name through shownName - or { status } 'bad', 'not-today' or 'unavailable'.
+  async function board({ token, day, count, offset } = {}) {
+    if (!isDate(day)) return { status: 'bad' };
+    if (!isToday(day, FINISH_GRACE_HOURS)) return { status: 'not-today' };
+    const playerId = isToken(token) ? (await identify(token)).id : '';
+    count = Number.isInteger(count) ? Math.min(Math.max(count, 1), BOARD_TOP) : BOARD_TOP;
+    offset = Number.isInteger(offset) ? Math.min(Math.max(offset, 0), BOARD_OFFSET_MAX) : 0;
+    let standings;
+    try {
+      standings = await store.dailyBoard(day, playerId, count, offset);
+    } catch (err) {
+      console.error("Reading Daily Jam's leaderboard failed:", err.message);
+    }
+    if (!standings) return { status: 'unavailable' };
+    const you = standings.you;
+    return {
+      status: 'ok',
+      players: standings.total,
+      offset,
+      top: standings.top.map(boardRowFor(playerId, offset)),
+      // name null when none is known (the box then uses the nickname on the device), as solo's board does
+      you: you ? { rank: standings.rank, name: you.name ? shownName(you.name) : null, got: you.got, tries: you.tries, ms: you.ms, finished: you.finished, account: you.account || null } : null,
+    };
+  }
+
   // For the admin page (see admin.js): a failed read as the status to reply with. 'missing' is Supabase saying it
-  // doesn't have the functions these use - supabase/migrations/20261028200000_daily_jam_admin.sql isn't applied yet.
+  // doesn't have the functions these use - supabase/migrations/20261028200000_daily_jam_admin.sql (or the accounts
+  // migration after it, for adminPlayers) isn't applied yet.
   function adminFailed(err) {
     console.error("Reading Daily Jam's numbers for the admin page failed:", err.message);
     return { status: err.status === 404 ? 'missing' : 'unavailable' };
+  }
+
+  // Everyone who opened one of the day's words, for the admin page's Daily Jam tab: in the leaderboard's order (see
+  // board), with those who haven't finished any last.
+  // Replies { status: 'ok', players: [{ id, name, hidden, account, streak: { current, best, lastDay } or null, levels:
+  // { easy: { solved, tries, ms }, ... } }] } - as dailyAdminPlayers in data.js has them, a level missing meaning they
+  // didn't open it and solved null that they're still on it, plus hidden: the name shows as "Player" (see names.js) -
+  // or { status } 'bad', 'unavailable' or 'missing'.
+  async function adminPlayers({ day } = {}) {
+    if (!isDate(day) || day < FIRST_DAY) return { status: 'bad' };
+    let players;
+    try {
+      players = await store.dailyAdminPlayers(day);
+    } catch (err) {
+      return adminFailed(err);
+    }
+    return { status: 'ok', players: players.map(player => ({ ...player, hidden: isRude(player.name) })) };
   }
 
   // How a day went, for the admin page's Daily Jam tab.
@@ -326,7 +395,7 @@ function createDaily({ store, playerIdFor }) {
     };
   }
 
-  return { today, open, guess, stats, adminDay, adminDays };
+  return { today, open, guess, stats, board, adminDay, adminDays, adminPlayers };
 }
 
 module.exports = { createDaily, LEVELS, TRIES };

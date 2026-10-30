@@ -27,8 +27,10 @@
   <link rel="stylesheet" href="/css/game-state.css">
   <link rel="stylesheet" href="/css/results.css">
   <link rel="stylesheet" href="/solo/css/solo.css">
+  <link rel="stylesheet" href="/shared/board.css">
 
   <script defer src="/shared/app.js"></script>
+  <script defer src="/shared/config.js"></script>
   <script defer src="/shared/socket.js"></script>
   <script defer src="/shared/toast.js"></script>
   <script defer src="/shared/sfx.js"></script>
@@ -40,6 +42,10 @@
   <script defer src="/shared/solo-leaderboard.js"></script>
   <!-- The room page's music, which follows `view` (see solo.js) -->
   <script defer src="/js/audio.js"></script>
+  <!-- Your account, who's on the site right now (for the admin page), and PostHog - see each file -->
+  <script defer src="/shared/account.js"></script>
+  <script defer src="/shared/presence.js"></script>
+  <script defer src="/shared/analytics.js"></script>
 
   <script src="/socket.io/socket.io.js"></script>
 
@@ -58,7 +64,7 @@
     }
   </script>
 </head>
-<body class="solo">
+<body class="solo" data-presence="solo">
 
   <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>

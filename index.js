@@ -8,7 +8,8 @@ const { createStore } = require('./store');
 const { createData } = require('./data');
 const { createSolo, answersFor, practiceWords } = require('./solo');
 const { createDaily } = require('./daily');
-const { createAdmin } = require('./admin');
+const { createAdmin, fromThisSite, addressBlock, clientAddress } = require('./admin');
+const { createAccounts } = require('./account');
 
 require('dotenv').config();
 
@@ -68,13 +69,30 @@ function supabaseFromEnv() {
   return url && key ? { url, key } : undefined;
 }
 
-const data = createData(supabaseFromEnv());
+const supabase = supabaseFromEnv();
+const data = createData(supabase);
 console.log(`Solo runs, the leaderboard and the admin page's things are kept in ${data.status().store === 'supabase' ? 'Supabase' : 'memory'}`);
 
-// Solo mode's runs and leaderboard (see solo.js). Each run scored goes in the admin page's log and stats.
-const solo = createSolo({
+// Accounts - signing in with Google or Apple, so a player's scores are the same on every device - and who's on the site
+// right now (see account.js). Signing in goes through the Supabase project, so there's none without one; the pages are
+// told whether they can offer it (/site-config.json), and where their analytics go (PostHog, when there's a key).
+const accounts = createAccounts({
   store: data,
   playerIdFor,
+  supabase,
+  posthog: { key: process.env.POSTHOG_KEY, host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com' },
+  providers: (process.env.AUTH_PROVIDERS || 'google,apple').split(',').map(provider => provider.trim()),
+  // The admin page is made further down; by the time there's anything to note, it's there
+  note: (entry) => admin.note(entry),
+});
+console.log(`Signing in is ${accounts.enabled ? 'on' : 'off (no Supabase)'}`);
+
+// Solo mode's runs and leaderboard (see solo.js). Each run scored goes in the admin page's log and stats - the player
+// counted being whoever the score went to (their account, if they're signed in).
+const solo = createSolo({
+  store: data,
+  identify: accounts.identify,
+  displayName: accounts.displayName,
   onFinish: (run, scored) => {
     admin.track('solo', [run.playerId]);
     admin.log({ type: 'solo', name: run.name, points: scored.points, words: scored.solved.length });
@@ -82,7 +100,7 @@ const solo = createSolo({
 });
 
 // Daily Jam's words, and how everyone does on them (see daily.js)
-const daily = createDaily({ store: data, playerIdFor });
+const daily = createDaily({ store: data, identify: accounts.identify, displayName: accounts.displayName });
 
 // The adapter doesn't handle Redis refusing a command (Upstash refuses them all once the free plan is used up):
 // a failed publish or subscribe would crash the server. Messages still reach the players on this instance
@@ -117,6 +135,8 @@ app.use('/practice', express.static(path.join(__dirname, 'practice')));
 app.use('/daily', express.static(path.join(__dirname, 'daily')));
 app.use('/shared', express.static(path.join(__dirname, 'shared')));
 app.use('/info', express.static(path.join(__dirname, 'info')));
+// The page Supabase sends the browser back to after signing in, and its script (see account.js)
+app.use('/account', express.static(path.join(__dirname, 'account')));
 
 // Serve PWA files (manifest.json and service worker)
 app.get('/manifest.json', (req, res) => {
@@ -169,6 +189,84 @@ app.get('/privacy', (req, res) => {
 app.get('/support', (req, res) => {
   res.sendFile(path.join(__dirname, 'info', 'support.html'));
 });
+
+// Where Supabase sends the browser back to after signing in, with the code the page there trades in (see account.js)
+app.get('/account/callback', (req, res) => {
+  res.sendFile(path.join(__dirname, 'account', 'callback.html'), (err) => {
+    if (err && !res.headersSent) res.status(404).type('text').send('Not found');
+  });
+});
+
+// What the pages need to know as they start (see shared/config.js): whether they can offer signing in, and with what,
+// and where their analytics go. The same for everyone, so a minute's caching is fine.
+app.get('/site-config.json', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json(accounts.config());
+});
+
+// A body that isn't JSON, or is too big, gets a 400 rather than Express's own error page
+function badBody(err, req, res, next) {
+  if (res.headersSent) return next(err);
+  if (['entity.parse.failed', 'entity.too.large', 'encoding.unsupported', 'charset.unsupported'].includes(err.type)) {
+    return res.status(400).json({ status: 'bad' });
+  }
+  next(err);
+}
+
+// The two things pages POST rather than send over their connection: signing in, from the callback page (which has no
+// connection), and presence, which has to go out as a page closes (sendBeacon). Both only from this site's own pages,
+// like the admin page's API (see fromThisSite in admin.js), so another site's page can't do either on a visitor's
+// behalf. Replies as link in account.js has them.
+// Each sign-in is a call to Supabase Auth, which caps callers by address - and from here every player's calls share the
+// server's address. So an address gets LINK_LIMIT.tries per window, counted in the store the way the admin page's
+// sign-in tries are (so every instance goes by the same count), and a code or verifier that can't be Supabase's is
+// turned away before it costs anything (see link in account.js). A locked-out address is told 'unavailable': the
+// callback page says to try again in a bit, which is right.
+const LINK_LIMIT = { tries: 12, windowMs: 10 * 60 * 1000 };
+app.post('/account/link', express.json({ limit: '4kb' }), async (req, res) => {
+  if (!fromThisSite(req, true)) return res.status(403).json({ status: 'forbidden' });
+  try {
+    const { count } = await data.bump(`link:${addressBlock(clientAddress(req))}`, LINK_LIMIT.windowMs);
+    if (count > LINK_LIMIT.tries) return res.status(429).json({ status: 'unavailable' });
+  } catch (err) {
+    console.error('Counting sign-in tries failed:', err.message);
+  }
+  res.json(await accounts.link(req.body || undefined));
+}, badBody);
+
+// A page sends a heartbeat every 20 seconds, so an address sending many more than that a minute is a script making up
+// tokens - and every token it makes up is a row in the store. Past PRESENCE_LIMIT a minute an address's beats are
+// dropped. Counted on this instance only, which is enough for a cap.
+const PRESENCE_LIMIT = 120;
+const presenceCounts = new Map(); // address block -> { count, until }
+function presenceAllowed(req) {
+  const now = Date.now();
+  const key = addressBlock(clientAddress(req));
+  let entry = presenceCounts.get(key);
+  if (!entry || entry.until <= now) {
+    if (presenceCounts.size > 5000) presenceCounts.forEach((e, k) => { if (e.until <= now) presenceCounts.delete(k); });
+    entry = { count: 0, until: now + 60 * 1000 };
+    presenceCounts.set(key, entry);
+  }
+  return ++entry.count <= PRESENCE_LIMIT;
+}
+
+// Where a player is right now, for the admin page (see presence in account.js). sendBeacon can only promise text/plain
+// in some browsers, so a text body is read as JSON here. Replies 204, or 400 for a body that isn't a presence.
+app.post('/presence', express.json({ limit: '2kb' }), express.text({ limit: '2kb' }), async (req, res) => {
+  if (!fromThisSite(req, true)) return res.sendStatus(403);
+  if (!presenceAllowed(req)) return res.sendStatus(429);
+  let body = req.body;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      body = null;
+    }
+  }
+  const reply = await accounts.presence(body && typeof body === 'object' ? body : undefined);
+  res.sendStatus(reply.status === 'ok' ? 204 : 400);
+}, badBody);
 
 // Practice mode's words, all of them at once (see practiceWords in solo.js): the page asks once and deals from them for
 // as long as it's open. They're the same for everyone until the next deploy, so Vercel's CDN can answer for a day.
@@ -420,6 +518,7 @@ const admin = createAdmin({
   store: data,
   solo,
   daily,
+  accounts,
   rooms: { list: liveRooms, close: closeRoom, remove: removeFromRoom, health: () => store.health() },
   storageStatus,
   dataStatus,
@@ -657,7 +756,11 @@ async function enterRoom(socket, { roomCode, token, name }) {
     socket.emit('roomNotFound', roomCode);
     return;
   }
-  const id = playerIdFor(token);
+  // Rooms know players by their device, signed in or not - but the name the room sees is their account's when they
+  // have one (see account.js), whatever the page sent
+  const identity = await accounts.identify(token);
+  const id = identity.playerId;
+  name = accounts.displayName(identity, name) || name;
   // Into the socket room before the others can see this player, so no news about the room is missed
   await socket.join(roomCode);
 
@@ -996,6 +1099,16 @@ io.on('connection', (socket) => {
   });
   on('daily-guess', async (data, ack) => replier(ack)(await daily.guess(data || undefined)));
   on('daily-stats', async (data, ack) => replier(ack)(await daily.stats(data || undefined)));
+  // The day's leaderboard (see shared/solo-leaderboard.js, on its Daily tab)
+  on('daily-board', async (data, ack) => replier(ack)(await daily.board(data || undefined)));
+
+  // Accounts (see account.js), the same way: whether this browser is signed in and as whom, a new name for the account,
+  // signing out on this device, and deleting the account. The token is the only way to any of it, and only this site's
+  // pages have it - signing in itself is a POST from the callback page (see /account/link).
+  on('account-get', async (data, ack) => replier(ack)(await accounts.get(data || undefined)));
+  on('account-name', async (data, ack) => replier(ack)(await accounts.rename(data || undefined)));
+  on('account-unlink', async (data, ack) => replier(ack)(await accounts.unlink(data || undefined)));
+  on('account-delete', async (data, ack) => replier(ack)(await accounts.remove(data || undefined)));
 
 });
 

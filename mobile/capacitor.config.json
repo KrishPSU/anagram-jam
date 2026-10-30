@@ -3,11 +3,11 @@
   "appName": "Anagram Jam",
   "webDir": "www",
   "backgroundColor": "#232526",
-  "appendUserAgent": "AnagramJamApp/1",
+  "appendUserAgent": "AnagramJamApp/2",
   "server": {
     "url": "https://www.anagramjam.com/",
     "errorPath": "index.html",
-    "allowNavigation": ["anagramjam.com"]
+    "allowNavigation": ["anagramjam.com", "*.supabase.co", "appleid.apple.com"]
   },
   "ios": {
     "contentInset": "never",

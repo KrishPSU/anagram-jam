@@ -14,6 +14,7 @@ const soloBtn = document.getElementById('soloBtn');
 const practiceBtn = document.getElementById('practiceBtn');
 const dailyBtn = document.getElementById('dailyBtn');
 const busyStatusEl = document.getElementById('busyStatus');
+const nameHintEl = document.getElementById('nameHint');
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -34,6 +35,19 @@ const REQUESTS = {
 };
 
 playerNameInput.value = localStorage.getItem('name') || '';
+
+// Signed in with a name (see /shared/account.js): the box shows the account's name and can't be typed in - it's
+// changed under Account, so the leaderboards and the account agree. Signed out, the box is yours again. takeName()
+// reads the box either way.
+window.addEventListener('account', (e) => {
+  const account = e.detail;
+  const named = !!(account && account.name);
+  if (named) playerNameInput.value = account.name;
+  playerNameInput.readOnly = named;
+  playerNameInput.classList.toggle('is-account', named);
+  nameHintEl.textContent = named ? 'Signed in · change your name under Account' : '';
+  nameHintEl.hidden = !named;
+});
 
 function showError(message) {
   showAlert(message, 'error');
@@ -189,7 +203,8 @@ soloBtn.addEventListener('click', () => {
   document.location.href = '/solo/';
 });
 
-// Practice has no leaderboard, so it needs no name - and nor does Daily Jam, whose numbers are only ever your own
+// Practice has no leaderboard, so it needs no name - and Daily Jam goes by whatever name there is (today's leaderboard
+// shows it, or a blank), so it doesn't ask for one either
 practiceBtn.addEventListener('click', () => {
   if (pending) return;
   document.location.href = '/practice/';

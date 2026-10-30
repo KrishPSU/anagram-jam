@@ -1,6 +1,6 @@
-// The admin page (/admin): a sign-in page, and behind it a dashboard of the rooms open right now, the solo leaderboard,
-// how Daily Jam is going, stats, a log of games and of sign-ins, and the site's controls (a banner on the home page,
-// pausing new games, a message to everyone playing).
+// The admin page (/admin): a sign-in page, and behind it a dashboard of the rooms open right now and who's on the site
+// (see presence in account.js), the solo leaderboard, how Daily Jam is going, stats, a log of games and of sign-ins, and
+// the site's controls (a banner on the home page, pausing new games, a message to everyone playing).
 //
 // None of it is public. /admin is only the sign-in page until someone signs in with ADMIN_PASSWORD (an environment
 // variable - on Vercel, in the project's Settings → Environment Variables). The dashboard's page, its scripts and
@@ -25,6 +25,7 @@ const express = require('express');
 const WORDS = require('./words');
 const DICTIONARY = require('word-exists/dictionary.json'); // the same list the games' answers are checked against
 const { answersFor } = require('./solo');
+const { isRude } = require('./names');
 
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const DEVICE_MS = 180 * 24 * 60 * 60 * 1000;
@@ -121,6 +122,7 @@ function requester(req) {
 
 // Only this site's own pages. A browser that says where a request comes from (Sec-Fetch-Site) has to say it's from
 // here, and a request that changes something has to carry this site's Origin (browsers always send one with those).
+// The players' own POSTs (signing in, presence - see index.js) go by this too.
 function fromThisSite(req, changing) {
   const site = req.get('sec-fetch-site');
   if (site && site !== 'same-origin') return false;
@@ -240,12 +242,13 @@ function timeZone(name) {
 }
 
 
-// app: the Express app the pages and API go on. store: where its settings, logs, counters and stats are kept (see
-// data.js). solo: see solo.js. daily: see daily.js. rooms: { list, close, remove, health } from index.js.
+// app: the Express app the pages and API go on. store: where its settings, logs, counters and stats are kept, and who's
+// on the site (see data.js). solo: see solo.js. daily: see daily.js. accounts: see account.js (whether signing in is
+// on, for the System tab). rooms: { list, close, remove, health } from index.js.
 // storageStatus(): where rooms are kept. dataStatus(): where the store keeps things right now. broadcast(message): to every page open. pageVersion: the game
 // pages' (see PAGE_VERSION in index.js). secret: something only the server knows, the same on every instance (on
 // Vercel, ADMIN_SESSION_SECRET or the Redis address).
-function createAdmin({ app, store, solo, daily, rooms, storageStatus, dataStatus, broadcast, pageVersion, secret }) {
+function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, dataStatus, broadcast, pageVersion, secret }) {
   // Without one shared by every instance, this one makes up its own: fine for a single server, but on Vercel a session
   // would only work on the instance that started it
   const sharedSecret = !!secret;
@@ -498,9 +501,21 @@ function createAdmin({ app, store, solo, daily, rooms, storageStatus, dataStatus
   const bodyOf = (req) => (req.body && typeof req.body === 'object' ? req.body : {});
   const text = (value, max) => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '');
 
+  // Who's on the site right now, for the Live tab: everyone whose page has said so within the last minute (see presence
+  // in account.js), as [{ id, name, hidden, account, mode, detail, since, seenAt }] - hidden: the name shows as "Player"
+  // everywhere public (see names.js). Nobody if it can't be read right now, rather than no overview at all.
+  async function livePeople() {
+    try {
+      return (await store.livePlayers(60000)).map(({ id, name, account, mode, detail, since, seenAt }) => ({ id, name, hidden: isRude(name), account, mode, detail, since, seenAt }));
+    } catch (err) {
+      console.error("Reading who's on the site failed:", err.message);
+      return [];
+    }
+  }
+
   // Everything the Live tab shows, polled while it's open
   api.get('/overview', async (req, res) => {
-    const [list, current] = await Promise.all([rooms.list(), settings()]);
+    const [list, current, people] = await Promise.all([rooms.list(), settings(), livePeople()]);
     const views = list.map(roomView).sort(byActivity);
     const everyone = views.flatMap(room => room.players);
     res.json({
@@ -510,7 +525,9 @@ function createAdmin({ app, store, solo, daily, rooms, storageStatus, dataStatus
         playing: everyone.filter(p => p.status === 'game').length,
         rooms: views.length,
         games: views.filter(room => room.phase === 'playing').length,
+        people: people.length,
       },
+      people,
       rooms: views,
       storage: storageStatus(),
       settings: { announcement: current.announcement, paused: current.paused },
@@ -548,10 +565,14 @@ function createAdmin({ app, store, solo, daily, rooms, storageStatus, dataStatus
     res.json(reply);
   });
 
-  // The Daily Jam tab. Days are dates as players have them ('2026-10-28'): the tab asks for the one it's showing, and
-  // for the last 7 or 30 up to its own today.
+  // The Daily Jam tab. Days are dates as players have them ('2026-10-28'): the tab asks for the one it's showing - how it
+  // went, and everyone who opened a word that day (players, see adminPlayers in daily.js; nobody if they can't be read,
+  // the rest of the day still shows) - and for the last 7 or 30 up to its own today.
   api.get('/daily/day', async (req, res) => {
-    res.json(await daily.adminDay({ day: req.query.day }));
+    const [day, players] = await Promise.all([daily.adminDay({ day: req.query.day }), daily.adminPlayers({ day: req.query.day })]);
+    // Without the list (the functions aren't there yet, say), the day's own count of players stays - the tab shows a
+    // number there as it did before the list
+    res.json({ ...day, players: players.status === 'ok' ? players.players : day.players !== undefined ? day.players : [] });
   });
 
   api.get('/daily/days', async (req, res) => {
@@ -629,6 +650,8 @@ function createAdmin({ app, store, solo, daily, rooms, storageStatus, dataStatus
         redis,
         data: dataStatus(),
         supabase,
+        // Whether players can sign in, and with what (see account.js)
+        accounts: accounts.config().accounts,
       },
       security: {
         signedInAt: session.iat,
@@ -664,8 +687,10 @@ function createAdmin({ app, store, solo, daily, rooms, storageStatus, dataStatus
     forPlayers,
     // For index.js: something that happened in a game, for the dashboard's log, and a count for its stats
     log: (entry) => log('game', entry),
+    // ...and something the owner should see in the sign-ins & changes log (an account that couldn't be fully deleted)
+    note: (entry) => log('security', entry),
     track,
   };
 }
 
-module.exports = { createAdmin, addressBlock, checkWord };
+module.exports = { createAdmin, addressBlock, clientAddress, checkWord, fromThisSite };

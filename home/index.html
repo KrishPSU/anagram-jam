@@ -24,8 +24,10 @@
 
   <link rel="stylesheet" href="/shared/theme.css">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/shared/board.css">
 
   <script src="/shared/app.js" defer></script>
+  <script src="/shared/config.js" defer></script>
   <script src="/shared/socket.js" defer></script>
   <script src="/shared/toast.js" defer></script>
   <script src="/shared/players.js" defer></script>
@@ -33,6 +35,10 @@
   <script src="script.js" defer></script>
   <script src="/shared/solo-leaderboard.js" defer></script>
   <script src="install.js" defer></script>
+  <!-- Your account, who's on the site right now (for the admin page), and PostHog - see each file -->
+  <script src="/shared/account.js" defer></script>
+  <script src="/shared/presence.js" defer></script>
+  <script src="/shared/analytics.js" defer></script>
 
 
   <!-- Service Worker Registration -->
@@ -50,12 +56,15 @@
     }
   </script>
 </head>
-<body class="home">
+<body class="home" data-presence="home">
   <!-- Letter tiles drifting up behind everything (filled in by script.js) -->
   <div class="drift" id="drift" aria-hidden="true"></div>
 
-  <!-- Opens the box from /shared/how-to-play.js -->
-  <button class="help-btn home-help" type="button" data-how-to-play><i aria-hidden="true">?</i>How to play</button>
+  <!-- Top right: your account (/shared/account.js) - the word is left off on phones - and the box from /shared/how-to-play.js -->
+  <div class="home-top">
+    <button class="account-btn" type="button" data-account aria-label="Account"><i aria-hidden="true">👤</i><span class="account-label">Account</span></button>
+    <button class="help-btn" type="button" data-how-to-play><i aria-hidden="true">?</i>How to play</button>
+  </div>
 
   <main class="home-layout">
     <section class="hero">
@@ -92,6 +101,8 @@
           autocomplete="nickname"
           enterkeyhint="go"
         >
+        <!-- While signed in, the name is the account's (see /shared/account.js and script.js) -->
+        <p class="field-hint" id="nameHint" hidden></p>
 
         <div class="mode" id="chooseMode">
           <button class="btn btn-primary" type="submit" id="createBtn"><span class="spinner" aria-hidden="true"></span><span class="btn-label">Create a room</span></button>

@@ -8,6 +8,9 @@
 // The page plays the two minutes on its own, so nothing waits on the network between words (see solo/js/run.js), and sends
 // its answers when the time is up. The words were picked here and every answer is checked again here, so the score
 // that goes on the leaderboard is the server's own - a made-up one can't be sent in.
+//
+// Who a best belongs to is the player's browser (its token, hashed), unless they've signed in - then it's their account,
+// the same on every device they sign in on, and it's their account's name on the leaderboard (see account.js).
 
 const WORDS = require('./words');
 const DICTIONARY = require('word-exists/dictionary.json'); // word-exists' own list, as used for rooms' answers
@@ -29,7 +32,10 @@ const FINISH_GRACE = 2 * 60 * 1000;
 const RESULTS_TOP = 10; // the top of the leaderboard, as the results screen shows it
 const BOARD_TOP = 50;   // and as the leaderboard itself does
 const ADMIN_TOP = 1000; // the admin page's, all of it for some time to come (and what its export holds)
-const RUN_VERSION = 1; // runs laid out any other way (from before a deploy) count as gone
+const BOARD_OFFSET_MAX = 1000000; // further down the leaderboard than anyone will ever be
+// Runs laid out any other way (from before a deploy) count as gone. 2: a run keeps the device it's played on apart from
+// who its score goes to (see start).
+const RUN_VERSION = 2;
 
 // A leaderboard score as the store keeps it: one number, higher is better. Points first, then - on the same points -
 // whoever got there first (the time fills the digits below the points, and SCORE_SPAN is more milliseconds than
@@ -156,32 +162,39 @@ function shownName(name) {
 const isRunId = (id) => typeof id === 'string' && /^[0-9a-f]{16,64}$/.test(id);
 const isToken = (token) => typeof token === 'string' && token.length >= 16;
 
-// A leaderboard row for a page: no ids (they're the players' token hashes), just whether it's the one asking. words:
-// how many words their best got.
-const rowFor = (playerId) => (entry, i) => ({ rank: i + 1, name: shownName(entry.name), words: entry.words, points: pointsOf(entry.score), you: entry.id === playerId });
+// A leaderboard row for a page: no ids (they're the players' token hashes, or their account ids), just whether it's the
+// one asking. offset: how many rows of the leaderboard come before these. words: how many words their best got.
+// account: which provider they're signed in with, or null (the page marks the signed-in).
+const rowFor = (playerId, offset = 0) => (entry, i) => ({
+  rank: offset + i + 1, name: shownName(entry.name), words: entry.words, points: pointsOf(entry.score), you: entry.id === playerId, account: entry.account || null,
+});
 
 
-// store: where runs and the leaderboard are kept (see data.js). playerIdFor: who a browser's token is, as in rooms.
-// onFinish(run, scored): told about each run as it's scored, once (for the admin page's log and stats).
-function createSolo({ store, playerIdFor, onFinish = () => {} }) {
+// store: where runs and the leaderboard are kept (see data.js). identify(token): who a browser's token is - the device,
+// and the account it's signed in to, if any (see account.js) - so a best goes under the account when there is one and
+// is the same on every device. displayName(identity, name): the name to show them as - their account's, else the one
+// they typed. onFinish(run, scored): told about each run as it's scored, once (for the admin page's log and stats).
+function createSolo({ store, identify, displayName, onFinish = () => {} }) {
 
   // A new run for the player whose browser holds `token`. The page makes up the run's id, so asking twice (the reply
   // got lost) gets the same run back rather than a second one.
   // Replies { status: 'ok', run, words (scrambled), hashes, others, prefixes, seconds } or { status: 'bad' }.
   async function start({ run: id, token, name } = {}) {
-    name = cleanName(name);
-    if (!isRunId(id) || !isToken(token) || !name) return { status: 'bad' };
-    const playerId = playerIdFor(token);
+    if (!isRunId(id) || !isToken(token)) return { status: 'bad' };
+    const identity = await identify(token);
+    name = displayName(identity, name);
+    if (!name) return { status: 'bad' };
     let run;
     try {
       const words = pickWords();
-      run = { v: RUN_VERSION, id, playerId, name, words, scrambles: words.map(scramble), startedAt: Date.now(), result: null };
+      // deviceId: whose browser it's played in - only that browser can send it in. playerId: who the score goes to.
+      run = { v: RUN_VERSION, id, deviceId: identity.playerId, playerId: identity.id, name, words, scrambles: words.map(scramble), startedAt: Date.now(), result: null };
       if (!(await store.createRun(run))) run = await store.getRun(id);
     } catch (err) {
       console.error('Starting a solo run failed:', err.message);
       return { status: 'bad' };
     }
-    if (!run || run.playerId !== playerId) return { status: 'bad' };
+    if (!run || run.v !== RUN_VERSION || run.deviceId !== identity.playerId) return { status: 'bad' };
     return {
       status: 'ok',
       run: run.id,
@@ -208,10 +221,17 @@ function createSolo({ store, playerIdFor, onFinish = () => {} }) {
     } catch (err) {
       console.error('Reading a solo run failed:', err.message);
     }
-    if (!run || run.v !== RUN_VERSION || run.playerId !== playerIdFor(token)) return { status: 'gone' };
+    if (!run || run.v !== RUN_VERSION) return { status: 'gone' };
+    // Looked up afresh: the score is written under this id (see identify in account.js)
+    const identity = await identify(token, true);
+    if (run.deviceId !== identity.playerId) return { status: 'gone' };
     if (run.result) return run.result;
     if (Date.now() > run.startedAt + COUNTDOWN_MS + RUN_SECONDS * 1000 + FINISH_GRACE) return { status: 'late' };
 
+    // The score goes to who they are now - they may have signed in since the run started, on this device or another,
+    // and then it belongs with their account - so the run is re-keyed to that first, name and all
+    run.playerId = identity.id;
+    run.name = displayName(identity, run.name);
     const scored = scoreRun(run, answers);
     run.result = { status: 'ok', ...scored, board: await placeOnBoard(run, scored.points, scored.solved.length) };
     try {
@@ -255,35 +275,46 @@ function createSolo({ store, playerIdFor, onFinish = () => {} }) {
     };
   }
 
-  // The leaderboard: the first `count` rows (up to 50), and where the player whose browser holds `token` is on it.
-  // Replies { status: 'ok', players, top, you: { rank, words, points } or null } or { status: 'unavailable' }.
-  async function board({ token, count } = {}) {
-    const playerId = isToken(token) ? playerIdFor(token) : '';
-    count = Number.isInteger(count) ? Math.min(Math.max(count, 0), BOARD_TOP) : BOARD_TOP;
+  // The leaderboard: `count` rows (1 to 50) from `offset` rows down (0 being the top - the page asks for the top first,
+  // then for more below it), and where the player whose browser holds `token` is on it.
+  // Replies { status: 'ok', players, offset, top, you: { rank, words, points, name } or null } - name being theirs as
+  // the board shows it, when it's known here (it's in the rows asked for, or it's their account's), else null and the
+  // page shows the one it holds - or { status: 'unavailable' }.
+  async function board({ token, count, offset } = {}) {
+    const identity = isToken(token) ? await identify(token) : null;
+    const playerId = identity ? identity.id : '';
+    count = Number.isInteger(count) ? Math.min(Math.max(count, 1), BOARD_TOP) : BOARD_TOP;
+    offset = Number.isInteger(offset) ? Math.min(Math.max(offset, 0), BOARD_OFFSET_MAX) : 0;
     let board;
     try {
-      board = await store.leaderboard(count, playerId);
+      board = await store.leaderboard(count, playerId, offset);
     } catch (err) {
       console.error('Reading the solo leaderboard failed:', err.message);
     }
     if (!board) return { status: 'unavailable' };
+    const mine = board.top.find(entry => entry.id === playerId);
+    const accountName = identity && identity.account && identity.account.name;
     return {
       status: 'ok',
       players: board.total,
-      top: board.top.map(rowFor(playerId)),
-      you: board.rank === null ? null : { rank: board.rank + 1, words: board.words, points: pointsOf(board.best) },
+      offset,
+      top: board.top.map(rowFor(playerId, offset)),
+      you: board.rank === null ? null : {
+        rank: board.rank + 1, words: board.words, points: pointsOf(board.best), name: mine ? shownName(mine.name) : accountName ? shownName(accountName) : null,
+      },
     };
   }
 
 
   // For the admin page, which only calls these for someone signed in (see admin.js).
 
-  // The top of the leaderboard with each player's id and their name as typed. Replies { status: 'ok', players, top } or
+  // The top of the leaderboard with each player's id, their name as typed (hidden: it shows as "Player") and the
+  // provider they're signed in with (account, or null). Replies { status: 'ok', players, top } or
   // { status: 'unavailable' }.
   async function adminBoard() {
     let board;
     try {
-      board = await store.leaderboard(ADMIN_TOP, '');
+      board = await store.leaderboard(ADMIN_TOP, '', 0);
     } catch (err) {
       console.error('Reading the solo leaderboard failed:', err.message);
     }
@@ -291,7 +322,9 @@ function createSolo({ store, playerIdFor, onFinish = () => {} }) {
     return {
       status: 'ok',
       players: board.total,
-      top: board.top.map((entry, i) => ({ rank: i + 1, id: entry.id, name: entry.name, hidden: shownName(entry.name) !== entry.name, words: entry.words, points: pointsOf(entry.score), at: timeOf(entry.score) })),
+      top: board.top.map((entry, i) => ({
+        rank: i + 1, id: entry.id, name: entry.name, hidden: shownName(entry.name) !== entry.name, account: entry.account || null, words: entry.words, points: pointsOf(entry.score), at: timeOf(entry.score),
+      })),
     };
   }
 
@@ -313,4 +346,4 @@ function createSolo({ store, playerIdFor, onFinish = () => {} }) {
   return { start, finish, board, adminBoard, adminRemove };
 }
 
-module.exports = { createSolo, scoreRun, scramble, answersFor, practiceWords, RUN_WORDS };
+module.exports = { createSolo, scoreRun, scramble, answersFor, practiceWords, cleanName, shownName, RUN_WORDS };

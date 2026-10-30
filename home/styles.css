@@ -20,12 +20,71 @@
   }
 }
 
-/* How to play, top-right. Scrolls away with the page rather than floating over the form. */
-.home-help {
+/* Top right: Account (/shared/account.js), then How to play. Scrolls away with the page rather than floating over the
+   form. */
+.home-top {
   position: absolute;
   top: calc(12px + env(safe-area-inset-top, 0px));
   right: calc(12px + env(safe-area-inset-right, 0px));
   z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The account button is the How to play button's twin (.help-btn in /shared/theme.css): a glass pill with the 👤 in a
+   white circle where the ? is */
+.account-btn {
+  appearance: none;
+  height: 44px;
+  padding: 0 16px 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.account-btn:hover { background: rgba(255, 255, 255, 0.2); }
+.account-btn:active { transform: scale(0.96); }
+
+.account-btn i {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  font-style: normal;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Signed in: a green dot on the circle */
+.account-btn.is-signed-in i::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--go-light);
+  box-shadow: 0 0 0 2px #fff;
+}
+
+/* Phones: just the circle, round, so How to play keeps its room */
+@media (max-width: 599px) {
+  .account-label { display: none; }
+  .account-btn { width: 44px; padding: 0; justify-content: center; }
 }
 
 /* Hero */
@@ -177,7 +236,7 @@
   .home-layout {
     grid-template-rows: 1fr auto;
     align-content: stretch;
-    /* Room at the top for the How to play button, so a short screen doesn't push the title under it */
+    /* Room at the top for the Account and How to play buttons, so a short screen doesn't push the title under them */
     padding-top: calc(68px + env(safe-area-inset-top, 0px));
     padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px));
   }
@@ -258,6 +317,18 @@
 
 /* Locked while a create/join request is waiting on the server */
 .field:disabled, .code-box:disabled { opacity: 0.6; }
+
+/* Signed in (see /shared/account.js): the name is the account's, shown but not for typing in */
+.field.is-account { color: var(--ink-muted); cursor: default; }
+.field.is-account:focus { border-color: var(--field-line); background: var(--field); box-shadow: none; }
+
+/* Under the name box, while signed in (script.js fills it in) */
+.field-hint {
+  margin: -2px 0 0;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
 
 .mode {
   display: grid;

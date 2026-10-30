@@ -45,3 +45,11 @@ page, or Swift code. For those:
 
 Old app versions stay on people's phones, so site code must check that a plugin exists before using it
 (`Capacitor.isPluginAvailable('Haptics')`, as sfx.js does).
+
+## Signing in
+
+Build 2 lets the sign-in pages through: `allowNavigation` in capacitor.config.json names `*.supabase.co` and
+`appleid.apple.com`, which the web view would otherwise hand to Safari, where a sign-in can't finish (the verifier is in
+the app's own storage). The site tells builds apart by the user agent (`AnagramJamApp/2`): build 1 is sent to the
+website to sign in, build 2 and up get Continue with Apple. Google never signs anyone in inside an app's web view, so it
+stays off in the app (see shared/account.js).

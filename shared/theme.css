@@ -290,8 +290,9 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   70%, 100% { box-shadow: 0 0 0 10px rgba(255, 95, 168, 0); }
 }
 
-/* ...and the solo leaderboard's box (shared/solo-leaderboard.js) is made the same way */
-.howto-dialog, .board-dialog {
+/* ...and the solo leaderboard's box (shared/solo-leaderboard.js) and the account box (shared/account.js) are made the
+   same way */
+.howto-dialog, .board-dialog, .account-dialog {
   width: min(calc(100vw - 32px), 420px);
   max-height: none;
   padding: 0;
@@ -300,16 +301,16 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   overflow: visible;
 }
 
-.howto-dialog[open], .board-dialog[open] { animation: popIn 0.2s ease-out; }
+.howto-dialog[open], .board-dialog[open], .account-dialog[open] { animation: popIn 0.2s ease-out; }
 
-.howto-dialog::backdrop, .board-dialog::backdrop {
+.howto-dialog::backdrop, .board-dialog::backdrop, .account-dialog::backdrop {
   background: rgba(16, 14, 24, 0.6);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
 
 /* Scrolls inside itself on short screens */
-.howto-card, .board-card {
+.howto-card, .board-card, .account-card {
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
@@ -323,7 +324,7 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
    page runs under the status bar and home indicator (in a browser tab the page starts below them, and they're 0).
    It's a block of its own because a line with env() in it always replaces the line before, even where dvh is unknown. */
 @supports (max-height: 100dvh) {
-  .howto-card, .board-card {
+  .howto-card, .board-card, .account-card {
     max-height: calc(100dvh - 32px - 2 * max(env(safe-area-inset-top, 0px), env(safe-area-inset-bottom, 0px)));
   }
 }
@@ -560,6 +561,126 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   font-size: 13px;
   color: var(--ink-muted);
 }
+
+/* The account box (shared/account.js). Its head and close button are the leaderboard's (.board-head, .board-close),
+   and so is its loading line (.board-status). */
+.account-note {
+  margin: -6px 0 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.account-actions {
+  display: grid;
+  gap: 10px;
+}
+
+/* The providers' buttons, in their own colors: Google's white with its four-color G, Apple's black */
+.btn-google, .btn-apple { gap: 12px; }
+.btn-google { background: #fff; color: #1f1f1f; border: 2px solid var(--field-line); }
+.btn-apple { background: #000; color: #fff; }
+.btn-google svg, .btn-apple svg { width: 20px; height: 20px; flex: none; }
+.btn-apple svg { fill: currentColor; }
+
+/* Who you are: avatar, name and the pencil - or the name box, Save and × */
+.account-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--field);
+}
+
+.account-who .avatar { width: 40px; height: 40px; font-size: 18px; }
+
+.account-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-name.unnamed { color: var(--ink-muted); font-weight: 600; }
+
+.account-edit {
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.account-edit:hover { color: var(--ink); box-shadow: 0 0 0 2px var(--field-line); }
+
+.account-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 2px solid var(--field-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: 600 16px var(--font);
+}
+.account-input:focus { outline: none; border-color: var(--jam); box-shadow: 0 0 0 4px rgba(255, 95, 168, 0.18); }
+
+.account-meta {
+  margin: -6px 0 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-muted);
+}
+
+/* "Delete account" before it's confirmed: quiet, and red only when pointed at */
+.account-delete { color: var(--ink-muted); }
+.account-delete:hover { color: #be123c; border-color: #fecdd3; }
+
+/* ...and the question it opens */
+.account-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #fecdd3;
+  border-radius: 12px;
+  background: #fff1f2;
+}
+.account-confirm p { margin: 0; font-size: 14px; line-height: 1.45; color: #9f1239; }
+.account-confirm .account-actions { grid-template-columns: 1fr 1fr; }
+
+/* What went wrong with the last thing tried (a toast would be hidden under the box) */
+.account-msg {
+  margin: -6px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff1f2;
+  color: #be123c;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.account-fine {
+  margin: -4px 0 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+}
+.account-fine a { color: var(--you); font-weight: 600; text-underline-offset: 2px; }
 
 /* Little twinkling dots, spread across the screen */
 .sparkles { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }

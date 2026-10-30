@@ -1,4 +1,5 @@
-// Where solo mode and the admin page keep their things. Rooms are kept apart from these, in Redis (see store.js).
+// Where solo mode, Daily Jam, accounts and the admin page keep their things. Rooms are kept apart from these, in Redis
+// (see store.js).
 //
 // Solo mode (see solo.js) keeps each run while it's being played (its words, so the answers sent at the end can be
 // checked), and the leaderboard - every player's best score, and how many words it got. A leaderboard score is a single
@@ -6,6 +7,12 @@
 //
 // Daily Jam (see daily.js) keeps every day's words - the record that keeps a word from coming up again within a year -
 // each player's go at them (their tries and time), and their streaks.
+//
+// Accounts (see account.js): who has signed in with Google or Apple, and which browsers are signed in to which account.
+// Everything scored or remembered is kept under one text id - the hash of the browser's token, or the account's id
+// once the browser is linked to one - so linking is where a browser's history moves under the account (see
+// linkAccount). And who's on the site right now: the pages send a heartbeat with what the player is doing, for the
+// admin page, and the name they go by, for the Daily Jam board.
 //
 // The admin page (see admin.js) keeps counters that cap wrong passwords, two short logs (games, and sign-ins with what was
 // done on the page), the site's settings (a banner, games paused), and stats - how many rooms, rounds and solo runs there
@@ -15,10 +22,11 @@
 // which Supabase's GitHub integration applies on a push to main) they're kept there, so every server instance sees the same ones. It's reached through its HTTP API, one request per
 // call - nothing to connect or keep open, which suits Vercel's short-lived instances - and anything that has to happen
 // in one step is a function in the database.
-// Without one (local development), they stay in this process's memory.
+// Without one (local development), they stay in this process's memory - and the memory versions follow the database's
+// functions rule for rule, so the game plays the same either way.
 //
 // If Supabase stops answering (see fallbackData), runs and the admin page's things are kept in memory until it does,
-// and the leaderboard and Daily Jam can't be reached.
+// and the leaderboard, Daily Jam and accounts can't be reached.
 
 // The stats are kept by UTC hour, so the admin page can add them up into days in its own time zone.
 // hourStamp: '2026-10-27T13' for 1pm UTC, as statsFor and uniquePlayers take them.
@@ -30,8 +38,18 @@ const RUN_TTL = 15 * 60 * 1000;
 // Give up on a call this quickly, so the game can fall back to memory while Supabase is unreachable or slow
 const CALL_TIMEOUT = 3000;
 
+// The admin page's list of who's on the site stops at this many (live_players in supabase/migrations says the same
+// number), so a script making up tokens can't make it endless
+const LIVE_MAX = 500;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 // Days apart, for Daily Jam's days ('2026-10-28')
-const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / (24 * 60 * 60 * 1000));
+const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
+
+// A player who hasn't been seen in this long is forgotten by the players list, unless they're on the leaderboard or
+// have an account (as touch_player in supabase/migrations does)
+const PLAYER_TTL = 400 * DAY_MS;
 
 // supabase: { url, key } for a Supabase project, or nothing
 function createData(supabase) {
@@ -48,6 +66,10 @@ function memoryData() {
   const dailyWords = new Map();   // day -> { level -> { level, word, scramble } }
   const dailyPlays = new Map();   // 'day level playerId' -> { day, level, openedAt, guesses, solved, answer, ms }
   const dailyStreaks = new Map(); // player id -> { lastDay, current, best }
+  const accounts = new Map(); // account id -> { provider, name }: who has signed in
+  const links = new Map();    // device id -> account id: which browsers are signed in to which account
+  const people = new Map();   // id -> { name, mode, detail, since, seenAt, firstSeen }: everyone seen lately, and what
+                              // they're doing (the players table in supabase/migrations)
   let settings = null;
 
   function liveRun(id) {
@@ -56,9 +78,30 @@ function memoryData() {
     return runs.get(id);
   }
 
-  // Where everyone stands, as Supabase's functions work it out. below: a score to count the players under.
-  function standings(playerId, top, below) {
-    const board = [...scores].map(([id, entry]) => ({ id, ...entry })).sort((a, b) => b.score - a.score);
+  // The provider a player signed in with, if their id is an account's - what the boards show a ✓ for
+  const providerOf = (id) => (accounts.has(id) ? accounts.get(id).provider : null);
+
+  // The account a browser is signed in to, as accountFor has it
+  function accountOf(playerId) {
+    const accountId = links.get(playerId);
+    if (!accountId) return null;
+    const account = accounts.get(accountId);
+    return { id: accountId, provider: account.provider, name: account.name, devices: [...links.values()].filter(id => id === accountId).length };
+  }
+
+  // Notes the name a player goes by, for the boards and the players list, without touching what they're doing. A new
+  // player's row starts out with no mode - their heartbeat fills that in (see touchPlayer).
+  function noteName(id, name) {
+    const person = people.get(id);
+    if (!person) people.set(id, { name: name || '', mode: null, detail: {}, since: null, seenAt: Date.now(), firstSeen: Date.now() });
+    else if (name) person.name = name;
+  }
+
+  // Where everyone stands, as Supabase's functions work it out. below: a score to count the players under. offset:
+  // where top starts. Equal scores go by player id, last first, as the database orders them.
+  function standings(playerId, top, below, offset = 0) {
+    const board = [...scores].map(([id, entry]) => ({ id, ...entry, account: providerOf(id) }))
+      .sort((a, b) => b.score - a.score || (b.id > a.id ? 1 : -1));
     const rank = board.findIndex(entry => entry.id === playerId);
     return {
       total: board.length,
@@ -66,7 +109,7 @@ function memoryData() {
       rank: rank === -1 ? null : rank,
       best: rank === -1 ? null : board[rank].score,
       words: rank === -1 ? null : board[rank].words,
-      top: board.slice(0, top),
+      top: board.slice(Math.max(offset, 0), Math.max(offset, 0) + Math.max(top, 0)),
     };
   }
 
@@ -119,7 +162,64 @@ function memoryData() {
   const playsOn = (day) => [...dailyPlays].filter(([, play]) => play.day === day)
     .map(([key, play]) => ({ ...play, playerId: key.split(' ')[2], tries: play.guesses.length + 1 }));
 
+  // Every go of one player's, as [key, play] (ids have no spaces in them, so the key's end is theirs alone)
+  const playsOf = (playerId) => [...dailyPlays].filter(([key]) => key.endsWith(` ${playerId}`));
+
   const byLength = (a, b) => a.word.length - b.word.length;
+
+  // Whether go a at a word is the better of two by the same person (from two browsers, see linkAccount), as
+  // daily_play_beats in supabase/migrations has it: a finished one beats one still going, getting it beats missing it,
+  // then fewer tries, then faster. Equal goes aren't.
+  const playRank = (play) => [play.solved !== null, !!play.solved, -play.guesses.length, -(play.ms || 0)];
+  function beats(a, b) {
+    const [ra, rb] = [playRank(a), playRank(b)];
+    const i = ra.findIndex((v, at) => v !== rb[at]);
+    return i !== -1 && ra[i] > rb[i];
+  }
+
+  // A player's streak counted again from the days they've finished a word on (see linkAccount): the run of days in a
+  // row ending at the latest of them is the current one, and the longest run is their best - unless oldBest, from a
+  // streak row whose days are gone, was higher. Null if they've no finished word left.
+  function recountStreak(playerId, oldBest) {
+    const days = [...new Set(playsOf(playerId).filter(([, play]) => play.solved !== null).map(([, play]) => play.day))].sort();
+    if (!days.length) return null;
+    let run = 0;
+    let longest = 0;
+    days.forEach((day, i) => {
+      run = i > 0 && daysBetween(days[i - 1], day) === 1 ? run + 1 : 1;
+      longest = Math.max(longest, run);
+    });
+    return { lastDay: days[days.length - 1], current: run, best: Math.max(longest, oldBest) };
+  }
+
+  // Everyone who opened a word of the day, each with how they did over all of its words - got (how many they got),
+  // tries and ms (over the words they got, null if none), finished (got or not) - and each level's go
+  function dailyPeople(day) {
+    const rows = new Map();
+    for (const play of playsOn(day)) {
+      const row = rows.get(play.playerId) || { id: play.playerId, got: 0, tries: null, ms: null, finished: 0, levels: {} };
+      if (play.solved !== null) row.finished++;
+      if (play.solved) {
+        row.got++;
+        row.tries = (row.tries || 0) + play.tries;
+        row.ms = (row.ms || 0) + play.ms;
+      }
+      // tries here: the wrong ones and, if they got it, the one that did - so a missed word shows its 3 (play.tries, the
+      // try they're on, is for the board's sums over the words they got)
+      row.levels[play.level] = { solved: play.solved, tries: play.guesses.length + (play.solved ? 1 : 0), ms: play.ms };
+      rows.set(play.playerId, row);
+    }
+    return [...rows.values()];
+  }
+
+  // Numbers before nulls, as the database's "asc nulls last"
+  const nullsLast = (a, b) => (a === null) - (b === null) || a - b;
+
+  // The day's board's order (see daily_standings in supabase/migrations): most got first, then fewest tries, then
+  // fastest, then by id
+  const byStanding = (a, b) => b.got - a.got || nullsLast(a.tries, b.tries) || nullsLast(a.ms, b.ms) || (a.id < b.id ? -1 : 1);
+
+  const personName = (id) => (people.has(id) ? people.get(id).name : '');
 
   return {
     status: () => ({ store: 'memory', reason: null }),
@@ -144,19 +244,20 @@ function memoryData() {
     },
 
     // Puts score (a run that got `words` words) on the leaderboard if it's the player's best, under the name given
-    // (their latest), and says where everyone stands: { before (their best until now, or null), total, lower (players
-    // with a score under `below`), rank (0 = top), best, words (their best's), top: the first `top` entries, as
-    // { id, score, name, words } }
+    // (their latest, noted for the players list too), and says where everyone stands: { before (their best until now,
+    // or null), total, lower (players with a score under `below`), rank (0 = top), best, words (their best's), top:
+    // the first `top` entries, as { id, score, name, words, account (the provider they signed in with, or null) } }
     async addScore(playerId, score, name, words, below, top) {
       const old = scores.get(playerId);
       const best = old && old.score >= score ? old : { score, words };
       scores.set(playerId, { score: best.score, name, words: best.words });
+      noteName(playerId, name);
       return { before: old ? old.score : null, ...standings(playerId, top, below) };
     },
 
-    // The first `top` entries and where playerId stands: { total, rank, best, words, top } as for addScore
-    async leaderboard(top, playerId) {
-      const { total, rank, best, words, top: entries } = standings(playerId, top, -Infinity);
+    // Entries `offset` to `offset + top` and where playerId stands: { total, rank, best, words, top } as for addScore
+    async leaderboard(top, playerId, offset = 0) {
+      const { total, rank, best, words, top: entries } = standings(playerId, top, -Infinity, offset);
       return { total, rank, best, words, top: entries };
     },
 
@@ -248,15 +349,17 @@ function memoryData() {
       return wordsOn(day).map(w => ({ ...w }));
     },
 
-    // Opens a level of the day for a player, starting their clock unless it's going already (start false only looks).
-    // Resolves to their go: { level, guesses (the wrong ones), solved (null while playing), answer, ms, elapsed (ms since
-    // they opened it), word (once they've finished) } - or null if they haven't opened it.
-    async openDaily(day, level, playerId, start) {
+    // Opens a level of the day for a player, starting their clock unless it's going already (start false only looks),
+    // and notes the name they go by (for the day's board). Resolves to their go: { level, guesses (the wrong ones),
+    // solved (null while playing), answer, ms, elapsed (ms since they opened it), word (once they've finished) } - or
+    // null if they haven't opened it.
+    async openDaily(day, level, playerId, start, name) {
       const key = playKey(day, level, playerId);
       if (start && !dailyPlays.has(key)) {
         dailyPlays.set(key, { day, level, openedAt: Date.now(), guesses: [], solved: null, answer: null, ms: null });
         dailyPlays.forEach((play, k) => { if (daysBetween(play.day, day) > 400) dailyPlays.delete(k); });
       }
+      if (start) noteName(playerId, name);
       return dailyPlays.has(key) ? playJson(dailyPlays.get(key)) : null;
     },
 
@@ -380,6 +483,159 @@ function memoryData() {
       };
     },
 
+    // The day's board, as daily_board in supabase/migrations has it: everyone who finished a word that day, most words
+    // got first, then fewest tries and fastest over the words they got (then by id). { total, rank (1 = top, null if
+    // playerId hasn't finished a word), you: their row or null, top: rows `offset` to `offset + top`, each { rank, id,
+    // name (as noted, '' if never), got, tries, ms, finished, account } }
+    async dailyBoard(day, playerId, top, offset) {
+      const standings = dailyPeople(day).filter(row => row.finished > 0).sort(byStanding).map((row, i) => ({
+        rank: i + 1, id: row.id, name: personName(row.id), got: row.got, tries: row.tries, ms: row.ms, finished: row.finished, account: providerOf(row.id),
+      }));
+      const you = standings.find(row => row.id === playerId) || null;
+      return {
+        total: standings.length,
+        rank: you ? you.rank : null,
+        you,
+        top: standings.slice(Math.max(offset, 0), Math.max(offset, 0) + Math.max(top, 0)),
+      };
+    },
+
+    // For the admin page: everyone who opened a word of the day, as [{ id, name, account, streak: { current, best,
+    // lastDay } or null if they've never finished one, levels: { easy: { solved (null while playing), tries, ms },
+    // medium, hard } (a level missing wasn't opened) }], in the board's order with those who've finished nothing last
+    async dailyAdminPlayers(day) {
+      return dailyPeople(day).sort((a, b) => (b.finished > 0) - (a.finished > 0) || byStanding(a, b)).map((row) => {
+        const streak = dailyStreaks.get(row.id);
+        return {
+          id: row.id,
+          name: personName(row.id),
+          account: providerOf(row.id),
+          streak: streak ? { current: streak.current, best: streak.best, lastDay: streak.lastDay } : null,
+          levels: row.levels,
+        };
+      });
+    },
+
+    // Accounts. An account is a Supabase Auth user, { id (a uuid), provider ('google' or 'apple'), name }; its things
+    // are kept under its id as a player id.
+
+    // The account the browser with device id playerId is signed in to, as { id, provider, name, devices: how many
+    // browsers are signed in to it }, or null
+    async accountFor(playerId) {
+      return accountOf(playerId);
+    },
+
+    // Signs the browser in to the account (which is made if it's new, keeping its name once it has one) and moves the
+    // browser's history under it, as link_account in supabase/migrations does: the solo leaderboard keeps the higher
+    // best (with its words) under the account's name, each Daily Jam word keeps the better go (see beats), the streak
+    // is counted again (see recountStreak), and the players list keeps the earlier first visit. A browser signed in to
+    // another account moves over; its history stays with the old one. Resolves to the account, as accountFor.
+    async linkAccount(playerId, { id, provider, name }) {
+      // The table takes no account without an id or a provider (neither may be null in supabase/migrations), so
+      // neither does this - the same call fails the same way in either store, before anything is changed
+      if (id === null || id === undefined || provider === null || provider === undefined) {
+        throw new Error('linkAccount: an account needs an id and a provider');
+      }
+      const account = accounts.get(id) || { provider, name: '' };
+      account.provider = provider;
+      if (!account.name) account.name = name || '';
+      accounts.set(id, account);
+      links.set(playerId, id);
+      // Nothing to move if the browser's id is the account's own (it can't be, but a merge of a row with itself would
+      // lose it)
+      if (playerId === id) return accountOf(playerId);
+
+      const device = scores.get(playerId);
+      if (device) {
+        const mine = scores.get(id);
+        if (!mine) scores.set(id, device);
+        else if (device.score > mine.score) Object.assign(mine, { score: device.score, words: device.words });
+        scores.delete(playerId);
+      }
+      if (account.name && scores.has(id)) scores.get(id).name = account.name;
+
+      for (const [key, play] of playsOf(playerId)) {
+        const theirs = playKey(play.day, play.level, id);
+        if (!dailyPlays.has(theirs) || beats(play, dailyPlays.get(theirs))) dailyPlays.set(theirs, play);
+        dailyPlays.delete(key);
+      }
+
+      const deviceStreak = dailyStreaks.get(playerId) || null;
+      dailyStreaks.delete(playerId);
+      const myStreak = dailyStreaks.get(id) || null;
+      const deviceBest = deviceStreak ? deviceStreak.best : 0;
+      const recounted = recountStreak(id, Math.max(myStreak ? myStreak.best : 0, deviceBest));
+      if (recounted) dailyStreaks.set(id, recounted);
+      // No finished plays left, only the rows: the account's stands, with the best of both
+      else if (myStreak) myStreak.best = Math.max(myStreak.best, deviceBest);
+      else if (deviceStreak) dailyStreaks.set(id, deviceStreak);
+
+      const devicePerson = people.get(playerId);
+      const person = people.get(id);
+      const shown = account.name || (devicePerson ? devicePerson.name : '');
+      if (!person) {
+        people.set(id, { ...(devicePerson || { mode: null, detail: {}, since: null, seenAt: Date.now(), firstSeen: Date.now() }), name: shown });
+      } else {
+        if (shown) person.name = shown;
+        if (devicePerson) person.firstSeen = Math.min(person.firstSeen, devicePerson.firstSeen);
+      }
+      people.delete(playerId);
+      return accountOf(playerId);
+    },
+
+    // Signs the browser out: it starts fresh, and the account keeps everything. Resolves to whether it was signed in.
+    async unlinkAccount(playerId) {
+      return links.delete(playerId);
+    },
+
+    // The account's new name, everywhere it shows
+    async renameAccount(accountId, name) {
+      if (accounts.has(accountId)) accounts.get(accountId).name = name;
+      if (scores.has(accountId)) scores.get(accountId).name = name;
+      if (people.has(accountId)) people.get(accountId).name = name;
+    },
+
+    // Deletes the account and everything kept under it, signing its browsers out
+    async deleteAccount(accountId) {
+      scores.delete(accountId);
+      for (const [key] of playsOf(accountId)) dailyPlays.delete(key);
+      dailyStreaks.delete(accountId);
+      people.delete(accountId);
+      for (const [playerId, id] of links) if (id === accountId) links.delete(playerId);
+      accounts.delete(accountId);
+    },
+
+    // Who's on the site. A page's heartbeat (see account.js): player `id` is on `mode` ('home', 'solo', 'daily' or
+    // 'practice') doing `detail`, under `name` (kept if ''), at time `at`. 'gone' is the page being left: their mode is
+    // cleared and they're dated a day back, so livePlayers drops them at once. since only moves when the mode changes.
+    async touchPlayer(id, name, mode, detail, at = Date.now()) {
+      // Leaving makes no row: someone never heard from (a made-up token) has nothing to mark as gone
+      if (mode === 'gone' && !people.has(id)) return;
+      const person = people.get(id) || { name: '', mode: null, detail: {}, since: null, seenAt: at, firstSeen: at };
+      if (name) person.name = name;
+      if (mode === 'gone') {
+        person.mode = null;
+        person.seenAt = at - DAY_MS;
+      } else {
+        if (person.mode !== mode) person.since = at;
+        person.mode = mode;
+        person.detail = { ...detail };
+        person.seenAt = at;
+      }
+      people.set(id, person);
+      people.forEach((p, pid) => { if (p.seenAt < at - PLAYER_TTL && !scores.has(pid) && !accounts.has(pid)) people.delete(pid); });
+    },
+
+    // Everyone heard from in the last withinMs who hasn't left, by mode and then by who came first:
+    // [{ id, name, mode, detail, since (ms), seenAt (ms), account }] - at most LIVE_MAX of them
+    async livePlayers(withinMs) {
+      const now = Date.now();
+      return [...people].filter(([, p]) => p.mode !== null && p.seenAt > now - withinMs)
+        .sort(([, a], [, b]) => (a.mode < b.mode ? -1 : a.mode > b.mode ? 1 : a.since - b.since))
+        .slice(0, LIVE_MAX)
+        .map(([id, p]) => ({ id, name: p.name, mode: p.mode, detail: { ...p.detail }, since: p.since, seenAt: p.seenAt, account: providerOf(id) }));
+    },
+
     // Nothing to measure without Supabase
     async health() {
       return null;
@@ -419,7 +675,7 @@ function supabaseData(url, key) {
 
     addScore: (playerId, score, name, words, below, top) =>
       call('add_solo_score', { p_player_id: playerId, p_score: score, p_name: name, p_words: words, p_below: below, p_top: top }),
-    leaderboard: (top, playerId) => call('solo_standings', { p_top: top, p_player_id: playerId || '' }),
+    leaderboard: (top, playerId, offset = 0) => call('solo_standings', { p_top: top, p_player_id: playerId || '', p_offset: offset }),
     removeScore: (playerId) => call('remove_solo_score', { p_player_id: playerId }),
 
     bump: (name, windowMs) => call('bump_admin_counter', { p_name: name, p_window_ms: windowMs }),
@@ -453,8 +709,8 @@ function supabaseData(url, key) {
     dailyWords: (day) => call('daily_words_for', { p_day: day }),
     dailyWordsNear: (day, gap) => call('daily_words_near', { p_day: day, p_gap: gap }),
     addDailyWords: (day, words, gap) => call('add_daily_words', { p_day: day, p_words: words, p_gap: gap }),
-    openDaily: (day, level, playerId, start) =>
-      call('open_daily', { p_day: day, p_level: level, p_player_id: playerId, p_start: start }),
+    openDaily: (day, level, playerId, start, name) =>
+      call('open_daily', { p_day: day, p_level: level, p_player_id: playerId, p_start: start, p_name: name || '' }),
     guessDaily: (day, level, playerId, n, guess, right, tries) =>
       call('guess_daily', { p_day: day, p_level: level, p_player_id: playerId, p_try: n, p_guess: guess, p_right: right, p_tries: tries }),
     dailyPlayer: (day, playerId) => call('daily_player_day', { p_day: day, p_player_id: playerId }),
@@ -462,6 +718,25 @@ function supabaseData(url, key) {
       call('daily_stats', { p_day: day, p_level: level, p_player_id: playerId, p_tries: tries }),
     dailyAdminDay: (day, tries, top) => call('daily_admin_day', { p_day: day, p_tries: tries, p_top: top }),
     dailyAdminDays: (from, to) => call('daily_admin_days', { p_from: from, p_to: to }),
+    dailyBoard: (day, playerId, top, offset) =>
+      call('daily_board', { p_day: day, p_player_id: playerId || '', p_top: top, p_offset: offset }),
+    dailyAdminPlayers: (day) => call('daily_admin_players', { p_day: day }),
+
+    accountFor: (playerId) => call('account_for_player', { p_player_id: playerId }),
+    linkAccount: (playerId, { id, provider, name }) =>
+      call('link_account', { p_player_id: playerId, p_account_id: id, p_provider: provider, p_name: name || '' }),
+    unlinkAccount: (playerId) => call('unlink_account', { p_player_id: playerId }),
+    renameAccount: (accountId, name) => call('rename_account', { p_account_id: accountId, p_name: name }),
+    deleteAccount: (accountId) => call('delete_account', { p_account_id: accountId }),
+
+    // The database times the heartbeat itself (its now() is the same for every server instance), so `at` isn't sent
+    touchPlayer: (id, name, mode, detail) => call('touch_player', { p_id: id, p_name: name || '', p_mode: mode, p_detail: detail || {} }),
+
+    // Its times come as ISO strings, and go out as ms like the memory version's
+    async livePlayers(withinMs) {
+      const rows = await call('live_players', { p_within_ms: withinMs });
+      return rows.map(row => ({ ...row, since: row.since === null ? null : Date.parse(row.since), seenAt: Date.parse(row.seenAt) }));
+    },
 
     // How long a call takes to come back
     async health() {
@@ -478,7 +753,10 @@ function supabaseData(url, key) {
 function fallbackData(supabase, memory) {
   let outage = null; // { since, reason } while Supabase isn't answering
   let failures = 0;  // in a row
+  let touchFailedAt = 0; // when a dropped heartbeat was last logged
 
+  // An error Supabase answered with (a function that isn't there yet, between a deploy and its migration) isn't Supabase
+  // being down: that one call falls back, and the instance stays on Supabase for everything else (as attemptDaily).
   async function attempt(operation, onFailure) {
     if (outage) return onFailure();
     try {
@@ -486,7 +764,8 @@ function fallbackData(supabase, memory) {
       failures = 0;
       return result;
     } catch (err) {
-      supabaseFailed(err);
+      if (!err.status || err.status >= 500) supabaseFailed(err);
+      else console.error(`Supabase error (${err.message})`);
       return onFailure();
     }
   }
@@ -575,6 +854,25 @@ function fallbackData(supabase, memory) {
     dailyStats: (...args) => attemptDaily(() => supabase.dailyStats(...args)),
     dailyAdminDay: (...args) => attemptDaily(() => supabase.dailyAdminDay(...args)),
     dailyAdminDays: (...args) => attemptDaily(() => supabase.dailyAdminDays(...args)),
+    dailyBoard: (...args) => attemptDaily(() => supabase.dailyBoard(...args)),
+    dailyAdminPlayers: (...args) => attemptDaily(() => supabase.dailyAdminPlayers(...args)),
+
+    // Accounts and who's on the site are Supabase's alone too (an account has to be the same on every instance), so
+    // they go the same way as Daily Jam's
+    accountFor: (...args) => attemptDaily(() => supabase.accountFor(...args)),
+    linkAccount: (...args) => attemptDaily(() => supabase.linkAccount(...args)),
+    unlinkAccount: (...args) => attemptDaily(() => supabase.unlinkAccount(...args)),
+    renameAccount: (...args) => attemptDaily(() => supabase.renameAccount(...args)),
+    deleteAccount: (...args) => attemptDaily(() => supabase.deleteAccount(...args)),
+    livePlayers: (...args) => attemptDaily(() => supabase.livePlayers(...args)),
+
+    // Except the heartbeat: it's the most frequent call on the site and nothing waits on it, so one that fails is
+    // dropped - and said so at most once a minute, since every player's page sends one every 20 seconds
+    touchPlayer: (...args) => attemptDaily(() => supabase.touchPlayer(...args)).catch((err) => {
+      if (Date.now() - touchFailedAt < 60 * 1000) return;
+      touchFailedAt = Date.now();
+      console.error("Noting who's on the site failed:", err.message);
+    }),
 
     health: () => attempt(() => supabase.health(), () => null),
   };
