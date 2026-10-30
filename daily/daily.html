@@ -27,17 +27,26 @@
   <link rel="stylesheet" href="/css/game-state.css">
   <link rel="stylesheet" href="/solo/css/solo.css">
   <link rel="stylesheet" href="/daily/css/daily.css">
+  <link rel="stylesheet" href="/shared/board.css">
 
   <script defer src="/shared/app.js"></script>
+  <script defer src="/shared/config.js"></script>
   <script defer src="/shared/socket.js"></script>
   <script defer src="/shared/toast.js"></script>
   <script defer src="/shared/sfx.js"></script>
+  <script defer src="/shared/players.js"></script>
   <script defer src="/daily/js/daily.js"></script>
   <script defer src="/solo/js/tiles.js"></script>
   <script defer src="/daily/js/play.js"></script>
   <script defer src="/daily/js/result.js"></script>
   <!-- The room page's music, which follows `view` (see daily.js) -->
   <script defer src="/js/audio.js"></script>
+  <!-- Today's leaderboard (the same box as solo's, opened on its Daily tab), your account, who's on the site right now
+       (for the admin page), and PostHog - see each file -->
+  <script defer src="/shared/solo-leaderboard.js"></script>
+  <script defer src="/shared/account.js"></script>
+  <script defer src="/shared/presence.js"></script>
+  <script defer src="/shared/analytics.js"></script>
 
   <script src="/socket.io/socket.io.js"></script>
 
@@ -56,7 +65,7 @@
     }
   </script>
 </head>
-<body class="daily">
+<body class="daily" data-presence="daily">
 
   <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
@@ -95,6 +104,9 @@
         <li><span class="solo-rule-icon" aria-hidden="true">🏅</span><span>Fewer tries wins, then a faster time.</span></li>
       </ul>
     </div>
+
+    <!-- How today's players stand against each other (/shared/solo-leaderboard.js, on its Daily tab) -->
+    <button class="btn btn-glass" type="button" data-solo-leaderboard data-board="daily">🏆 Today's leaderboard</button>
 
     <p class="daily-foot">
       <span class="daily-streak" id="dayStreak" hidden></span>

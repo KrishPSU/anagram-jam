@@ -1,0 +1,125 @@
+/* The leaderboard box's tabs, and what came with them (shared/solo-leaderboard.js): the Solo | Daily switch, the ✓ on a
+   signed-in player's name, the Daily tab's columns and the Show more button. The box itself - the dialog, the card, the
+   rows, the gap and the count - is the board-* rules in theme.css, which still apply here. */
+
+/* Solo | Daily: a segmented control the width of the box, so both halves are easy to hit on a phone */
+.board-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--field);
+}
+
+.board-tabs button {
+  appearance: none;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.board-tabs button:hover { color: var(--ink); }
+.board-tabs button[aria-selected="true"] {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* What the tab shows, spaced like the card around it */
+.board-panel {
+  display: grid;
+  gap: 16px;
+}
+
+/* The name and the ✓ side by side: the name gives way, the ✓ never does */
+.board-row .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.board-row .name .text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Signed in */
+.board-badge {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--go);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+/* Daily rows have three numbers where solo's have two, so they're laid out as a grid with the numbers in a group of
+   their own - which can then drop under the name on a phone, where the one line would leave the name no room */
+.board-row.daily {
+  display: grid;
+  grid-template-columns: 30px 28px minmax(0, 1fr) auto;
+  grid-template-areas: "place avatar name stats";
+  column-gap: 10px;
+}
+.board-row.daily .place { grid-area: place; }
+.board-row.daily .avatar { grid-area: avatar; }
+.board-row.daily .name { grid-area: name; }
+.board-row.daily .board-stats { grid-area: stats; }
+
+.board-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+/* "5 tries" like "12 words" next to it (.board-row .words in theme.css), wide enough for two digits so the times line
+   up in a column */
+.board-stats .tries {
+  min-width: 4em;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wide enough for "12:05" */
+.board-stats .time {
+  min-width: 3.2em;
+  text-align: right;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 480px) {
+  .board-row.daily {
+    grid-template-columns: 30px 28px minmax(0, 1fr);
+    grid-template-areas:
+      "place avatar name"
+      "place avatar stats";
+    row-gap: 2px;
+  }
+
+  /* Under the name the numbers read left to right, so no columns to line up */
+  .board-stats .tries, .board-stats .time {
+    min-width: 0;
+    text-align: left;
+  }
+}
+
+/* Show more, centred under the rows */
+.board-more { justify-self: center; }
