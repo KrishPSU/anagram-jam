@@ -80,7 +80,7 @@ Sign in with Apple needs three things from [developer.apple.com/account](https:/
    - Return URLs: `https://<project-ref>.supabase.co/auth/v1/callback`
 
    Next, Done, Continue, Save.
-3. **A key.** Keys -> **+**. Key name `Anagram Jam sign-in`, tick **Sign in with Apple**, Configure -> Primary App ID
+3. **A key.** Keys -> **+**. Key name `Anagram Jam Sign In` (Apple refuses hyphens and most punctuation in key names), tick **Sign in with Apple**, Configure -> Primary App ID
    `com.krishchavan.anagramjam`, Save, Continue, Register. **Download** it: `AuthKey_XXXXXXXXXX.p8`, where
    XXXXXXXXXX is the **Key ID** shown on the same page. Apple lets you download it exactly once, so put it somewhere
    safe straight away (a password manager) and never in this folder: `npm run deploy` commits every new file.
