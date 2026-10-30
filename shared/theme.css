@@ -674,7 +674,7 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
 }
 
 .account-fine {
-  margin: -4px 0 0;
+  margin: 4px 0 0;
   text-align: center;
   font-size: 13px;
   line-height: 1.4;
