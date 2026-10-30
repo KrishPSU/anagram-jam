@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#232526">
-  <meta name="description" content="How to play Anagram Jam, answers to common questions, and how to reach us or report a player name.">
+  <meta name="description" content="How to play Anagram Jam, how accounts work, answers to common questions, and how to reach us or report a player name.">
   <title>Help | Anagram Jam</title>
 
   <!-- Favicon (browsers cache these hard - bump ?v= whenever the icon changes) -->
@@ -19,6 +19,9 @@
   <link rel="stylesheet" href="/info/info.css">
 
   <script defer src="/shared/app.js"></script>
+  <!-- PostHog, as on the game pages (see shared/analytics.js) -->
+  <script defer src="/shared/config.js"></script>
+  <script defer src="/shared/analytics.js"></script>
 </head>
 <body class="home">
   <a class="icon-btn home-btn" href="/" aria-label="Back to the home page" title="Back to the home page">🏠</a>
@@ -36,24 +39,36 @@
       <ul>
         <li><b>Rooms.</b> Type a nickname, tap <b>Create a room</b> and send your friends the 5-letter code or the invite link. You need at least 2 players. The round starts when everyone has tapped <b>I'm ready</b>. Spell a word that uses every letter of each scramble: the hidden word is worth 2 points, and any other real word from the same letters is worth 1. Each word has 30 seconds. The round ends as soon as someone gets through all 10 words, and the most points wins.</li>
         <li><b>Solo.</b> Two minutes to unscramble as many words as you can, and the clock never stops. Answer in under 3 seconds for a bonus point, and every 3 of those earns a hint. Your best score goes on the leaderboard.</li>
-        <li><b>Daily Jam.</b> Three words a day (5, 7 and 9 letters), the same for everyone, with 3 tries at each and no hints. New words arrive at midnight where you are.</li>
+        <li><b>Daily Jam.</b> Three words a day (5, 7 and 9 letters), the same for everyone, with 3 tries at each and no hints. New words arrive at midnight where you are. Everyone who finishes a word is on that day's leaderboard: most words, then fewest tries, then fastest.</li>
         <li><b>Practice.</b> No clock and no score. If you're stuck, tap 🤷 to see the word.</li>
+      </ul>
+
+      <h2>Your account</h2>
+      <ul>
+        <li><b>Do I need an account?</b> No. Everything works without one. Signing in is for playing on more than one device: it keeps one score across your phone and your laptop, and the leaderboards show your name instead of whatever nickname each device had.</li>
+        <li><b>How do I sign in?</b> Tap the 👤 button at the top of the home page, then <b>Continue with Google</b> or <b>Continue with Apple</b>. There's no password to make up: Google or Apple confirms it's you, and we get your name and email address. Sign in the same way on each device you play on.</li>
+        <li><b>What happens to my scores when I sign in?</b> They're merged. Your best solo score on this device and your account's best become one entry, the higher of the two, under your account's name: 35 on the laptop and 38 on the phone comes out as one 38. Daily Jam works the same way, day by day: if both played the same word, the better go is kept, and your streak is counted again from the combined days. From then on, what you do on this device counts for your account.</li>
+        <li><b>Why is there no Google button in the iPhone app?</b> Google doesn't allow signing in from inside an app's built-in browser, which is what the app is, so the app offers Apple. Google works on the website, in Safari or any other browser. If you play in both the app and a browser, sign in with Apple in both, so it's one account. (The app's first version can't sign in at all yet - it says so, and sends you to the website; its next update has it.)</li>
+        <li><b>How do I change my name?</b> If you're signed in, open the account box, tap the pencil next to your name, type a new one (up to 20 characters) and tap Save. The leaderboards show it straight away; a name that looks rude is refused. While you're signed in, the name box on the home page is locked to your account's name; otherwise, change your nickname there as before. If Apple didn't share your name, you'll see "Pick a name": tap it, or the pencil next to it.</li>
+        <li><b>How do I sign out?</b> Open the account box and tap <b>Sign out on this device</b>. It only affects this device: your account keeps everything, and this device starts over with no scores until you sign in again.</li>
+        <li><b>How do I delete my account?</b> Open the account box, tap <b>Delete account</b> and confirm. It removes the account, its solo score, its Daily Jam records and streak, and can't be undone. You can sign in again later, but you'll start from nothing.</li>
+        <li><b>I signed in, but my old score isn't there.</b> Scores are merged from the device you sign in on. If the score was made on another device, or in another browser (Safari and the iPhone app keep separate data), sign in there too and it joins your account.</li>
       </ul>
 
       <h2>Common questions</h2>
       <ul>
         <li><b>I can't get into a room.</b> Check the 5-letter code. If it's right but you see "No room found", or an invite link opens the home page with no code filled in, the room has closed. A room closes straight away when the last player taps 🏠 and leaves, or within about a minute after everyone just closes the game. Just make a new room.</li>
         <li><b>The app says "Can't reach Anagram Jam".</b> Check that you're online. If you are, the game itself may be having trouble. Either way, the app keeps trying and comes back by itself as soon as it can, or you can tap <b>Try again</b>.</li>
-        <li><b>My scores or streak aren't in the iPhone app.</b> The app keeps its own data, separate from Safari, so it starts fresh. Your old solo score is still on the leaderboard.</li>
+        <li><b>My scores or streak aren't in the iPhone app.</b> The app keeps its own data, separate from Safari, so it starts fresh. Sign in with Apple in both places and they merge into one account (the app's first version sends you to the website to sign in; from its next update you can sign in inside it). Your old solo score is on the leaderboard either way.</li>
         <li><b>How do I turn off sound and vibration?</b> Tap the speaker button in a game. It turns off the music, the sound effects and the vibration.</li>
-        <li><b>Can I change my nickname?</b> Yes, on the home page. On the leaderboard it changes after your next solo game where you score.</li>
+        <li><b>Can I change my nickname?</b> Yes, on the home page. On the leaderboard it changes after your next solo game where you score. If you're signed in, see "How do I change my name?" above.</li>
       </ul>
 
       <h2>Report a player name</h2>
-      <p>Nicknames that look rude are shown as "Player" on the solo leaderboard automatically. If you see an offensive one anywhere, in a room or on the leaderboard, email <a href="mailto:krishschavan@gmail.com">krishschavan@gmail.com</a> with the name and where you saw it (the room code, or "leaderboard"). We'll take it off the leaderboard and, while the room is still open, remove that player from it. If that player plays Solo again under the same name, it comes back, so tell us if you see it again.</p>
+      <p>Names that look rude are shown as "Player" on the leaderboards automatically. If you see an offensive one anywhere, in a room or on a leaderboard, email <a href="mailto:krishschavan@gmail.com">krishschavan@gmail.com</a> with the name and where you saw it (the room code, or "leaderboard"). We'll take it off the leaderboard and, while the room is still open, remove that player from it. If that player plays Solo again under the same name, it comes back, so tell us if you see it again.</p>
 
       <h2>Your information</h2>
-      <p>Anagram Jam has no accounts, no ads and no tracking. The <a href="/privacy">Privacy Policy</a> explains what the game keeps and how to have your nickname and score removed.</p>
+      <p>Anagram Jam has no ads and never sells anything about you, and you don't need an account to play. The <a href="/privacy">Privacy Policy</a> explains what the game keeps, what our analytics record and how to turn them off on your device, and how to have your name and score removed.</p>
 
       <h2>Contact</h2>
       <p><a href="mailto:krishschavan@gmail.com">krishschavan@gmail.com</a></p>

@@ -19,6 +19,9 @@
   <link rel="stylesheet" href="/info/info.css">
 
   <script defer src="/shared/app.js"></script>
+  <!-- PostHog, as on the game pages (shared/analytics.js, which also wires this page's "Turn off analytics" button) -->
+  <script defer src="/shared/config.js"></script>
+  <script defer src="/shared/analytics.js"></script>
 </head>
 <body class="home">
   <a class="icon-btn home-btn" href="/" aria-label="Back to the home page" title="Back to the home page">🏠</a>
@@ -27,16 +30,17 @@
     <header class="info-head">
       <p class="eyebrow">Anagram Jam</p>
       <h1>Privacy Policy</h1>
-      <p class="updated">Last updated October 28, 2026</p>
+      <p class="updated">Last updated October 29, 2026</p>
     </header>
 
     <article class="card info-card">
       <section class="summary">
         <h2>The short version</h2>
         <ul>
-          <li>No accounts, no ads and no tracking. We don't sell anything about you.</li>
-          <li>To play in a room or Solo, you type a nickname. Other players see it, and in Solo it can appear on the public leaderboard.</li>
-          <li>Your device makes a random code so the game can remember your scores and streaks. It isn't linked to your phone number, email or Apple ID.</li>
+          <li>You don't need an account to play. If you want one score across your phone and your laptop, you can sign in with Google or Apple. No ads, and we don't sell anything about you.</li>
+          <li>To play in a room or Solo, you type a nickname. Other players see it, and it can appear on the solo and Daily Jam leaderboards.</li>
+          <li>Your device makes a random code so the game can remember your scores and streaks. It isn't linked to your phone number, email or Apple ID unless you sign in.</li>
+          <li>We use PostHog to see how the game is used, including replays of play sessions with anything you type hidden. You can turn that off for your device under <a href="#choices">Your choices</a>.</li>
         </ul>
       </section>
 
@@ -45,61 +49,80 @@
 
       <h2>What we collect</h2>
       <ul>
-        <li><b>Your nickname.</b> Whatever you type in the "Your name" box, up to 20 characters. Other players see it, so please don't use your real full name or anything personal. Daily Jam and Practice don't ask for one.</li>
-        <li><b>A random player ID.</b> The first time you open a room, Solo or Daily Jam, your browser (or the app) makes a random code and keeps it on your device. Our server never stores that code itself, only a scrambled version of it (a hash), which is your player ID. That's how the game knows it's you when you come back: your seat in a room, your best solo score, your Daily Jam progress and your streak.</li>
+        <li><b>Your nickname.</b> Whatever you type in the "Your name" box, up to 20 characters. Other players see it, and so can anyone looking at the leaderboards, so please don't use your real full name or anything personal. Daily Jam and Practice don't ask for one, but if you've typed one on the home page, Daily Jam uses it on its leaderboard. If you're signed in, your account's name is used everywhere instead (see <a href="#accounts">Accounts</a>).</li>
+        <li><b>A random player ID.</b> The first time you open a room, Solo or Daily Jam, your browser (or the app) makes a random code and keeps it on your device. Our server never stores that code itself, only a scrambled version of it (a hash), which is your player ID. That's how the game knows it's you when you come back: your seat in a room, your best solo score, your Daily Jam progress and your streak. If you sign in, your scores and Daily Jam records are kept under your account instead, and the player ID is only used to tell which account this device belongs to.</li>
+        <li><b>Your account, if you sign in.</b> Signing in is optional. When you sign in with Google or Apple, it goes through Supabase Auth, which gives us your name, your email address and an ID from Google or Apple. Supabase Auth keeps your email address, the name (and, from Google, a link to your profile picture) they sent, and when you last signed in. Our own tables keep only your account's ID, whether it's a Google or an Apple account, and your display name, which you can change. We never see your Google or Apple password. If you use Apple's Hide My Email, all we get is the relay address.</li>
         <li><b>Your games.</b> Scores, the words you solved and how fast, the hints you used, your Daily Jam tries and streak, and the room you're in while you play.</li>
-        <li><b>Technical information.</b> Like every website, our hosting provider receives your IP address and basic details about your device and browser when your device connects, and keeps them briefly in its logs. Our server's logs can also include your nickname, your player ID and game events such as the answers you submit.</li>
+        <li><b>How you use the game.</b> On the game's pages we use PostHog, an analytics service: the pages you open, what you tap, your device and browser type, your IP address and a rough location (city and country) worked out from it, and a replay of your session. A replay is what was on your screen while you played - the page's layout and text, and where you tapped and scrolled - rebuilt from the page itself. It isn't a video or screenshots. Anything typed into a text box is hidden in replays, so what you type isn't recorded as you type it, but text on the page is: the words you've solved, the names in a room or on a leaderboard. PostHog gives your browser a random visitor ID. When you're signed in, we also tell PostHog your account's ID, and nothing else: not your name, not your email address.</li>
+        <li><b>Where you are in the game.</b> While you're on the site, your device tells our server every 20 seconds which part of the game you're on (the home page, Solo, Daily Jam or Practice) and how it's going - your points and word in a solo run, which Daily Jam word you're on, how many practice words you've solved - with your nickname or account name. Only the operator sees it, and only while you're there and for about a minute after.</li>
+        <li><b>Technical information.</b> Like every website, our hosting provider receives your IP address and basic details about your device and browser when your device connects, and keeps them briefly in its logs. PostHog receives them too (above). Our server's logs can also include your nickname, your player ID and game events such as the answers you submit.</li>
         <li><b>Emails you send us.</b> If you email us, we get your email address and whatever you write. We use them only to reply. They stay in our Gmail inbox (run by Google) until we delete them.</li>
         <li><b>Admin sign-ins.</b> If someone tries to sign in to the operator's private admin page, we log their IP address, rough location (city and country) and type of device, to protect it. Players never need that page.</li>
       </ul>
 
       <h2>What we don't collect</h2>
-      <p>The game doesn't ask for your email address, phone number, password or payment details. No location from players, and no contacts, photos, camera or microphone. No advertising identifiers. We don't use any outside analytics or advertising services, and we don't track you across other apps or websites. The iPhone app doesn't ask for any permissions.</p>
+      <p>The game never asks for a password of its own, a phone number or payment details, and unless you sign in, it doesn't get your email address either. No location from players (PostHog works out a rough one from your IP address, as above), and no contacts, photos, camera or microphone. No advertising identifiers and no ads. We don't track you across other apps or websites. The iPhone app doesn't ask for any permissions.</p>
 
       <h2>How we use it</h2>
-      <p>We use it to run the game: rooms, scores, the leaderboard, Daily Jam and streaks. We also use it to keep the game fair (for example, solo answers are checked again on our server), to deal with rude nicknames, to keep things working and fix problems, and to count things like games played and different players each day. We don't use it for anything else.</p>
-      <p>The legal reasons we can use it: it's needed to run the game you chose to play, and we have a legitimate interest in keeping the game fair and working, and in counting how many people play.</p>
+      <p>We use it to run the game: rooms, scores, the leaderboards, Daily Jam and streaks, and your account if you have one. We also use it to keep the game fair (for example, solo answers are checked again on our server), to deal with rude names, to keep things working and fix problems, to count things like games played and different players each day, and, through PostHog, to see how people actually use the game: where they get stuck, what they never find, what breaks on which phones. We don't use it for anything else.</p>
+      <p>The legal reasons we can use it: it's needed to run the game you chose to play, and we have a legitimate interest in keeping the game fair and working, in counting how many people play, and in understanding how the game is used. You can object to that last one by turning analytics off (under <a href="#choices">Your choices</a>).</p>
+
+      <h2 id="accounts">Accounts</h2>
+      <p>Everything works without an account. An account is for playing on more than one device: it keeps one score across your phone and your laptop, and the leaderboards show your name.</p>
+      <ul>
+        <li><b>Signing in</b> (the 👤 button on the home page) links this device to your account. Whatever this device had already done is merged into the account: of your two best solo scores, the higher one is kept; your Daily Jam records are combined day by day, keeping the better go at each word; and your streak is counted again from the combined days. From then on, what you do on this device counts for the account, under the account's name.</li>
+        <li><b>Your name</b> starts as the one Google or Apple gave us (Apple leaves it blank if you asked it to), and you can change it any time in the account box. Names that look rude are shown as "Player" to other players.</li>
+        <li><b>Sign out on this device</b> unlinks the device from the account. The account keeps everything, and this device starts over with no scores, until you sign in again.</li>
+        <li><b>Delete account</b>, in the account box, removes the account, its solo score, its Daily Jam records and streak, and the sign-in record at Supabase Auth, your email address included (if that last step fails, we finish it by hand). Anything already in our logs or at PostHog isn't deleted by that: it expires on its own schedule, described below, or email us to have it deleted sooner.</li>
+      </ul>
 
       <h2>Who can see what</h2>
       <ul>
-        <li><b>Other players in your room</b> see your nickname, whether you're ready or away, your progress and points during a round, the results, and your wins in that room. Their devices also receive your player ID, which the game uses behind the scenes and never shows. Anyone with a room's code or invite link can join it, so share it only with people you want to play with.</li>
-        <li><b>Anyone</b> can see the solo leaderboard: rank, nickname, words and points. Nicknames that look rude are shown there as "Player".</li>
-        <li><b>Daily Jam</b> shows other players only totals, such as how many people got a word on their first try. Never names.</li>
-        <li><b>The operator</b> (Krish Chavan) can see everything the game keeps, as described on this page. On a private admin page, the operator can also take names off the leaderboard, download a copy of it, remove players from rooms and close rooms.</li>
+        <li><b>Other players in your room</b> see your name, whether you're ready or away, your progress and points during a round, the results, and your wins in that room. Their devices also receive your player ID, which the game uses behind the scenes and never shows. Anyone with a room's code or invite link can join it, so share it only with people you want to play with.</li>
+        <li><b>Anyone</b> can see the leaderboards. The solo leaderboard: rank, name, words and points. The Daily Jam leaderboard: today's rank, name, how many words you got, in how many tries and how fast, for everyone who has finished a word that day. Both mark players who are signed in with a tick. Names that look rude are shown as "Player". Daily Jam also shows totals, such as how many people got a word on their first try.</li>
+        <li><b>The operator</b> (Krish Chavan) can see everything the game keeps, as described on this page. That includes names as typed, even ones shown as "Player", who's on the site right now and what they're doing, and PostHog's replays and analytics. On a private admin page, the operator can also take names off the leaderboard, download a copy of it, remove players from rooms and close rooms.</li>
       </ul>
 
       <h2>Services we use</h2>
       <p>We don't sell or share your information for advertising. It's handled by these services, only to run the game:</p>
       <ul>
         <li><b>Vercel</b> hosts the website and the game server, and keeps the server's logs.</li>
-        <li><b>Upstash</b> and <b>Supabase</b> store the game's data: live rooms, solo scores and the leaderboard, Daily Jam progress, game totals and the operator's logs.</li>
-        <li><b>Google Fonts</b> provides the game's typeface. Your device downloads it from Google, in the app too, so Google gets your IP address and basic browser details.</li>
+        <li><b>Upstash</b> keeps live rooms. <b>Supabase</b> stores the rest of the game's data: solo scores and the leaderboard, Daily Jam progress and streaks, accounts and which devices are linked to them, who's on the site, game totals and the operator's logs. Supabase Auth handles the sign-in with Google or Apple and keeps the email address and name they send.</li>
+        <li><b>Google</b> and <b>Apple</b>, if you sign in with them, confirm who you are and pass your name and email address to Supabase Auth. They know you signed in to Anagram Jam. Google also provides the game's typeface (Google Fonts): your device downloads it from Google, in the app too, so Google gets your IP address and basic browser details.</li>
+        <li><b>PostHog</b> collects the analytics and session replays described above, on its servers in the United States.</li>
         <li><b>Apple</b> distributes the iPhone app through the App Store and TestFlight.</li>
       </ul>
-      <p>Vercel, Upstash and Supabase handle your information only for us, and protect it at least as well as this policy does. Google and Apple handle what they get under their own privacy policies. Your information is stored in the United States.</p>
+      <p>Vercel, Upstash, Supabase and PostHog handle your information only for us, and protect it at least as well as this policy does. Google and Apple handle what they get under their own privacy policies. Your information is stored in the United States.</p>
 
       <h2>How long we keep it</h2>
       <ul>
         <li><b>Rooms:</b> deleted within about a minute after everyone leaves, or 12 hours after the last activity.</li>
-        <li><b>Solo games:</b> each game's record (your nickname, player ID, the words and your answers) is used for about 15 minutes to check your score. After that, it's deleted the next time anyone starts a solo game.</li>
-        <li><b>Solo leaderboard:</b> your best score and your latest nickname are kept with no time limit, until they're removed.</li>
-        <li><b>Daily Jam:</b> your tries, answers and times for each word are kept for about 400 days. Your streak is kept with no time limit.</li>
+        <li><b>Solo games:</b> each game's record (your name, player ID, the words and your answers) is used for about 15 minutes to check your score. After that, it's deleted the next time anyone starts a solo game.</li>
+        <li><b>Solo leaderboard:</b> your best score and your latest name are kept with no time limit, until they're removed or you delete your account.</li>
+        <li><b>Daily Jam:</b> your tries, answers and times for each word are kept for about 400 days. Your streak is kept with no time limit, until you delete your account.</li>
+        <li><b>Accounts:</b> until you delete the account. Which devices are linked to it: until you sign out on them.</li>
+        <li><b>Where you are in the game:</b> written over every time your device checks in, and shown as gone about a minute after it stops. Your name and when you were last seen stay until about 400 days after your last visit, or for as long as you have a leaderboard score or an account.</li>
         <li><b>Game totals:</b> which player IDs played in each hour is kept for about 35 days, to count players per day.</li>
-        <li><b>Admin logs:</b> the operator's logs keep the most recent 300 games (with nicknames and points) and the most recent 300 sign-ins and admin actions. Taking a player off the leaderboard or out of a room notes their nickname there.</li>
+        <li><b>Admin logs:</b> the operator's logs keep the most recent 300 games (with names and points) and the most recent 300 sign-ins and admin actions. Taking a player off the leaderboard or out of a room notes their name there.</li>
         <li><b>Server logs:</b> deleted automatically by our host, usually within a day.</li>
-        <li><b>On your device:</b> your nickname, your random code and a few settings (such as sound on or off) stay until you clear the site's data or delete the app. The game doesn't use cookies.</li>
+        <li><b>Analytics:</b> PostHog keeps session replays for 30 days and the other analytics events for a year.</li>
+        <li><b>On your device:</b> your nickname, your random code and a few settings (such as sound on or off) stay until you clear the site's data or delete the app, and the details of a sign-in you've started are usable for 10 minutes and cleared after that. PostHog keeps its random visitor ID and your analytics choice in a cookie and in your browser's storage for anagramjam.com, until you clear them. The game sets no other cookies; Google, Apple and Supabase may set their own on their pages while you sign in.</li>
       </ul>
 
-      <h2>Your choices</h2>
+      <h2 id="choices">Your choices</h2>
       <ul>
-        <li>Change your nickname at any time on the home page. Your leaderboard entry shows the new one after your next solo game where you score.</li>
-        <li>Clear your browser's data for anagramjam.com, or delete the app, to remove everything stored on your device. You'll start again with a new player ID. This doesn't delete what's already on our server.</li>
-        <li>Email <a href="mailto:krishschavan@gmail.com">krishschavan@gmail.com</a> to have your nickname and score taken off the leaderboard, or with any other request about your information. There are no accounts, so we can't always tell which records are yours: tell us your nickname and roughly when you played, and we'll remove what we can find and tell you what we removed. If you only play Daily Jam, there's no nickname to look for, so we usually can't find your plays. If you play Solo again after a removal, your new score goes back on the leaderboard. Server logs, and any backups our providers keep, aren't edited. They're deleted on their own schedule.</li>
+        <li>Change your nickname at any time on the home page. Your leaderboard entry shows the new one after your next solo game where you score. If you're signed in, change your name in the account box instead: the leaderboards show it straight away.</li>
+        <li>Turn off analytics on this device. It stops PostHog recording anything from this browser (or the app) from then on, replays included. It's remembered in this browser only, so do it on each device you play on, and again if you clear the site's data. What was already recorded expires on PostHog's schedule (replays in 30 days, events in a year), or email us to have it deleted.
+          <p><button type="button" class="btn btn-ghost btn-sm" id="analyticsOptOut">Turn off analytics on this device</button></p>
+        </li>
+        <li>Sign out on this device, in the account box, to stop this device counting for your account. Delete account, there too, to remove the account and everything under it (see <a href="#accounts">Accounts</a>).</li>
+        <li>Clear your browser's data for anagramjam.com, or delete the app, to remove everything stored on your device, your analytics choice included. You'll start again with a new player ID. This doesn't delete what's already on our server.</li>
+        <li>Email <a href="mailto:krishschavan@gmail.com">krishschavan@gmail.com</a> to have your name and score taken off the leaderboard, or with any other request about your information. If you're signed in, write from the email address you signed in with and we can find everything of yours. Otherwise there's no sure way to tell which records are yours: tell us your nickname and roughly when you played, and we'll remove what we can find and tell you what we removed. If you've never typed a nickname (Daily Jam and Practice don't need one), we usually can't find your plays. If you play Solo again after a removal, your new score goes back on the leaderboard. Server logs, and any backups our providers keep, aren't edited. They're deleted on their own schedule.</li>
       </ul>
       <p>Depending on where you live (for example the EU, the UK or California), you may have the right to ask for a copy of your information, to correct it, to have it deleted, or to object to or limit how we use it. Email us and we'll reply within a month. You can also complain to your local data protection authority.</p>
 
       <h2>Children</h2>
-      <p>Anagram Jam isn't directed at children under 13, and we don't knowingly collect personal information from them. A nickname shouldn't be a real name. If you think a child has put personal information in a nickname, email us. We'll take it off the leaderboard and out of our own records. Change the nickname on their device too, or it goes back on the leaderboard the next time they play Solo. Server logs can't be edited, but they're deleted on their own schedule.</p>
+      <p>Anagram Jam isn't directed at children under 13, and we don't knowingly collect personal information from them. Signing in is for players 13 and over, and a nickname shouldn't be a real name. If you think a child has put personal information in a nickname, or has signed in, email us. We'll take it off the leaderboards and out of our own records, and delete the account. Change the nickname on their device too, or it goes back on the leaderboard the next time they play Solo. Server logs can't be edited, but they're deleted on their own schedule.</p>
 
       <h2>Changes</h2>
       <p>If this policy changes, we'll update this page and the date at the top.</p>
