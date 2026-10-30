@@ -1,5 +1,7 @@
 // The Leaderboard tab: the whole solo board with each name as it was typed, a way to take someone off it, and exports.
 // It's read when the tab opens and on Refresh, not polled.
+//
+// Uses hiddenChip and accountChip from live.js.
 
 const boardListEl = document.getElementById('boardList');
 const boardStateEl = document.getElementById('boardState');
@@ -61,7 +63,7 @@ function boardRow(row) {
     el('span.lb-place', row.rank),
     avatarEl(row.name),
     el('div.lb-main',
-      el('span.lb-line', name, row.hidden ? el('span.chip.warn', { title: 'Everyone else sees this name as "Player"' }, 'Shows as Player') : null),
+      el('span.lb-line', name, row.hidden ? hiddenChip() : null, accountChip(row.account)),
       el('span.lb-meta', meta.join(' · ')),
     ),
     el('span.lb-points', plural(row.points, 'pt')),
@@ -90,6 +92,7 @@ function exportRows() {
     points: row.points,
     words: row.words,
     setAt: new Date(row.at).toISOString(),
+    account: row.account || null,
     id: row.id,
   }));
 }

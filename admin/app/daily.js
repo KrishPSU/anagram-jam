@@ -1,14 +1,16 @@
 // The Daily Jam tab: how a day's three words went - who played, how many tries it took, the times, the wrong tries
-// made most - then players each day and streaks. The server works them out (see adminDay and adminDays in daily.js at
-// the project root). Read when the tab opens, the day changes, or on Refresh - not polled.
+// made most - then each of the day's players and how their words went, then players each day and streaks. The server
+// works them out (see adminDay, adminPlayers and adminDays in daily.js at the project root). Read when the tab opens,
+// the day changes, or on Refresh - not polled.
 //
 // Days are dates as players have them (Daily Jam changes at each player's own midnight), and "today" is this
 // browser's. A day that could still be played here keeps its words hidden until "Show today's words" is ticked, so
 // opening the tab doesn't give away a Daily Jam you haven't done yet.
 //
-// Uses columnChart, dayLabel and chartResize from stats.js.
+// Uses columnChart, dayLabel and chartResize from stats.js, and nameLine from live.js.
 
 const JAM_LEVELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+const JAM_TRIES = 3; // a word's tries (TRIES in daily.js at the project root)
 const JAM_DAY_MS = 24 * 60 * 60 * 1000;
 
 const jamTitleEl = document.getElementById('jamTitle');
@@ -17,6 +19,9 @@ const jamStateEl = document.getElementById('jamState');
 const jamBodyEl = document.getElementById('jamBody');
 const jamLevelsEl = document.getElementById('jamLevels');
 const jamEmptyEl = document.getElementById('jamEmpty');
+const jamPlayersPaneEl = document.getElementById('jamPlayersPane');
+const jamPlayersTableEl = document.getElementById('jamPlayersTable');
+const jamPlayersEmptyEl = document.getElementById('jamPlayersEmpty');
 const jamChartEl = document.getElementById('jamChart');
 const jamTableEl = document.getElementById('jamTable');
 const jamStreaksEl = document.getElementById('jamStreaks');
@@ -128,7 +133,10 @@ function renderJamDay() {
   const finished = jamTotal(levels.map(l => l.opened - l.playing));
   const got = jamTotal(levels.map(l => jamTotal(l.got)));
   const unfinished = opened - finished;
-  document.getElementById('jamPlayers').textContent = report.players.toLocaleString();
+  // Who played comes as the list of them (see adminPlayers in daily.js at the project root); it was a count before that
+  const players = Array.isArray(report.players) ? report.players : [];
+  const playerCount = Array.isArray(report.players) ? players.length : report.players;
+  document.getElementById('jamPlayers').textContent = playerCount.toLocaleString();
   document.getElementById('jamPlayersSub').textContent = `${report.finished.toLocaleString()} finished a word`;
   document.getElementById('jamFinished').textContent = finished.toLocaleString();
   document.getElementById('jamFinishedSub').textContent = unfinished ? `${unfinished.toLocaleString()} opened, not finished` : `of ${plural(opened, 'word')} opened`;
@@ -141,6 +149,7 @@ function renderJamDay() {
   document.getElementById('jamEmptyTitle').textContent = `Nobody has opened Daily Jam #${report.number} yet`;
   const hide = jamHides(report.day);
   jamLevelsEl.replaceChildren(...levels.map(level => jamLevelCard(level, hide)));
+  renderJamPlayers(players, levels.length > 0);
 }
 
 // One of the day's words: its letters, how many tries people took, times, and the wrong tries made most
@@ -193,6 +202,44 @@ function jamChips(title, chips) {
     el('p.preview-label', title),
     el('div', chips.length ? chips.map(chip => el('span.word-chip', chip)) : el('span.jam-none', 'None yet')),
   );
+}
+
+
+// ---------- The day's players ----------
+
+// Everyone who opened one of the day's words, in the order the day's leaderboard has them (most words got, then fewest
+// tries, then fastest) with anyone still on a word at the end. Their streaks are as of today, like the Streaks pane's.
+// Nothing to show until someone has opened the day - the empty box above says so.
+function renderJamPlayers(players, opened) {
+  jamPlayersPaneEl.hidden = !opened;
+  jamPlayersEmptyEl.hidden = players.length > 0;
+  const levelNames = Object.keys(JAM_LEVELS);
+  jamPlayersTableEl.replaceChildren(...(players.length ? [
+    el('thead', el('tr', el('th', 'Player'), levelNames.map(level => el('th', JAM_LEVELS[level])), el('th', 'Streak'))),
+    el('tbody', players.map(player => el('tr',
+      el('td', el('div.jam-player', avatarEl(player.name), nameLine(player))),
+      levelNames.map(level => jamPlayerCell(player.levels && player.levels[level])),
+      jamStreakCell(player.streak),
+    ))),
+  ] : []));
+}
+
+// How one of the day's words went for a player: got it (in how many tries, and how long it took), missed it, still on
+// it, or never opened it
+function jamPlayerCell(play) {
+  if (!play) return el('td.jam-cell.none', '–');
+  if (play.solved === null || play.solved === undefined) return el('td.jam-cell.playing', 'playing');
+  if (!play.solved) return el('td.jam-cell.missed', `✗ ${plural(play.tries, 'try', 'tries')}`);
+  return el('td.jam-cell.got', `✓ ${play.tries}/${JAM_TRIES}${Number.isFinite(play.ms) ? ` · ${duration(play.ms)}` : ''}`);
+}
+
+// "🔥 3 (best 5)" while it's going (they finished a word today or yesterday), else what it got to before it ended
+function jamStreakCell(streak) {
+  if (!streak || !streak.best) return el('td.jam-cell.none', '–');
+  if (streak.lastDay < jamShift(jamToday(), -1)) {
+    return el('td.jam-cell.ended', { title: `Last finished a word on ${jamDayName(streak.lastDay)}` }, `Ended · best ${streak.best}`);
+  }
+  return el('td.jam-cell', `🔥 ${streak.current} (best ${streak.best})`);
 }
 
 

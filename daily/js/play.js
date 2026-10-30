@@ -50,7 +50,8 @@ function slotsChanged() {
 async function openWord(level, btn) {
   levelBtns.forEach(b => { b.disabled = true; });
   btn.classList.add('opening');
-  const reply = await request('daily-open', { day, level, token: playerToken() }).catch(() => null);
+  // The nickname from the home page goes along, for today's leaderboard and the admin page (an account's name wins over it)
+  const reply = await request('daily-open', { day, level, token: playerToken(), name: localStorage.getItem('name') || '' }).catch(() => null);
   levelBtns.forEach(b => { b.disabled = false; });
   btn.classList.remove('opening');
   if (!reply) {

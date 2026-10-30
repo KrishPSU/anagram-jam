@@ -29,12 +29,16 @@
   <link rel="stylesheet" href="/practice/css/practice.css">
 
   <script defer src="/shared/app.js"></script>
+  <script defer src="/shared/config.js"></script>
   <script defer src="/shared/toast.js"></script>
   <script defer src="/shared/sfx.js"></script>
   <script defer src="/practice/js/practice.js"></script>
   <script defer src="/solo/js/tiles.js"></script>
   <!-- The room page's music, which follows `view` (see practice.js) -->
   <script defer src="/js/audio.js"></script>
+  <!-- Who's on the site right now (for the admin page), and PostHog - see each file -->
+  <script defer src="/shared/presence.js"></script>
+  <script defer src="/shared/analytics.js"></script>
 
   <!-- Service Worker Registration -->
   <script>
@@ -51,7 +55,7 @@
     }
   </script>
 </head>
-<body class="game">
+<body class="game" data-presence="practice">
 
   <div class="sparkles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
 

@@ -180,3 +180,7 @@ retryBtn.addEventListener('click', loadWords);
 
 // Every script on the page has run by now, tiles.js's included
 document.addEventListener('DOMContentLoaded', loadWords);
+
+
+// For the admin page's "People on the site" (see /shared/presence.js): how many words you've got so far
+window.presenceDetail = () => ({ solved });

@@ -117,3 +117,11 @@ document.addEventListener('DOMContentLoaded', () => {
   showView('intro');
   showBest();
 });
+
+
+// For the admin page's "People on the site" (see /shared/presence.js): which screen you're on, and the run so far
+window.presenceDetail = () => ({
+  state: view === 'game' ? 'run' : view === 'results' ? 'results' : 'intro',
+  points: typeof points === 'number' ? points : 0,
+  level: typeof level === 'number' ? level : 0,
+});

@@ -236,3 +236,10 @@ document.addEventListener('DOMContentLoaded', () => {
   tickDay();
   loadDay();
 });
+
+
+// For the admin page's "People on the site" (see /shared/presence.js): today's list, or which word you're on
+window.presenceDetail = () => ({
+  state: view === 'game' ? 'word' : 'day',
+  level: view === 'game' && typeof current === 'object' && current ? current.level : '',
+});

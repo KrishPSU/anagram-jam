@@ -1,11 +1,15 @@
-// The Live tab: who's playing right now, room by room, with a way to close a room or take someone out of one. It asks
-// again every few seconds while it's on screen. Each ask costs a couple of Redis commands, so it stops while the tab is
-// hidden, paused, or nobody has touched the page for IDLE_AFTER.
+// The Live tab: who's on the site right now - everyone with a game page open, by what they're doing - and the rooms,
+// room by room, with a way to close a room or take someone out of one. It asks again every few seconds while it's on
+// screen. Each ask costs a couple of Redis commands and a Supabase read, so it stops while the tab is hidden, paused,
+// or nobody has touched the page for IDLE_AFTER.
+//
+// nameLine, hiddenChip and accountChip here are used by the Leaderboard and Daily Jam tabs too.
 
 const LIVE_EVERY = 5000;
 const IDLE_AFTER = 10 * 60 * 1000;
 
 const kpiEls = {
+  people: document.getElementById('kpiPeople'),
   players: document.getElementById('kpiPlayers'),
   playing: document.getElementById('kpiPlaying'),
   rooms: document.getElementById('kpiRooms'),
@@ -15,6 +19,8 @@ const deployLine = document.getElementById('deployLine');
 const deployTitle = document.getElementById('deployTitle');
 const deployText = document.getElementById('deployText');
 const pausedLine = document.getElementById('pausedLine');
+const peopleListEl = document.getElementById('peopleList');
+const peopleEmptyEl = document.getElementById('peopleEmpty');
 const roomListEl = document.getElementById('roomList');
 const roomsEmptyEl = document.getElementById('roomsEmpty');
 const liveStateEl = document.getElementById('liveState');
@@ -67,6 +73,7 @@ setInterval(showUpdated, 1000);
 
 function renderLive() {
   const { totals, rooms, storage, settings, now } = overview;
+  kpiEls.people.textContent = totals.people === undefined ? '–' : totals.people;
   kpiEls.players.textContent = totals.players;
   kpiEls.playing.textContent = totals.playing;
   kpiEls.rooms.textContent = totals.rooms;
@@ -90,10 +97,94 @@ function renderLive() {
   }
   pausedLine.hidden = !settings.paused;
 
+  renderPeople(Array.isArray(overview.people) ? overview.people : [], now);
   roomsEmptyEl.hidden = rooms.length > 0;
   roomListEl.replaceChildren(...rooms.map(room => roomCard(room, now)));
   showUpdated();
 }
+
+
+// ---------- People on the site ----------
+
+// Everyone with a game page open, by which page: their pages check in every 20 seconds (see /shared/presence.js) and
+// the server keeps whoever has checked in within the last minute (livePlayers in data.js). Rooms aren't in here - a
+// room's page doesn't check in, the room itself is listed below.
+const PEOPLE_GROUPS = { solo: 'Solo', daily: 'Daily Jam', practice: 'Practice', home: 'Home' };
+const DAILY_WORD_NAMES = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+
+function renderPeople(people, now) {
+  peopleEmptyEl.hidden = people.length > 0;
+  // The four pages in this order, then anything else the server might send, each only when someone's there
+  const groups = new Map(Object.keys(PEOPLE_GROUPS).map(mode => [mode, []]));
+  for (const person of people) {
+    if (!groups.has(person.mode)) groups.set(person.mode, []);
+    groups.get(person.mode).push(person);
+  }
+  peopleListEl.replaceChildren(...[...groups].filter(([, list]) => list.length).map(([mode, list]) => el('section.people-group', { 'aria-label': PEOPLE_GROUPS[mode] || mode },
+    el('header.people-head', el('h3', PEOPLE_GROUPS[mode] || mode), el('span.chip.muted', plural(list.length, 'person', 'people'))),
+    el('ul.room-players', list.map(person => personRow(person, now))),
+  )));
+}
+
+// What someone's up to, from what their page sends along (presenceDetail in solo/js/solo.js, daily/js/daily.js and
+// practice/js/practice.js). Nothing for the home page.
+function doing(person) {
+  const detail = person.detail || {};
+  const n = (value) => (Number.isFinite(value) ? value : 0);
+  if (person.mode === 'solo') {
+    if (detail.state === 'run') return `In a run · ${plural(n(detail.points), 'pt')} · word ${n(detail.level) + 1}`;
+    if (detail.state === 'results') return 'Reading results';
+    if (detail.state === 'intro') return 'On the start screen';
+  }
+  if (person.mode === 'daily') {
+    if (detail.state === 'word') return DAILY_WORD_NAMES[detail.level] ? `On the ${DAILY_WORD_NAMES[detail.level]} word` : 'On a word';
+    if (detail.state === 'day') return 'On today’s words';
+  }
+  if (person.mode === 'practice' && detail.solved !== undefined) return `${n(detail.solved).toLocaleString()} solved`;
+  return '';
+}
+
+function personRow(person, now) {
+  const what = doing(person);
+  return el('li.player-row',
+    avatarEl(person.name),
+    el('div.player-main',
+      nameLine(person),
+      what ? el('span.player-meta', el('span.player-progress', what)) : null,
+    ),
+    el('span.player-when',
+      el('span', ago(person.seenAt, now)),
+      person.since ? el('span', `for ${duration(now - person.since)}`) : null,
+    ),
+  );
+}
+
+// A player's name as they typed it, with what goes with it: "Shows as Player" when it has swear words in it (everyone
+// else sees "Player" - see shownName in solo.js at the project root), and which account they're signed in with
+function nameLine({ name, hidden, account }) {
+  return el('span.player-line',
+    name ? el('span.player-name', { title: name }, name) : el('span.player-name.unnamed', 'No name'),
+    hidden ? hiddenChip() : null,
+    accountChip(account),
+  );
+}
+
+function hiddenChip() {
+  return el('span.chip.warn', { title: 'Everyone else sees this name as "Player"' }, 'Shows as Player');
+}
+
+// "Google" or "Apple": the server sends the provider's name (see account.js at the project root), or null for someone
+// who isn't signed in
+const PROVIDERS = { google: 'Google', apple: 'Apple' };
+function accountChip(account) {
+  const provider = typeof account === 'string' ? account : account && account.provider;
+  if (!provider) return null;
+  const name = PROVIDERS[provider] || provider;
+  return el('span.chip.account', { title: `Signed in with ${name}` }, name);
+}
+
+
+// ---------- Rooms ----------
 
 const PHASES = {
   playing: ['Playing', 'go'],

@@ -63,7 +63,8 @@
 
     <!-- Live: who's playing right now (live.js) -->
     <section class="panel" id="panel-live" role="tabpanel" aria-labelledby="tab-live" hidden>
-      <div class="kpis">
+      <div class="kpis kpis-5">
+        <div class="kpi" title="Everyone on the home page or playing solo, Daily Jam or practice in the last minute. Rooms are counted separately."><p class="kpi-label">On the site</p><p class="kpi-value" id="kpiPeople">–</p></div>
         <div class="kpi"><p class="kpi-label">Players in rooms</p><p class="kpi-value" id="kpiPlayers">–</p></div>
         <div class="kpi"><p class="kpi-label">Playing a round</p><p class="kpi-value" id="kpiPlaying">–</p></div>
         <div class="kpi"><p class="kpi-label">Rooms open</p><p class="kpi-value" id="kpiRooms">–</p></div>
@@ -75,16 +76,26 @@
         <p class="status-line warn" id="pausedLine" hidden><i class="dot" aria-hidden="true"></i><b>New games are paused</b><span>Nobody can create a room or start a solo run.</span><button class="link-btn" type="button" data-goto="controls">Change</button></p>
       </div>
 
+      <p class="state" id="liveState" hidden></p>
+
+      <!-- Everyone with a game page open, grouped by which (their pages check in - see /shared/presence.js). Rooms
+           are listed on their own below: a room's page doesn't check in, the room itself is what shows. -->
       <div class="section-head">
-        <h2>Rooms</h2>
+        <h2>People on the site</h2>
         <div class="section-tools">
-          <label class="check"><input type="checkbox" id="showWords"> Show the words</label>
           <span class="updated" id="liveUpdated"></span>
           <button class="btn btn-glass btn-sm" id="livePauseBtn" type="button">Pause updates</button>
         </div>
       </div>
+      <div class="people" id="peopleList"></div>
+      <p class="people-none" id="peopleEmpty" hidden>Nobody is on the site right now (rooms are listed below).</p>
 
-      <p class="state" id="liveState" hidden></p>
+      <div class="section-head">
+        <h2>Rooms</h2>
+        <div class="section-tools">
+          <label class="check"><input type="checkbox" id="showWords"> Show the words</label>
+        </div>
+      </div>
       <div class="rooms" id="roomList"></div>
       <div class="empty" id="roomsEmpty" hidden>
         <p class="empty-title">No rooms open right now</p>
@@ -144,6 +155,15 @@
           <p class="empty-title" id="jamEmptyTitle"></p>
           <p>Its words are picked when the first player opens it.</p>
         </div>
+
+        <!-- Everyone who opened one of the day's words, and how each went for them. No words in here, so nothing to
+             hide behind "Show today's words". -->
+        <section class="pane" id="jamPlayersPane" hidden>
+          <h3>Players</h3>
+          <p class="pane-sub">Most words got first, then fewest tries, then fastest; anyone still on a word is at the end. Streaks are as of today.</p>
+          <div class="jam-players-wrap"><table class="jam-players" id="jamPlayersTable"></table></div>
+          <p class="jam-none" id="jamPlayersEmpty" hidden>Nobody has opened today's words yet.</p>
+        </section>
 
         <div class="jam-bottom">
           <section class="pane chart-pane">
