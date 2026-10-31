@@ -88,8 +88,10 @@ body:not(.lobby) .lobby-help { display: none; }
 }
 .status .spinner { margin-right: 8px; vertical-align: -0.2em; }
 
+/* As wide as the card, not as the longest name would like - a long one is cut short instead (.player-name) */
 .players {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 

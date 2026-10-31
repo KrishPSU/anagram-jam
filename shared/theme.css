@@ -466,10 +466,11 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   color: var(--ink-muted);
 }
 
-/* The solo leaderboard's rows */
+/* The solo leaderboard's rows. The note sits 10px under the tabs, a little closer than the rows under it. */
 .board-note {
-  margin: -10px 0 0;
+  margin: -6px 0 0;
   font-size: 14px;
+  line-height: 1.4;
   color: var(--ink-muted);
 }
 
@@ -564,6 +565,16 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
 
 /* The account box (shared/account.js). Its head and close button are the leaderboard's (.board-head, .board-close),
    and so is its loading line (.board-status). */
+
+/* What's in it, spaced like the card around it (as .board-panel is in board.css) - the small negative margins below
+   pull a line in closer to what it's about. One column as wide as the box, so the name box, Save and × stay inside
+   it. */
+.account-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
 .account-note {
   margin: -6px 0 0;
   font-size: 15px;
@@ -659,6 +670,8 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
 }
 .account-confirm p { margin: 0; font-size: 14px; line-height: 1.45; color: #9f1239; }
 .account-confirm .account-actions { grid-template-columns: 1fr 1fr; }
+/* Half the box each, so on a phone "Delete everything" takes two lines - the buttons grow to give them room */
+.account-confirm .btn { height: auto; min-height: 36px; padding-top: 6px; padding-bottom: 6px; line-height: 1.25; }
 
 /* What went wrong with the last thing tried (a toast would be hidden under the box) */
 .account-msg {
@@ -674,7 +687,7 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
 }
 
 .account-fine {
-  margin: 4px 0 0;
+  margin: -4px 0 0;
   text-align: center;
   font-size: 13px;
   line-height: 1.4;

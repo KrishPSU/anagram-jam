@@ -9,11 +9,18 @@
 // under the account's name. Signing out on a device only unlinks it - the device starts afresh, the account keeps
 // everything.
 //
-// Signing in is Supabase Auth's doing, without supabase-js (a few HTTP calls do). The page sends the browser to
-// Supabase's authorize page with a PKCE challenge, Supabase sends it back to /account/callback with a code, and the
-// callback page hands the code and its verifier to the server (POST /account/link), which trades them for the user with
-// Supabase and links the device to it (see link). Supabase's tokens are never kept or logged - all the server wants to
-// know is who the user is. Deleting an account removes its game data, then the Supabase user (see remove).
+// Signing in is Supabase Auth's doing, without supabase-js (a few HTTP calls do), and it goes one of two ways:
+// - Straight, for a provider the server has a client id for (GOOGLE_CLIENT_ID, APPLE_CLIENT_ID): the page sends the
+//   browser to Google's or Apple's own sign-in page, which sends it straight back here (POST /account/return/<provider>,
+//   see returned) with an ID token. So all a player sees is "Anagram Jam" and anagramjam.com - never Supabase's address,
+//   which Google otherwise puts on its page ("to continue to <project>.supabase.co"). The callback page hands the token,
+//   with the nonce it was made for, to the server (POST /account/link), which has Supabase check it (grant_type
+//   id_token) and links the device to the user (see link).
+// - Through Supabase, for the others: the page sends the browser to Supabase's authorize page with a PKCE challenge,
+//   Supabase sends it back to /account/callback with a code, and the callback page hands the code and its verifier to
+//   the server, which trades them for the user with Supabase and links the device the same way.
+// Supabase's tokens are never kept or logged either way - all the server wants to know is who the user is. Deleting an
+// account removes its game data, then the Supabase user (see remove).
 //
 // Also here: who's on the site right now, for the admin page (see presence). Each page says every 20 seconds which mode
 // it's on and how it's going (see shared/presence.js), and that's kept in the store under the player's subject id.
@@ -43,18 +50,25 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // works it out. supabase: { url, key } for the Supabase project, or nothing - then nobody can sign in. posthog: { key,
 // host } for the pages' analytics (see shared/analytics.js) - no key, no analytics. providers: the ways to sign in to
 // offer (from AUTH_PROVIDERS), out of PROVIDERS.
-// note(entry): a line for the admin page's sign-ins & changes log, for the one thing here the owner has to finish by
-// hand (see remove).
-function createAccounts({ store, playerIdFor, supabase, posthog, providers = PROVIDERS, note = () => {} }) {
+// clients: { google, apple } - Google's OAuth client id and Apple's Services ID, for each provider whose sign-in page the
+// pages should go to straight (see the top of the file). note(entry): a line for the admin page's sign-ins & changes log,
+// for the one thing here the owner has to finish by hand (see remove).
+function createAccounts({ store, playerIdFor, supabase, posthog, providers = PROVIDERS, clients = {}, note = () => {} }) {
   const enabled = !!supabase;
   const supabaseUrl = enabled ? supabase.url.replace(/\/+$/, '') : null;
   const offered = providers.map(provider => String(provider).trim().toLowerCase()).filter(provider => PROVIDERS.includes(provider));
+  // The providers signed in with straight, and the client id each knows this site by. Public values - they're in every
+  // sign-in link. Supabase checks an ID token was made for one of the client ids in its own settings for the provider.
+  const direct = Object.fromEntries(offered
+    .filter(provider => typeof clients[provider] === 'string' && clients[provider].trim())
+    .map(provider => [provider, clients[provider].trim()]));
 
-  // What the pages need to know (GET /site-config.json): whether they can offer signing in, and with what, and where
-  // their analytics go. Nothing secret - the pages send browsers to the Supabase address, and a PostHog key is public.
+  // What the pages need to know (GET /site-config.json): whether they can offer signing in, and with what (clients: the
+  // providers to go to straight, with their client ids), and where their analytics go. Nothing secret - the pages send
+  // browsers to these addresses, and a PostHog key is public.
   function config() {
     return {
-      accounts: { enabled, providers: offered, supabaseUrl },
+      accounts: { enabled, providers: offered, supabaseUrl, clients: enabled ? direct : {} },
       posthog: posthog && typeof posthog.key === 'string' && posthog.key ? { key: posthog.key, host: posthog.host } : null,
     };
   }
@@ -147,23 +161,37 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
 
   // ---------- Signing in and out ----------
 
-  // Signs the device whose browser holds `token` in: `code` is what Supabase sent the callback page back with, and
-  // `verifier` the PKCE secret the page made up before it left (see shared/account.js). The code is traded for the
-  // user here, so the page never holds anything more than the code - no good to anyone without the verifier, and used
-  // up at once. The device's own history goes into the account (see the top of the file).
+  // Signs the device whose browser holds `token` in, one of two ways (see the top of the file):
+  // - straight from Google or Apple: `provider`, the `idToken` it sent back, and the `nonce` the page made up before
+  //   it left (shared/account.js), whose hash is in the token - only this browser had it, so a token caught on its way
+  //   is no good to anyone else. `name` is Apple's, which it puts in its reply rather than the token (see returned).
+  // - through Supabase: `code`, what Supabase sent the callback page back with, and `verifier`, the PKCE secret the page
+  //   made up - the code is traded for the user here, so the page never holds more than the code, used up at once.
+  // The device's own history goes into the account (see the top of the file).
   // Replies { status: 'ok', account } or { status } 'off' (there's nobody to sign in with - no Supabase), 'bad',
-  // 'denied' (Supabase wouldn't take the code: used already, run out, or not one of its own) or 'unavailable'.
-  async function link({ token, code, verifier } = {}) {
+  // 'denied' (Supabase wouldn't take the token or code: used already, run out, or not made for this site) or
+  // 'unavailable'.
+  async function link({ token, code, verifier, provider: from, idToken, nonce, name: appleName } = {}) {
     if (!enabled) return { status: 'off' };
-    // A code is Supabase's own (a uuid, as it happens) and a PKCE verifier is 43 to 128 of these characters (RFC 7636):
-    // anything that can't be either isn't sent on, since every player's calls to Supabase Auth share this server's
-    // rate limit there
-    const isCode = (value) => typeof value === 'string' && /^[A-Za-z0-9._~-]{16,128}$/.test(value);
-    const isVerifier = (value) => typeof value === 'string' && /^[A-Za-z0-9._~-]{43,128}$/.test(value);
-    if (!isToken(token) || !isCode(code) || !isVerifier(verifier)) return { status: 'bad' };
+    if (!isToken(token)) return { status: 'bad' };
+    // Anything that can't be what it says isn't sent on, since every player's calls to Supabase Auth share this
+    // server's rate limit there: an ID token is three base64url parts, a nonce is 43 of those characters (the page's are),
+    // a code is Supabase's own (a uuid, as it happens) and a PKCE verifier is 43 to 128 of these characters (RFC 7636)
+    let exchange;
+    if (from !== undefined) {
+      const isIdToken = (value) => typeof value === 'string' && value.length <= 8192 && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value);
+      const isNonce = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{32,128}$/.test(value);
+      if (typeof from !== 'string' || !Object.hasOwn(direct, from) || !isIdToken(idToken) || !isNonce(nonce)) return { status: 'bad' };
+      exchange = () => auth('POST', 'token?grant_type=id_token', { body: { provider: from, id_token: idToken, nonce } });
+    } else {
+      const isCode = (value) => typeof value === 'string' && /^[A-Za-z0-9._~-]{16,128}$/.test(value);
+      const isVerifier = (value) => typeof value === 'string' && /^[A-Za-z0-9._~-]{43,128}$/.test(value);
+      if (!isCode(code) || !isVerifier(verifier)) return { status: 'bad' };
+      exchange = () => auth('POST', 'token?grant_type=pkce', { body: { auth_code: code, code_verifier: verifier } });
+    }
     let user;
     try {
-      ({ user } = await auth('POST', 'token?grant_type=pkce', { body: { auth_code: code, code_verifier: verifier } }));
+      ({ user } = await exchange());
     } catch (err) {
       console.error('Signing in failed:', err.message);
       return { status: err.status && err.status < 500 ? 'denied' : 'unavailable' };
@@ -174,9 +202,10 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
       return { status: 'unavailable' };
     }
     // Google gives a full name; Apple does too unless they hid it, and only the first time - then the account keeps the
-    // name it has (see link_account)
+    // name it has (see link_account). Straight from Apple, the name came with its reply to the page, not in the token.
     const metadata = user.user_metadata || {};
-    const name = cleanName(typeof metadata.full_name === 'string' && metadata.full_name ? metadata.full_name : metadata.name);
+    const name = cleanName(typeof metadata.full_name === 'string' && metadata.full_name ? metadata.full_name : metadata.name)
+      || (provider === 'apple' ? cleanName(appleName) : '');
     const playerId = playerIdFor(token);
     let account;
     try {
@@ -193,6 +222,28 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
     }
     console.log(`Account linked: ${provider}${account.name ? ` "${account.name}"` : ''} (${plural(account.devices, 'device')})`);
     return { status: 'ok', account };
+  }
+
+  // What Google or Apple sent the browser straight back with (POST /account/return/<provider>, see index.js), for the
+  // callback page to finish the sign-in with: { provider, state, idToken, name, error }. Nothing is done with it here -
+  // it came from their page, so anyone could have sent it - the page checks it's the sign-in it started (the state) and
+  // sends the token on with its nonce (see link). name: Apple's `user`, JSON it sends only the first time someone signs
+  // in - { name: { firstName, lastName }, email } - cleaned up as names are. error: theirs, if the sign-in didn't happen
+  // ('access_denied' from Google, 'user_cancelled_authorize' from Apple), or 'off' for a provider not signed in with
+  // straight here.
+  function returned(provider, body = {}) {
+    if (!enabled || !Object.hasOwn(direct, provider)) return { provider: '', state: '', idToken: '', name: '', error: 'off' };
+    const text = (value, max) => (typeof value === 'string' && value.length <= max ? value : '');
+    const reply = { provider, state: text(body.state, 200), idToken: text(body.id_token, 8192), name: '', error: text(body.error, 100) };
+    if (provider === 'apple' && typeof body.user === 'string' && body.user.length <= 2000) {
+      try {
+        const { name } = JSON.parse(body.user) || {};
+        if (name && typeof name === 'object') {
+          reply.name = cleanName([name.firstName, name.lastName].filter(part => typeof part === 'string').join(' ').trim());
+        }
+      } catch {}
+    }
+    return reply;
   }
 
   // Whether the device whose browser holds `token` is signed in, and as whom. Looked up afresh (see identities) - this
@@ -320,7 +371,7 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
     return { status: 'ok' };
   }
 
-  return { enabled, config, identify, displayName, link, get, rename, unlink, remove, presence };
+  return { enabled, config, identify, displayName, link, returned, get, rename, unlink, remove, presence };
 }
 
 module.exports = { createAccounts };

@@ -350,16 +350,29 @@
 
   // ---------- Signing in ----------
 
-  // Off to Supabase's sign-in page for the provider, with the hash of a fresh verifier (PKCE, S256). The verifier
-  // waits in localStorage for the callback page, with where to come back to; one over ten minutes old isn't trusted
-  // (see /account/callback.js).
+  // Off to sign in. For a provider the server has a client id for (see config in account.js at the project root), it's
+  // straight to Google's or Apple's own page, which sends the browser straight back to this site - so the player only
+  // ever sees "Anagram Jam" and anagramjam.com, never Supabase's address. The page asks for an ID token made for the
+  // hash of a fresh nonce, with a state to know its own sign-in by. Otherwise it's Supabase's sign-in page, with the
+  // hash of a fresh PKCE verifier (S256). Either way what the callback page needs waits in localStorage, with where to
+  // come back to, and one over ten minutes old isn't trusted (see /account/callback.js).
   async function signIn(provider, btn) {
     if (busy) return;
     setBusy(btn, true);
     try {
+      const returnTo = location.pathname + location.search;
+      const clientId = config.accounts.clients[provider];
+      if (clientId) {
+        const nonce = base64url(crypto.getRandomValues(new Uint8Array(32)));
+        const state = base64url(crypto.getRandomValues(new Uint8Array(16)));
+        const hashed = hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(nonce)));
+        localStorage.setItem(SIGN_IN_KEY, JSON.stringify({ provider, nonce, state, returnTo, at: Date.now() }));
+        location.href = providerPage(provider, clientId, state, hashed);
+        return;
+      }
       const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-      localStorage.setItem(SIGN_IN_KEY, JSON.stringify({ verifier, returnTo: location.pathname + location.search, at: Date.now() }));
+      localStorage.setItem(SIGN_IN_KEY, JSON.stringify({ verifier, returnTo, at: Date.now() }));
       const params = new URLSearchParams({
         provider,
         redirect_to: `${location.origin}/account/callback`,
@@ -374,9 +387,25 @@
     }
   }
 
+  // Google's or Apple's own sign-in page, set to send the browser back with a form POST of an ID token to
+  // /account/return/<provider> (see index.js at the project root) - an address each of them has on its list for this
+  // site. Spaces go as %20, the way both of them write their own examples.
+  function providerPage(provider, clientId, state, nonce) {
+    const back = { client_id: clientId, redirect_uri: `${location.origin}/account/return/${provider}`, response_mode: 'form_post', state, nonce };
+    const [address, params] = provider === 'google'
+      ? ['https://accounts.google.com/o/oauth2/v2/auth', { ...back, response_type: 'id_token', scope: 'openid email profile', prompt: 'select_account' }]
+      : ['https://appleid.apple.com/auth/authorize', { ...back, response_type: 'code id_token', scope: 'name email' }];
+    return `${address}?${new URLSearchParams(params).toString().replace(/\+/g, '%20')}`;
+  }
+
   // Bytes as the URL-safe base64 PKCE wants, without padding
   function base64url(bytes) {
     return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  // A digest as hex, which is how a hashed nonce goes to Google and Apple (and how Supabase checks it)
+  function hex(buffer) {
+    return Array.from(new Uint8Array(buffer), b => b.toString(16).padStart(2, '0')).join('');
   }
 
 

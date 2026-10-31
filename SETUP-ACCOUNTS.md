@@ -80,7 +80,8 @@ Sign in with Apple needs three things from [developer.apple.com/account](https:/
    - Return URLs: `https://<project-ref>.supabase.co/auth/v1/callback`
 
    Next, Done, Continue, Save.
-3. **A key.** Keys -> **+**. Key name `Anagram Jam Sign In` (Apple refuses hyphens and most punctuation in key names), tick **Sign in with Apple**, Configure -> Primary App ID
+3. **A key.** Keys -> **+**. Key name `Anagram Jam Sign In` (Apple refuses hyphens and most punctuation in key
+   names), tick **Sign in with Apple**, Configure -> Primary App ID
    `com.krishchavan.anagramjam`, Save, Continue, Register. **Download** it: `AuthKey_XXXXXXXXXX.p8`, where
    XXXXXXXXXX is the **Key ID** shown on the same page. Apple lets you download it exactly once, so put it somewhere
    safe straight away (a password manager) and never in this folder: `npm run deploy` commits every new file.
@@ -151,6 +152,8 @@ environments:
 | `POSTHOG_KEY` | `phc_xErDsaesGf6qSm9o8xPyFgtwKjBvGZk3Hsp9kqMwrvvo` |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` (optional: that's the default) |
 | `AUTH_PROVIDERS` | optional: `google,apple` is the default. Button order; `apple` alone hides Google. |
+| `GOOGLE_CLIENT_ID` | optional, see [section 8](#8-sign-in-pages-that-say-anagram-jam): the Google client's ID |
+| `APPLE_CLIENT_ID` | optional, see [section 8](#8-sign-in-pages-that-say-anagram-jam): `com.krishchavan.anagramjam.web` |
 
 `AUTH_PROVIDERS` set to `apple` is handy while Google's side isn't done yet.
 
@@ -184,6 +187,48 @@ Redeploy) after adding them.
    leaderboard under the account. Then, with a throwaway account, "Delete account": its row goes from the leaderboard,
    and the user from Supabase -> Authentication -> Users.
 
+## 8. Sign-in pages that say Anagram Jam
+
+Going through Supabase, Google's page says "Sign in to continue to `<project-ref>.supabase.co`" - Google names the
+address it will send the player back to, and that's Supabase's. Apple's page says "sign in to" the Services ID's
+description. The fix is to have both send players straight back to anagramjam.com instead, with an ID token the server
+has Supabase check (see the top of account.js). Each provider goes that way once its environment variable is set, and
+until then it goes through Supabase as before, so the order below is safe.
+
+1. **Google.** [Clients](https://console.cloud.google.com/auth/clients) -> `Anagram Jam web` -> **Authorized redirect
+   URIs** -> add `https://www.anagramjam.com/account/return/google` (and `http://localhost:3000/account/return/google`
+   for working locally). Keep the Supabase one for now. Save.
+2. **Apple.** [Identifiers](https://developer.apple.com/account/resources/identifiers/list) -> switch the filter at the
+   top right to Services IDs -> `com.krishchavan.anagramjam.web`. Change **Description** to `Anagram Jam` - Apple's
+   page shows it as "Use your Apple Account to sign in to Anagram Jam". Then **Sign in with Apple** -> **Configure** ->
+   **Return URLs**: add
+   `https://www.anagramjam.com/account/return/apple`, keeping the Supabase one. Next, Done, Continue, Save. (Apple
+   takes no localhost addresses, so leave `APPLE_CLIENT_ID` out of a local `.env`: locally, Apple goes through
+   Supabase.)
+3. **Vercel.** Add `GOOGLE_CLIENT_ID` = `453103570866-oltbf9qogtr3mqbf3pkh6p0pq5j9kmrp.apps.googleusercontent.com` and
+   `APPLE_CLIENT_ID` = `com.krishchavan.anagramjam.web`, then deploy. https://www.anagramjam.com/site-config.json shows
+   both under `clients`.
+4. **Test.** Sign in with each. The address bar goes from anagramjam.com to Google or Apple and straight back - no
+   supabase.co anywhere. Apple's page says "sign in to Anagram Jam"; Google's names anagramjam.com.
+5. **Google's "Anagram Jam".** Google only shows an app's name (rather than its address) once it has verified the
+   brand, which takes 2-3 business days:
+   - [Search Console](https://search.google.com/search-console) -> Add property -> **Domain** `anagramjam.com` -> add
+     the TXT record it gives you at your domain registrar's DNS settings -> Verify. Use the same Google account as
+     Google Cloud.
+   - [Branding](https://console.cloud.google.com/auth/branding): app name `Anagram Jam`, home page and privacy policy
+     as in section 2, and **Authorized domains** only `anagramjam.com` - remove `<project-ref>.supabase.co`, which
+     you can't prove you own. In the Google client, remove the Supabase redirect URI too: nothing uses it once
+     `GOOGLE_CLIENT_ID` is set. (If you ever take `GOOGLE_CLIENT_ID` out again, both have to go back.)
+   - **Verification Center**, in the same Google Auth Platform menu as Branding -> submit for verification. Google
+     emails if it wants anything; when it's done, the page says "to continue to Anagram Jam".
+
+With `APPLE_CLIENT_ID` set, Apple sign-ins no longer use the secret from section 3: Supabase checks Apple's ID tokens
+with Apple's public keys. The [twice-a-year](#twice-a-year-a-new-apple-secret) renewal only matters if you turn the
+straight route off again.
+
+In the iPhone app, Apple goes the straight way too - build 2's `allowNavigation` already lets `appleid.apple.com`
+through, and the way back is anagramjam.com.
+
 ## Local development
 
 Accounts need a real Supabase project. In memory mode (no `.env`) the server runs as before and the account box says
@@ -201,6 +246,9 @@ settings) and `npm start`. That is the live database, so sign in with a test acc
 - Leave `POSTHOG_KEY` out of `.env` unless you're working on analytics, or local sessions land in the real project.
 
 ## Twice a year: a new Apple secret
+
+Only while Apple sign-ins go through Supabase - with `APPLE_CLIENT_ID` set
+([section 8](#8-sign-in-pages-that-say-anagram-jam)) they don't use this secret, and this section can be skipped.
 
 The secret from step 4 of the Apple section is good for 180 days from the day it was made (the script prints the
 date). Before then:
@@ -224,8 +272,11 @@ until the new one is in; nobody already signed in notices.
 - `account.js`: the server side - who a device is, linking it to an account (and merging the device's scores in),
   renaming, unlinking, deleting, and who's on the site. The sign-in's code exchange with Supabase happens here, so
   the pages never hold Supabase's tokens.
-- `shared/account.js`: the account box on the pages and the sign-in itself (straight to Supabase's
-  `/auth/v1/authorize`); `account/callback.html` is where Supabase sends players back to.
+- `shared/account.js`: the account box on the pages and the sign-in itself - straight to Google's or Apple's page when
+  the server has their client id ([section 8](#8-sign-in-pages-that-say-anagram-jam)), otherwise to Supabase's
+  `/auth/v1/authorize`. `account/callback.html` is where players land on the way back: Google and Apple POST to
+  `/account/return/<provider>` (index.js), which shows that page with what they sent; Supabase sends them to
+  `/account/callback`.
 - `shared/presence.js`: the heartbeat that puts players on the admin page's Live tab. `shared/analytics.js`: PostHog,
   and the opt-out button on /privacy. `shared/config.js`: fetches `/site-config.json` (the providers and the PostHog
   key, from the environment variables above).
@@ -265,4 +316,8 @@ accounts, so point people there.
 - [ ] PostHog: Record user sessions on; no card added
 - [ ] Vercel: `POSTHOG_KEY` (and `POSTHOG_HOST` or `AUTH_PROVIDERS` if wanted)
 - [ ] `npm run deploy`, then the seven tests above
+- [ ] Section 8: Google redirect URI and Apple return URL for `/account/return/...`; Apple's Services ID description
+  `Anagram Jam`; Vercel `GOOGLE_CLIENT_ID` and `APPLE_CLIENT_ID`; deploy and test
+- [ ] Google: `anagramjam.com` verified in Search Console, Supabase removed from Branding and the client, brand
+  verification submitted
 - [ ] Players told; /privacy and /support read through once more

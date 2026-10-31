@@ -322,7 +322,7 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
 }
 
 .result-compare {
-  margin: -6px 0 0;
+  margin: -4px 0 0;
   font-weight: 600;
   font-size: 14px;
   color: var(--ink-muted);
