@@ -1,28 +1,26 @@
 // What the server has set up for the pages, from /site-config.json (see accounts.config in account.js at the project
-// root): whether signing in is on and with which providers (and Supabase's address, where its sign-in page is, and the
-// client ids of the providers whose own sign-in pages are gone to straight), and PostHog's key, if there is one.
-// Asked for once per page - every script that wants it gets the same promise - and a server that can't say (an older
-// one, or a blink in the connection) reads as nothing set up, so the pages simply go on without accounts or analytics.
+// root): whether signing in is on and with which providers (and Supabase's address, where its sign-in page is), and
+// PostHog's key, if there is one. Asked for once per page - every script that wants it gets the same promise - and a
+// server that can't say (an older one, or a blink in the connection) reads as nothing set up, so the pages simply go
+// on without accounts or analytics.
 //
 // Also the random token this browser keeps (ensurePlayerToken), for the scripts that run on pages without their own
 // playerToken() - /shared/presence.js, /shared/account.js and /account/callback.js.
 
 (() => {
-  const NOTHING = { accounts: { enabled: false, providers: [], supabaseUrl: '', clients: {} }, posthog: null };
+  const NOTHING = { accounts: { enabled: false, providers: [], supabaseUrl: '' }, posthog: null };
 
   let config = null; // the promise, once asked for
 
   // Whatever the server sends, the pages get every field, so none of them has to check
   function tidy(raw) {
     const accounts = raw && typeof raw.accounts === 'object' && raw.accounts ? raw.accounts : {};
-    const clients = accounts.clients && typeof accounts.clients === 'object' ? accounts.clients : {};
     const posthog = raw && typeof raw.posthog === 'object' && raw.posthog ? raw.posthog : null;
     return {
       accounts: {
         enabled: !!accounts.enabled,
         providers: Array.isArray(accounts.providers) ? accounts.providers.filter(p => typeof p === 'string') : [],
         supabaseUrl: typeof accounts.supabaseUrl === 'string' ? accounts.supabaseUrl : '',
-        clients: Object.fromEntries(Object.entries(clients).filter(([, id]) => typeof id === 'string' && id)),
       },
       posthog: posthog && typeof posthog.key === 'string' && posthog.key
         ? { key: posthog.key, host: typeof posthog.host === 'string' && posthog.host ? posthog.host : 'https://us.i.posthog.com' }

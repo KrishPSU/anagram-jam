@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const WORDS = require('./words');
 const { createStore } = require('./store');
@@ -83,9 +82,6 @@ const accounts = createAccounts({
   supabase,
   posthog: { key: process.env.POSTHOG_KEY, host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com' },
   providers: (process.env.AUTH_PROVIDERS || 'google,apple').split(',').map(provider => provider.trim()),
-  // Google's OAuth client id and Apple's Services ID: with one set, that provider's sign-in page sends players straight
-  // back here, so Supabase's address never shows (see the top of account.js)
-  clients: { google: process.env.GOOGLE_CLIENT_ID, apple: process.env.APPLE_CLIENT_ID },
   // The admin page is made further down; by the time there's anything to note, it's there
   note: (entry) => admin.note(entry),
 });
@@ -237,26 +233,6 @@ app.post('/account/link', express.json({ limit: '4kb' }), async (req, res) => {
   }
   res.json(await accounts.link(req.body || undefined));
 }, badBody);
-
-// Where Google and Apple send the browser straight back to (see the top of account.js): a form POST from their page of
-// the sign-in's ID token (and Apple's name, the first time). It comes from their site, not this one, so there's no Origin
-// to check - and nothing is done here but hand it to the callback page, written into it, which checks it's the sign-in
-// it started and sends it on (POST /account/link). The page is never kept in a cache or passed on as a referrer.
-const CALLBACK_PAGE = path.join(__dirname, 'account', 'callback.html');
-app.post('/account/return/:provider', express.urlencoded({ extended: false, limit: '16kb' }), (req, res) => {
-  const reply = accounts.returned(req.params.provider, req.body && typeof req.body === 'object' ? req.body : {});
-  // Inside a <script> block, so < is escaped (nothing in it can end the block), and the two line breaks JavaScript
-  // used to choke on too
-  const json = JSON.stringify(reply).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-  fs.readFile(CALLBACK_PAGE, 'utf8', (err, html) => {
-    if (err) return res.status(500).type('text').send('Something went wrong. Please start the sign-in again.');
-    res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
-    res.type('html').send(html.replace('</head>', `  <script type="application/json" id="signInReply">${json}</script>\n</head>`));
-  });
-}, badBody);
-
-// Opened any other way (reloaded, say), it's the callback page as it is, which says no sign-in came back
-app.get('/account/return/:provider', (req, res) => res.redirect(303, '/account/callback'));
 
 // A page sends a heartbeat every 20 seconds, so an address sending many more than that a minute is a script making up
 // tokens - and every token it makes up is a row in the store. Past PRESENCE_LIMIT a minute an address's beats are
