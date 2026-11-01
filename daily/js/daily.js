@@ -91,6 +91,16 @@ function formatTime(ms) {
 // How many tries a finished go took (the wrong ones, and the one that got it)
 const triesOf = (play) => play.guesses.length + (play.solved ? 1 : 0);
 
+// A grey piece from /shared/skeleton.css, standing in for something on its way: `width` wide, and a bar in a line of
+// text unless `kind` is another of its pieces
+function skel(width, kind = 'skel-text') {
+  const node = document.createElement('span');
+  node.className = `skel ${kind}`;
+  node.style.setProperty('--w', width);
+  node.setAttribute('aria-hidden', 'true');
+  return node;
+}
+
 
 function showView(next) {
   if (view === next) return;
@@ -109,18 +119,22 @@ function showView(next) {
 }
 
 
-// Today's words, and how you're doing on each
+// Today's words, and how you're doing on each. While they load, the list is up with grey bars in it (showLevelsWaiting)
+// and the status line says what's happening to screen readers only - it's seen if they can't be got.
 async function loadDay() {
   if (loading) return;
   loading = true;
   day = localDay();
-  levelListEl.hidden = true;
+  showLevelsWaiting();
   dayRetryBtn.hidden = true;
   dayStatusEl.hidden = false;
-  dayStatusTextEl.innerHTML = '<span class="spinner" aria-hidden="true"></span>Getting today\'s words…';
+  dayStatusEl.classList.add('sr-only');
+  dayStatusTextEl.textContent = "Getting today's words…";
   const reply = await request('daily-today', { day, token: playerToken() }).catch(() => null);
   loading = false;
   if (!reply || reply.status !== 'ok') {
+    levelListEl.hidden = true;
+    dayStatusEl.classList.remove('sr-only');
     dayStatusTextEl.textContent = !reply
       ? "Couldn't reach the game. Check your connection."
       : reply.status === 'not-today'
@@ -133,11 +147,24 @@ async function loadDay() {
   showDay();
 }
 
+// Today's list while it loads: each word's level and length, which never change (LEVELS in daily.js at the project
+// root), and a grey bar where how you're doing on it will go. None of them can be opened until that's there.
+function showLevelsWaiting() {
+  levelListEl.hidden = false;
+  levelListEl.setAttribute('aria-busy', 'true');
+  for (const btn of levelBtns) {
+    btn.className = 'daily-level';
+    btn.disabled = true;
+    btn.querySelector('.level-state').replaceChildren(skel('5em'));
+  }
+}
+
 function showDay() {
   dayNumberEl.textContent = `Daily Jam #${today.number}`;
   dayDateEl.textContent = new Date(`${day}T12:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   dayStatusEl.hidden = true;
   levelListEl.hidden = false;
+  levelListEl.removeAttribute('aria-busy');
   for (const btn of levelBtns) {
     const { play } = levelOf(btn.dataset.level);
     const stateEl = btn.querySelector('.level-state');

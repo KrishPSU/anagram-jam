@@ -21,6 +21,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="/shared/theme.css">
+  <link rel="stylesheet" href="/shared/skeleton.css">
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/game-state.css">
   <link rel="stylesheet" href="css/results.css">
@@ -82,17 +83,25 @@
     </div>
 
     <header class="lobby-head">
-      <p class="eyebrow" id="lobbyEyebrow">Lobby</p>
+      <!-- The grey bar is how many players, until the server says -->
+      <p class="eyebrow" id="lobbyEyebrow">Lobby <span class="skel skel-text skel-on-dark" aria-hidden="true"></span></p>
       <div class="code-tiles" id="roomCode" aria-label="Room code"></div>
       <button class="btn btn-glass btn-sm" id="inviteBtn" type="button">⧉ Copy invite link</button>
     </header>
 
-    <div class="lobby-card card">
-      <!-- The spinner goes away on its own: the first status update replaces everything in here -->
-      <p class="status" id="waiting" role="status"><span class="spinner" aria-hidden="true"></span>Connecting…</p>
-      <div class="players" id="players"></div>
+    <!-- Until the server first says who's here, grey shapes stand where the status line, the players and the ready
+         button will be, and "Connecting…" is for screen readers only. The first render puts the real ones in their
+         place (lobby.js). -->
+    <div class="lobby-card card" id="lobbyCard" aria-busy="true">
+      <p class="status sr-only" id="waiting" role="status">Connecting…</p>
+      <span class="skel skel-pill lobby-skel" aria-hidden="true"></span>
+      <div class="players" id="players">
+        <div class="player-pill skel-box skel-on-field" aria-hidden="true"><span class="skel skel-circle"></span><span class="player-name"><span class="skel skel-text"></span></span><span class="wins"><span class="skel skel-text"></span></span><span class="skel skel-pill"></span></div>
+        <div class="player-pill skel-box skel-on-field" aria-hidden="true"><span class="skel skel-circle"></span><span class="player-name"><span class="skel skel-text"></span></span><span class="wins"><span class="skel skel-text"></span></span><span class="skel skel-pill"></span></div>
+      </div>
       <!-- Everyone in the room has to be ready for a round to start -->
       <button id="readyBtn" class="btn btn-go" type="button" aria-pressed="false" hidden>I'm ready</button>
+      <span class="skel skel-block lobby-skel" aria-hidden="true"></span>
     </div>
   </div>
 

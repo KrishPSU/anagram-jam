@@ -398,4 +398,4 @@ function createDaily({ store, identify, displayName }) {
   return { today, open, guess, stats, board, adminDay, adminDays, adminPlayers };
 }
 
-module.exports = { createDaily, LEVELS, TRIES };
+module.exports = { createDaily, isDate, dateAt, streakFor, LEVELS, TRIES };

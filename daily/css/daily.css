@@ -8,7 +8,7 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
 
 /* Today's list */
 
-/* While it loads, or if it can't */
+/* If it can't be got (while it loads, the list itself shows that, with grey bars in it - see daily.js) */
 .daily-status {
   display: grid;
   justify-items: center;
@@ -24,8 +24,6 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
   line-height: 1.4;
   color: var(--ink-muted);
 }
-
-.daily-status .spinner { margin-right: 8px; vertical-align: -0.2em; }
 
 .daily-levels {
   margin: 0;
@@ -248,6 +246,7 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
   color: var(--ink-muted);
 }
 
+/* Couldn't get today's numbers (while they load, grey bars stand in for them - see result.js) */
 .result-status {
   display: grid;
   justify-items: center;
@@ -261,8 +260,6 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
   font-size: 15px;
   color: var(--ink-muted);
 }
-
-.result-status .spinner { margin-right: 8px; vertical-align: -0.2em; }
 
 .result-numbers {
   display: grid;
@@ -383,6 +380,9 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
 
 .bars li.you .bar { background: var(--you); }
 .bars li.you .bar-label { color: var(--ink); font-weight: 800; }
+
+/* A bar while today's numbers are on their way (result.js): grey, the height and corners of a real one */
+.bar-track .skel { --h: 20px; --r: 0 4px 4px 0; }
 
 .bar-you {
   font-weight: 800;

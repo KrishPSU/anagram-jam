@@ -64,6 +64,26 @@ function miniTiles(text) {
   return el('span.mini-tiles', { 'aria-label': text }, [...text].map(letter => el('span.tile', { 'aria-hidden': 'true' }, letter)));
 }
 
+// A grey piece standing in for something on its way - a tab's first read, say (/shared/skeleton.css): kind is the
+// piece - 'text' (a value in a line of text), 'line', 'circle', 'pill', 'block', 'tile', or the dashboard's own 'chip'
+// and 'btn' - with any classes of the real thing's after it ('circle.avatar'). width is its --w (a circle's --size),
+// height its --h and radius its --r, set through style.setProperty: the page's Content-Security-Policy blocks style
+// attributes.
+function skelPiece(kind, width, height, radius) {
+  const piece = el(`span.skel.skel-${kind}`, { 'aria-hidden': 'true' });
+  if (width) piece.style.setProperty(kind.startsWith('circle') ? '--size' : '--w', width);
+  if (height) piece.style.setProperty('--h', height);
+  if (radius) piece.style.setProperty('--r', radius);
+  return piece;
+}
+
+// While grey pieces stand in for something - a tab's first read, say - whatever holds them tells screen readers it's
+// busy (the pieces themselves say nothing)
+function markBusy(node, on) {
+  if (on) node.setAttribute('aria-busy', 'true');
+  else node.removeAttribute('aria-busy');
+}
+
 // A line saying the tab is loading, or what went wrong - hidden when there's nothing to say
 function setState(stateEl, message, { loading = false, error = false } = {}) {
   stateEl.hidden = !message;
@@ -136,14 +156,6 @@ function duration(ms) {
 // "Oct 27, 9:41 PM"
 function when(at) {
   return new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
-// "Today", "Yesterday", "Sat, Oct 25"
-function dayName(at) {
-  const day = new Date(at).toDateString();
-  if (day === new Date().toDateString()) return 'Today';
-  if (day === new Date(Date.now() - 86400000).toDateString()) return 'Yesterday';
-  return new Date(at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 

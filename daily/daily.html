@@ -23,6 +23,7 @@
   <!-- The word screen is solo mode's, so this borrows its styles and the room page's (create-room/ is served at the site
        root), and adds its own on top -->
   <link rel="stylesheet" href="/shared/theme.css">
+  <link rel="stylesheet" href="/shared/skeleton.css">
   <link rel="stylesheet" href="/css/game.css">
   <link rel="stylesheet" href="/css/game-state.css">
   <link rel="stylesheet" href="/solo/css/solo.css">
@@ -86,16 +87,19 @@
     </header>
 
     <div class="card solo-card daily-card">
-      <!-- While today's words load, or if they can't be -->
-      <div class="daily-status" id="dayStatus" role="status">
-        <p id="dayStatusText"><span class="spinner" aria-hidden="true"></span>Getting today's words…</p>
+      <!-- If today's words can't be got. While they load it's for screen readers only: the list below says so to
+           everyone else (daily.js). -->
+      <div class="daily-status sr-only" id="dayStatus" role="status">
+        <p id="dayStatusText">Getting today's words…</p>
         <button class="btn btn-ghost btn-sm" id="dayRetry" type="button" hidden>Try again</button>
       </div>
 
-      <ul class="daily-levels" id="levelList" hidden>
-        <li><button class="daily-level" type="button" data-level="easy"><span class="level-name">Easy</span><span class="level-length">5 letters</span><span class="level-state"></span></button></li>
-        <li><button class="daily-level" type="button" data-level="medium"><span class="level-name">Medium</span><span class="level-length">7 letters</span><span class="level-state"></span></button></li>
-        <li><button class="daily-level" type="button" data-level="hard"><span class="level-name">Hard</span><span class="level-length">9 letters</span><span class="level-state"></span></button></li>
+      <!-- Up while they load too, with grey bars where how you're doing on each will go - and none of them can be
+           opened until it's there -->
+      <ul class="daily-levels" id="levelList" aria-busy="true">
+        <li><button class="daily-level" type="button" data-level="easy" disabled><span class="level-name">Easy</span><span class="level-length">5 letters</span><span class="level-state"></span></button></li>
+        <li><button class="daily-level" type="button" data-level="medium" disabled><span class="level-name">Medium</span><span class="level-length">7 letters</span><span class="level-state"></span></button></li>
+        <li><button class="daily-level" type="button" data-level="hard" disabled><span class="level-name">Hard</span><span class="level-length">9 letters</span><span class="level-state"></span></button></li>
       </ul>
 
       <ul class="solo-rules">
@@ -161,16 +165,17 @@
       <div class="result-word" id="resultWord" aria-hidden="true"></div>
       <p class="result-note" id="resultNote" hidden></p>
 
-      <!-- Loading, or couldn't load today's numbers -->
+      <!-- Couldn't load today's numbers - or, for screen readers only, that they're loading (result.js) -->
       <div class="result-status" id="resultStatus" role="status" hidden>
         <p id="resultStatusText"></p>
         <button class="btn btn-ghost btn-sm" id="resultRetry" type="button" hidden>Try again</button>
       </div>
 
+      <!-- While they load, grey bars stand in for them - a shade darker in the grey pill and tiles (skel-on-field) -->
       <div class="result-numbers" id="resultNumbers">
-        <p class="result-standing" id="resultStanding"></p>
+        <p class="result-standing skel-on-field" id="resultStanding"></p>
 
-        <dl class="result-tiles">
+        <dl class="result-tiles skel-on-field">
           <div><dt>Your time</dt><dd id="resultTime">-</dd></div>
           <div><dt>Today's average</dt><dd id="resultMedian">-</dd></div>
           <div><dt>Streak</dt><dd id="resultStreak">-</dd></div>

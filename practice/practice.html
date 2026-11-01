@@ -23,6 +23,7 @@
   <!-- Solo mode's word screen without its clock, so this borrows its styles and the room page's (create-room/ is
        served at the site root), and adds its own on top -->
   <link rel="stylesheet" href="/shared/theme.css">
+  <link rel="stylesheet" href="/shared/skeleton.css">
   <link rel="stylesheet" href="/css/game.css">
   <link rel="stylesheet" href="/css/game-state.css">
   <link rel="stylesheet" href="/solo/css/solo.css">
@@ -70,18 +71,20 @@
         <div class="solo-score" id="solvedPill" aria-live="polite">0 solved</div>
       </header>
 
-      <main class="game-content" id="gameContent">
-        <p class="progress" id="progress" hidden><span id="levelLabel">Word 1</span> · <span class="length-label" id="lengthLabel">3 letters</span></p>
+      <!-- Until the words are here, grey tiles stand where the first word's will be - it's always 3 letters (practice.js) -->
+      <main class="game-content skel-on-dark" id="gameContent" aria-busy="true">
+        <p class="progress" id="progress"><span id="levelLabel">Word 1</span> · <span class="length-label" id="lengthLabel">3 letters</span></p>
 
-        <!-- Until the words are here (practice.js) -->
-        <div class="practice-load" id="loadView" role="status">
-          <p id="loadText"><span class="spinner" aria-hidden="true"></span>Getting words…</p>
+        <!-- If the words can't be got. Until they're here it's for screen readers only: the grey tiles say so to
+             everyone else. -->
+        <div class="practice-load sr-only" id="loadView" role="status">
+          <p id="loadText">Getting words…</p>
           <button class="btn btn-glass" id="retryBtn" type="button" hidden>Try again</button>
         </div>
 
-        <div class="answer-slots" id="answerSlots" aria-label="Your answer"></div>
+        <div class="answer-slots" id="answerSlots" aria-label="Your answer"><span class="skel skel-tile" aria-hidden="true"></span><span class="skel skel-tile" aria-hidden="true"></span><span class="skel skel-tile" aria-hidden="true"></span></div>
         <p class="feedback" id="feedback" aria-live="polite"></p>
-        <div class="letter-tiles" id="anagramDisplay" aria-label="Scrambled letters"></div>
+        <div class="letter-tiles" id="anagramDisplay" aria-label="Scrambled letters"><span class="skel skel-tile" aria-hidden="true"></span><span class="skel skel-tile" aria-hidden="true"></span><span class="skel skel-tile" aria-hidden="true"></span></div>
 
         <div class="word-actions">
           <button class="icon-btn" id="shuffleBtn" type="button" aria-label="Shuffle letters" title="Shuffle (Space)">🔄</button>

@@ -1,11 +1,16 @@
 // The System tab: which deployment is running, how the server, Redis and Supabase are doing, and the sign-in's security - with
 // anything worth fixing called out at the top.
 
+const systemPanel = document.getElementById('panel-system');
 const systemStateEl = document.getElementById('systemState');
 const systemGridEl = document.getElementById('systemGrid');
 
+// The first time - or after something went wrong and took them down - grey pieces stand in for the facts
+// (showSystemSkeleton), and go again if a read fails while they're still up. Once the facts are in, a read keeps them
+// showing until it's in, and one that fails (even one asked for before them) leaves them up under its error.
 async function loadSystem() {
-  setState(systemStateEl, systemGridEl.hidden ? 'Loading…' : '', { loading: true });
+  setState(systemStateEl, '');
+  if (systemGridEl.hidden) showSystemSkeleton();
   try {
     const [info, security] = await Promise.all([api('system'), api('activity?log=security')]);
     setSession(info.security.sessionEnds);
@@ -14,7 +19,22 @@ async function loadSystem() {
     systemGridEl.hidden = false;
   } catch (err) {
     setState(systemStateEl, err.message, { error: true });
+    if (systemGridEl.querySelector('.skel')) systemGridEl.hidden = true;
+  } finally {
+    markBusy(systemPanel, false);
   }
+}
+
+// The facts on their way: a grey label and value for each of them that's usually there (renderSystem leaves out any
+// with nothing to say), and the panes around them as they'll be
+function showSystemSkeleton() {
+  markBusy(systemPanel, true);
+  const factsSkeleton = (values) => values.flatMap((width, i) => [el('dt', skelPiece('text', i % 2 ? '7em' : '5em')), el('dd', skelPiece('text', width))]);
+  document.getElementById('deployFacts').replaceChildren(...factsSkeleton(['16em', '12em', '6em', '4em', '14em']));
+  document.getElementById('serverFacts').replaceChildren(...factsSkeleton(['4em', '12em', '7em', '6em', '15em', '9em', '5em']));
+  document.getElementById('securityWarnings').replaceChildren();
+  document.getElementById('securityFacts').replaceChildren(...factsSkeleton(['16em', '18em', '15em', '10em', '18em']));
+  systemGridEl.hidden = false;
 }
 
 // A <dl>'s rows from [label, value] pairs (a value can be an element; rows with no value are left out)

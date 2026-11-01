@@ -47,14 +47,14 @@ function showResult(level, play, result) {
 
 async function loadNumbers() {
   const ask = ++asked;
-  const { level } = shown;
-  resultNumbersEl.hidden = true;
-  resultRetryBtn.hidden = true;
-  resultStatusEl.hidden = false;
-  resultStatusTextEl.innerHTML = '<span class="spinner" aria-hidden="true"></span>Getting today\'s numbers…';
+  const { level, play } = shown;
+  showNumbersWaiting(play);
   const reply = await request('daily-stats', { day, level, token: playerToken() }).catch(() => null);
   if (ask !== asked || !shown || shown.level !== level) return;
   if (!reply || reply.status !== 'ok') {
+    resultNumbersEl.hidden = true;
+    resultNumbersEl.removeAttribute('aria-busy');
+    resultStatusEl.classList.remove('sr-only');
     resultStatusTextEl.textContent = "Couldn't get today's numbers.";
     resultRetryBtn.hidden = false;
     return;
@@ -63,12 +63,47 @@ async function loadNumbers() {
   showNumbers(reply.result);
 }
 
+// Today's numbers on their way: the box laid out as it will be, so it doesn't change size when they come - with your
+// time and which bar is yours, which this page knows already, and grey bars for the rest. The status line says what's
+// happening to screen readers only.
+function showNumbersWaiting(play) {
+  resultRetryBtn.hidden = true;
+  resultStatusEl.hidden = false;
+  resultStatusEl.classList.add('sr-only');
+  resultStatusTextEl.textContent = "Getting today's numbers…";
+  resultNumbersEl.hidden = false;
+  resultNumbersEl.setAttribute('aria-busy', 'true');
+
+  resultStandingEl.classList.remove('great');
+  resultStandingEl.replaceChildren(skel('15em'));
+  resultTimeEl.textContent = formatTime(play.ms);
+  resultMedianEl.replaceChildren(skel('2.4em'));
+  const best = el('small', '', '');
+  best.append(skel('3.6em'));
+  resultStreakEl.replaceChildren(skel('2em'), best);
+  // Only a word you got is compared with today's average
+  resultCompareEl.hidden = !play.solved;
+  resultCompareEl.replaceChildren(skel('17em'));
+
+  breakdownTitleEl.textContent = "How today's players did";
+  const widths = ['62%', '40%', '24%', '32%'];
+  barsEl.replaceChildren(...barRows(play).map((row, i) => {
+    const item = el('li', row.you ? 'you' : '', '');
+    item.setAttribute('aria-hidden', 'true');
+    const track = el('span', 'bar-track', '');
+    track.append(skel(widths[i], 'skel-block'));
+    item.append(el('span', 'bar-label', row.label), track, el('span', 'bar-you', row.you ? 'You' : ''));
+    return item;
+  }));
+}
+
 function showNumbers(result) {
   asked++;
   const { level, play } = shown;
   const name = LEVEL_NAMES[level];
   resultStatusEl.hidden = true;
   resultNumbersEl.hidden = false;
+  resultNumbersEl.removeAttribute('aria-busy');
 
   // Better than how many - or, if you missed it, how many got it
   const got = result.got.reduce((sum, n) => sum + n, 0);
@@ -96,10 +131,7 @@ function showNumbers(result) {
 // How everyone did: one bar each for got it on try 1, 2 and 3, and missed - yours picked out
 function showBars(result, play) {
   breakdownTitleEl.textContent = `How today's ${result.players} ${result.players === 1 ? 'player' : 'players'} did`;
-  const rows = [
-    ...result.got.map((count, i) => ({ label: i ? `${i + 1} tries` : '1 try', count, you: play.solved && triesOf(play) === i + 1 })),
-    { label: 'Missed', count: result.missed, you: !play.solved },
-  ];
+  const rows = barRows(play, result);
   const most = Math.max(1, ...rows.map(row => row.count));
   barsEl.replaceChildren(...rows.map((row) => {
     const item = el('li', row.you ? 'you' : '', '');
@@ -111,6 +143,16 @@ function showBars(result, play) {
     item.append(el('span', 'bar-label', row.label), track, el('span', 'bar-you', row.you ? 'You' : ''));
     return item;
   }));
+}
+
+// The bars' rows: got it on try 1, 2 and 3, then missed, with yours picked out - and how many players each, once there
+// are today's numbers to say (result)
+function barRows(play, result) {
+  const got = result ? result.got : Array(TRIES).fill(null);
+  return [
+    ...got.map((count, i) => ({ label: i ? `${i + 1} tries` : '1 try', count, you: play.solved && triesOf(play) === i + 1 })),
+    { label: 'Missed', count: result ? result.missed : null, you: !play.solved },
+  ];
 }
 
 function el(tag, className, text) {

@@ -57,15 +57,13 @@ function answerHashes() {
 
 // Every word, once. A few tries, since a phone's connection can blink - then a Try again button.
 async function loadWords() {
-  loadTextEl.innerHTML = '<span class="spinner" aria-hidden="true"></span>Getting words…';
-  retryBtn.hidden = true;
+  showLoad('loading');
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const res = await fetch('/practice/words.json');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       lists = await res.json();
-      loadViewEl.hidden = true;
-      progressEl.hidden = false;
+      showLoad('done');
       nextWord();
       return;
     } catch (err) {
@@ -73,8 +71,20 @@ async function loadWords() {
       if (attempt < 3) await wait(1000 * attempt);
     }
   }
-  loadTextEl.textContent = "Couldn't get the words. Check your connection.";
-  retryBtn.hidden = false;
+  showLoad('failed');
+}
+
+// Until the words are here ('loading'): the word's rows with grey tiles in them (practice.html), and "Getting words…"
+// for screen readers only. If they can't be got ('failed'), those make way for what went wrong and a Try again button.
+// Once they're here ('done'), the first word takes the grey tiles' place (showWord in tiles.js).
+function showLoad(state) {
+  if (state === 'loading') gameContentEl.setAttribute('aria-busy', 'true');
+  else gameContentEl.removeAttribute('aria-busy');
+  progressEl.hidden = slotsEl.hidden = tilesEl.hidden = state === 'failed';
+  loadViewEl.hidden = state === 'done';
+  loadViewEl.classList.toggle('sr-only', state === 'loading');
+  loadTextEl.textContent = state === 'failed' ? "Couldn't get the words. Check your connection." : 'Getting words…';
+  retryBtn.hidden = state !== 'failed';
 }
 
 // The next word, from a shuffled deck of every word that long - dealt to the end before it's shuffled again

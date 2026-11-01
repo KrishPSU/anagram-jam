@@ -346,4 +346,4 @@ function createSolo({ store, identify, displayName, onFinish = () => {} }) {
   return { start, finish, board, adminBoard, adminRemove };
 }
 
-module.exports = { createSolo, scoreRun, scramble, answersFor, practiceWords, cleanName, shownName, RUN_WORDS };
+module.exports = { createSolo, scoreRun, scramble, answersFor, practiceWords, cleanName, shownName, pointsOf, RUN_WORDS, RUN_SECONDS };

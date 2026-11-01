@@ -10,6 +10,7 @@ const { createSolo, answersFor, practiceWords } = require('./solo');
 const { createDaily } = require('./daily');
 const { createAdmin, fromThisSite, addressBlock, clientAddress } = require('./admin');
 const { createAccounts } = require('./account');
+const { createProfile } = require('./profile');
 
 require('dotenv').config();
 
@@ -87,15 +88,21 @@ const accounts = createAccounts({
 });
 console.log(`Signing in is ${accounts.enabled ? 'on' : 'off (no Supabase)'}`);
 
+// Each player's stats, for the account box on the home page (see profile.js): every solo run and every round played in
+// a room adds to them as it's scored
+const profile = createProfile({ store: data, identify: accounts.identify, subjectFor: accounts.subjectFor });
+
 // Solo mode's runs and leaderboard (see solo.js). Each run scored goes in the admin page's log and stats - the player
-// counted being whoever the score went to (their account, if they're signed in).
+// counted being whoever the score went to (their account, if they're signed in), and the log noting who that is so the
+// admin page can put a player's runs together - and in their stats.
 const solo = createSolo({
   store: data,
   identify: accounts.identify,
   displayName: accounts.displayName,
   onFinish: (run, scored) => {
     admin.track('solo', [run.playerId]);
-    admin.log({ type: 'solo', name: run.name, points: scored.points, words: scored.solved.length });
+    admin.log({ type: 'solo', name: run.name, player: run.playerId, points: scored.points, words: scored.solved.length });
+    profile.recordSolo(run, scored);
   },
 });
 
@@ -400,6 +407,7 @@ async function changeRoom(roomCode, change) {
     console.log(`Round over in room ${roomCode}: ${results.finisherName} finished, ${results.winnerName} won`);
     io.to(roomCode).emit('round-over', results);
     admin.log({ type: 'round', room: roomCode, winner: results.winnerName, tied: results.tied, players: results.players.map(p => ({ name: p.name, points: p.points, left: p.left })) });
+    profile.recordRound(results);
   }
   if (news.countdown) beginCountdown(roomCode, news.countdown);
   return { result: outcome.result, deleted: false, state: after };
@@ -1109,6 +1117,8 @@ io.on('connection', (socket) => {
   on('account-name', async (data, ack) => replier(ack)(await accounts.rename(data || undefined)));
   on('account-unlink', async (data, ack) => replier(ack)(await accounts.unlink(data || undefined)));
   on('account-delete', async (data, ack) => replier(ack)(await accounts.remove(data || undefined)));
+  // And the stats the account box shows (see profile.js)
+  on('account-stats', async (data, ack) => replier(ack)(await profile.get(data || undefined)));
 
 });
 

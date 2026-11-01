@@ -26,7 +26,9 @@ const WORDS = require('./words');
 const DICTIONARY = require('word-exists/dictionary.json'); // the same list the games' answers are checked against
 const { answersFor } = require('./solo');
 const { isRude } = require('./names');
+const { isDate, dateAt } = require('./daily');
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const DEVICE_MS = 180 * 24 * 60 * 60 * 1000;
 const SESSION_COOKIE = 'aj_admin';
@@ -38,7 +40,13 @@ const WRONG_WAIT = 1000;
 const SHORT_PASSWORD = 14; // the dashboard suggests a longer one below this
 
 const MESSAGE_MAX = 160; // a banner or a message to everyone
-const LOG_KEEP = 300;    // entries in each log
+const LOG_DAYS = 90;     // how long each log keeps its entries
+// The Activity tab reads a log a day at a time, getting at most ACTIVITY_MAX of its entries. ACTIVITY_SPAN is the
+// longest it can ask for at once: a day is 23 to 25 hours around a clock change, so this is a day with room to spare.
+// Its calendar asks for each day's count a month at a time: from and to at most CALENDAR_SPAN days apart.
+const ACTIVITY_MAX = 1000;
+const ACTIVITY_SPAN = 3 * DAY_MS;
+const CALENDAR_SPAN = 62;
 const SETTINGS_FOR = 15 * 1000; // each instance reads the settings again this often
 const STATS_FOR = 60 * 1000;    // and the stats
 
@@ -231,14 +239,53 @@ function byActivity(a, b) {
 
 const METRICS = ['rooms', 'rounds', 'solo'];
 
+// A time zone a page sent ('America/New_York'), as Intl names it, or UTC if it isn't one. The database counts the
+// Activity tab's days in it too (see admin_log_days in supabase/migrations), so it's a name both read the same way: an
+// abbreviation becomes the place Intl takes it for ('PST' is Los Angeles, summer time and all, where Postgres would
+// keep to 8 hours behind), and an offset ('+05:00') isn't taken - Postgres reads its sign the other way round.
 function timeZone(name) {
   if (typeof name !== 'string' || name.length > 64) return 'UTC';
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: name });
-    return name;
+    const zone = new Intl.DateTimeFormat('en-US', { timeZone: name }).resolvedOptions().timeZone;
+    return /^[A-Za-z]/.test(zone) ? zone : 'UTC';
   } catch {
     return 'UTC';
   }
+}
+
+
+// ---------- Days in a time zone ----------
+
+// What the clock in time zone tz shows at an instant (ms), as the instant it would be if that clock were UTC's: for a
+// clock 5 hours behind, the instant less 5 hours. To the second, as every zone's clock is a whole number of seconds
+// from UTC.
+function clockIn(tz) {
+  const format = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  });
+  return (at) => {
+    const parts = Object.fromEntries(format.formatToParts(at).map(part => [part.type, Number(part.value)]));
+    return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour % 24, parts.minute, parts.second);
+  };
+}
+
+// The instant (ms) a day ('2026-11-01') starts in time zone tz: its midnight there, worked out from what the clocks
+// there show - a fixed offset would be an hour out across a clock change. A midnight the clocks go through twice (they
+// went back over it) is the first one, and one they skip (they went forward over it) is taken at the offset from
+// before, which lands where they went forward - as a browser's new Date(2026, 10, 1) has them, so the Activity tab
+// and the server agree on where its days start.
+function midnightIn(day, tz) {
+  const clock = clockIn(tz);
+  const wall = Date.parse(day); // that midnight, as if tz were UTC
+  // The offsets a day before and a day after, which differ when the clocks change near this midnight
+  const offsets = [wall - DAY_MS, wall + DAY_MS].map(at => clock(at) - at);
+  const instants = offsets.map(offset => wall - offset).filter(at => clock(at) === wall);
+  return instants.length ? Math.min(...instants) : wall - offsets[0];
+}
+
+// The date ('2026-11-01') it is in time zone tz at an instant (ms)
+function dateIn(at, tz) {
+  return dateAt(clockIn(tz)(at));
 }
 
 
@@ -305,7 +352,7 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
 
   // Written without holding up what it's about
   function log(name, entry) {
-    store.log(name, { at: Date.now(), ...entry }, LOG_KEEP).catch(err => console.error(`Writing the ${name} log failed:`, err.message));
+    store.log(name, { at: Date.now(), ...entry }, LOG_DAYS).catch(err => console.error(`Writing the ${name} log failed:`, err.message));
   }
 
   // Something done on the dashboard, and from where - an action from somewhere unexpected is worth noticing
@@ -500,6 +547,9 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
 
   const bodyOf = (req) => (req.body && typeof req.body === 'object' ? req.body : {});
   const text = (value, max) => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, max) : '');
+  // A time in a query, in ms ('1761969600000'), or null. At most 13 digits (to the year 2286), so the database can
+  // take it too.
+  const msIn = (value) => (typeof value === 'string' && /^\d{1,13}$/.test(value) ? Number(value) : null);
 
   // Who's on the site right now, for the Live tab: everyone whose page has said so within the last minute (see presence
   // in account.js), as [{ id, name, hidden, account, mode, detail, since, seenAt }] - hidden: the name shows as "Player"
@@ -580,10 +630,42 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
     res.json(await daily.adminDays({ to: req.query.to, count }));
   });
 
-  // log: 'game' (rounds and solo runs) or 'security' (sign-ins and what was done here)
+  // log: 'game' (rounds and solo runs) or 'security' (sign-ins and what was done here). The Activity tab reads a day at
+  // a time: from and to (ms) are its midnight and the next where the admin is, and it gets the entries between them,
+  // newest first - at most ACTIVITY_MAX, with more saying whether there were more - and keptFrom, how far back the logs
+  // go. A page from before days asks with neither, and gets the newest 200 as it did then.
   api.get('/activity', async (req, res) => {
     const name = req.query.log === 'security' ? 'security' : 'game';
-    res.json({ log: name, entries: await store.logs(name, 200) });
+    if (req.query.from === undefined && req.query.to === undefined) {
+      return res.json({ log: name, entries: await store.logs(name, 200) });
+    }
+    const from = msIn(req.query.from);
+    const to = msIn(req.query.to);
+    if (from === null || to === null || to <= from || to - from > ACTIVITY_SPAN) return res.status(400).json({ error: 'bad request' });
+    const { entries, more } = await store.logsBetween(name, from, to, ACTIVITY_MAX);
+    res.json({ log: name, entries, more, keptFrom: Date.now() - LOG_DAYS * DAY_MS });
+  });
+
+  // For the calendar: how many entries the log has on each day from `from` to `to` ('2026-10-01' and '2026-10-31', at
+  // most CALENDAR_SPAN days apart), days being dates in the admin's time zone tz. { days: { '2026-10-25': 18, ... }
+  // (days with none left out), keptFrom: the first day the logs still have, there }
+  api.get('/activity/days', async (req, res) => {
+    const name = req.query.log === 'security' ? 'security' : 'game';
+    const { from, to } = req.query;
+    if (!isDate(from) || !isDate(to) || to < from || Date.parse(to) - Date.parse(from) > CALENDAR_SPAN * DAY_MS) {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    const tz = timeZone(req.query.tz);
+    const now = Date.now();
+    const keptFrom = dateIn(now - LOG_DAYS * DAY_MS, tz);
+    const today = dateIn(now, tz);
+    // Only the days a log can have anything on are counted - none before the first it keeps, or after today - so a
+    // month long gone, or one to come, isn't looked through at all
+    const first = from > keptFrom ? from : keptFrom;
+    const last = to < today ? to : today;
+    const days = first > last ? {}
+      : await store.logDays(name, midnightIn(first, tz), midnightIn(dateAt(Date.parse(last) + DAY_MS), tz), tz);
+    res.json({ days, keptFrom });
   });
 
   api.get('/stats', async (req, res) => {
@@ -693,4 +775,4 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
   };
 }
 
-module.exports = { createAdmin, addressBlock, clientAddress, checkWord, fromThisSite };
+module.exports = { createAdmin, addressBlock, clientAddress, checkWord, fromThisSite, timeZone, midnightIn, dateIn };

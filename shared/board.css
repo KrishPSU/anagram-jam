@@ -1,6 +1,6 @@
 /* The leaderboard box's tabs, and what came with them (shared/solo-leaderboard.js): the Solo | Daily switch, the ✓ on a
-   signed-in player's name, the Daily tab's columns and the Show more button. The box itself - the dialog, the card, the
-   rows, the gap and the count - is the board-* rules in theme.css, which still apply here. */
+   signed-in player's name, the Daily tab's columns, the Show more button and the rows while they load. The box itself -
+   the dialog, the card, the rows, the gap and the count - is the board-* rules in theme.css, which still apply here. */
 
 /* Solo | Daily: a segmented control the width of the box, so both halves are easy to hit on a phone */
 .board-tabs {
@@ -123,3 +123,7 @@
 
 /* Show more, centred under the rows */
 .board-more { justify-self: center; }
+
+/* The tab's rows while they're fetched again (it was picked again): still up, dimmed, until the new ones are in. The
+   first time, grey rows stand in instead (skeletonRow in solo-leaderboard.js). */
+.board-list.is-loading { opacity: 0.5; transition: opacity 0.2s ease; }

@@ -1,6 +1,6 @@
-// Accounts: a player can sign in with Google or Apple, and then their best, their Daily Jam records and their streak are
-// one and the same on every device they sign in on. Without signing in, a player is their browser - the random token it
-// keeps (see playerIdFor in index.js) - which can't follow them to another device.
+// Accounts: a player can sign in with Google or Apple, and then their best, their Daily Jam records, their streak and
+// their stats (see profile.js) are one and the same on every device they sign in on. Without signing in, a player is
+// their browser - the random token it keeps (see playerIdFor in index.js) - which can't follow them to another device.
 //
 // So who a player is comes in two parts (see identify): the DEVICE - the hash of the browser's token, as rooms have
 // always known players - and the SUBJECT everything scored or remembered goes under: the account's id when the device is
@@ -31,12 +31,36 @@ const AUTH_TIMEOUT = 8000;        // for a call to Supabase Auth - longer than d
 const DETAIL_TEXT = 20;           // the most characters in a presence detail's text
 const DETAIL_COUNT = 1000000;     // and the most any of its counts can be
 const CACHE_MAX = 5000;           // devices remembered here before the stale ones are swept out
+const PHOTO_MAX = 1000;           // the longest profile photo address kept
 
 // Tokens are 32 hex characters (see playerToken in solo/js/solo.js), but anything long enough to hash counts, as in solo.js
 const isToken = (token) => typeof token === 'string' && token.length >= 16;
 const isUuid = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// The profile photo in what the provider said about the user (Google's - Apple gives none), for the account button, or
+// '' for none. A user can change their own user_metadata through Supabase, so only what a Google photo looks like gets
+// through - an https address on a googleusercontent.com host, at most PHOTO_MAX characters - since every page the player
+// opens loads it. (The migration that brought photos in checks the ones Supabase already had the same way.)
+function photoOf(metadata) {
+  const address = typeof metadata.avatar_url === 'string' && metadata.avatar_url ? metadata.avatar_url : metadata.picture;
+  if (typeof address !== 'string' || address.length > PHOTO_MAX) return '';
+  let url;
+  try {
+    url = new URL(address);
+  } catch {
+    return '';
+  }
+  const host = url.hostname.toLowerCase();
+  const google = host === 'googleusercontent.com' || host.endsWith('.googleusercontent.com');
+  const plain = !url.port && !url.username && !url.password;
+  return url.protocol === 'https:' && google && plain && url.href.length <= PHOTO_MAX ? url.href : '';
+}
+
+// An account as it goes out to the pages: avatar is '' when it has no photo - and when the store has no photos at all,
+// before the migration that adds them (supabase/migrations/20261031000000_player_stats.sql) has run
+const withAvatar = (account) => ({ ...account, avatar: typeof account.avatar === 'string' ? account.avatar : '' });
 
 
 // store: where accounts, links and presence are kept (see data.js). playerIdFor(token): the device id, as index.js
@@ -77,7 +101,7 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
     // Through a promise even if the store throws outright (its account functions aren't there yet, say)
     entry.identity = Promise.resolve().then(() => store.accountFor(playerId)).then((account) => {
       entry.accountId = account ? account.id : null;
-      return { playerId, id: account ? account.id : playerId, account: account || null };
+      return { playerId, id: account ? account.id : playerId, account: account ? withAvatar(account) : null };
     }, (err) => {
       console.error("Looking up a device's account failed:", err.message);
       if (identities.get(playerId) === entry) identities.delete(playerId);
@@ -96,11 +120,16 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
   }
 
   // Who the browser holding `token` is: { playerId: the device id, id: the subject id everything of theirs goes under,
-  // account: { id, provider, name, devices } if the device is signed in, else null }. The token has been checked by the
-  // caller (isToken). fresh: look the device up again rather than trust what this instance knew a minute ago - for
-  // the moments that write a row under the id (a solo run ending, a Daily Jam word being opened), since another instance
-  // may just have signed the device out, or deleted the account, and a row written under a gone account is nobody's.
+  // account: { id, provider, name, avatar, devices } if the device is signed in, else null }. The token has been
+  // checked by the caller (isToken). fresh: look the device up again rather than trust what this instance knew a minute
+  // ago - for the moments that write a row under the id (a solo run ending, a Daily Jam word being opened), since
+  // another instance may just have signed the device out, or deleted the account, and a row written under a gone
+  // account is nobody's.
   const identify = (token, fresh = false) => lookUp(playerIdFor(token), fresh);
+
+  // The subject id of the device with id playerId, looked up afresh as identify's fresh is: for a round played in a
+  // room, which knows its players by device and writes each one's stats under it (see recordRound in profile.js)
+  const subjectFor = async (playerId) => (await lookUp(playerId, true)).id;
 
   // This device is looked up afresh next time: it was linked, unlinked, or its account changed
   const forget = (playerId) => identities.delete(playerId);
@@ -174,13 +203,15 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
       return { status: 'unavailable' };
     }
     // Google gives a full name; Apple does too unless they hid it, and only the first time - then the account keeps the
-    // name it has (see link_account)
+    // name it has (see link_account). Google gives a photo too, whose address can change - each sign-in brings the
+    // latest.
     const metadata = user.user_metadata || {};
     const name = cleanName(typeof metadata.full_name === 'string' && metadata.full_name ? metadata.full_name : metadata.name);
+    const avatar = photoOf(metadata);
     const playerId = playerIdFor(token);
     let account;
     try {
-      account = await store.linkAccount(playerId, { id: user.id, provider, name });
+      account = await store.linkAccount(playerId, { id: user.id, provider, name, avatar });
     } catch (err) {
       console.error('Linking an account failed:', err.message);
       return { status: 'unavailable' };
@@ -192,7 +223,7 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
       return { status: 'unavailable' };
     }
     console.log(`Account linked: ${provider}${account.name ? ` "${account.name}"` : ''} (${plural(account.devices, 'device')})`);
-    return { status: 'ok', account };
+    return { status: 'ok', account: withAvatar(account) };
   }
 
   // Whether the device whose browser holds `token` is signed in, and as whom. Looked up afresh (see identities) - this
@@ -243,9 +274,9 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
     return { status: 'ok' };
   }
 
-  // Deletes the account the device is signed in to: its scores, Daily Jam records and streak, every device's link, and
-  // then the Supabase user, so signing in again starts from nothing. The user staying behind in Supabase (it failed to
-  // go) is logged, no more: what they asked to have gone is gone.
+  // Deletes the account the device is signed in to: its scores, Daily Jam records, streak and stats, every device's
+  // link, and then the Supabase user, so signing in again starts from nothing. The user staying behind in Supabase (it
+  // failed to go) is logged, no more: what they asked to have gone is gone.
   // Replies { status: 'ok' } or { status } 'bad' (not signed in) or 'unavailable'.
   async function remove({ token } = {}) {
     if (!isToken(token)) return { status: 'bad' };
@@ -320,7 +351,7 @@ function createAccounts({ store, playerIdFor, supabase, posthog, providers = PRO
     return { status: 'ok' };
   }
 
-  return { enabled, config, identify, displayName, link, get, rename, unlink, remove, presence };
+  return { enabled, config, identify, subjectFor, displayName, link, get, rename, unlink, remove, presence };
 }
 
 module.exports = { createAccounts };

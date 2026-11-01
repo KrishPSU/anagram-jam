@@ -9,7 +9,11 @@ const STAT_METRICS = {
   rooms: { title: 'Rooms created each day', one: 'room', many: 'rooms' },
 };
 
+// The four numbers along the top: each one's id, and its "Today: …" line's is that with Today on the end
+const STAT_TILES = ['statPlayers', 'statRounds', 'statSolo', 'statRooms'];
+
 const statsTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+const statsPanel = document.getElementById('panel-stats');
 const dailyChartEl = document.getElementById('dailyChart');
 const hourChartEl = document.getElementById('hourChart');
 const dailyTableEl = document.getElementById('dailyTable');
@@ -25,17 +29,44 @@ document.getElementById('statsSub').textContent = `Days and hours in your time (
 async function loadStats() {
   if (statsLoading) return;
   statsLoading = true;
-  // While it loads, the charts keep their last drawing, dimmed
-  document.getElementById('panel-stats').classList.add('is-loading');
+  // The first time, grey pieces stand in for the numbers and the charts. After that, while it loads, the charts keep
+  // their last drawing, dimmed.
+  const first = !report;
+  if (first) showStatsSkeleton();
+  else statsPanel.classList.add('is-loading');
   try {
     report = await api(`stats?days=${statsDays}&tz=${encodeURIComponent(statsTimeZone)}`);
     renderStats();
   } catch (err) {
     showAlert(err.message);
+    if (first) hideStatsSkeleton();
   } finally {
     statsLoading = false;
-    document.getElementById('panel-stats').classList.remove('is-loading');
+    statsPanel.classList.remove('is-loading');
+    markBusy(statsPanel, false);
   }
+}
+
+// The numbers and the charts on their way: grey bars where the numbers go, and grey columns for the days and the hours
+// (renderStats puts the real ones in their place)
+function showStatsSkeleton() {
+  markBusy(statsPanel, true);
+  for (const id of STAT_TILES) {
+    document.getElementById(id).replaceChildren(skelPiece('text', '1.6em'));
+    document.getElementById(id + 'Today').replaceChildren(skelPiece('text', '5em'));
+  }
+  chartSkeleton(dailyChartEl, statsDays);
+  chartSkeleton(hourChartEl, 24);
+}
+
+// The first read didn't come: no numbers to show ("–"), and no charts
+function hideStatsSkeleton() {
+  for (const id of STAT_TILES) {
+    document.getElementById(id).textContent = '–';
+    document.getElementById(id + 'Today').textContent = '';
+  }
+  dailyChartEl.replaceChildren();
+  hourChartEl.replaceChildren();
 }
 
 const sum = (rows, metric) => rows.reduce((n, row) => n + row[metric], 0);
@@ -153,6 +184,18 @@ function columnChart(container, items) {
     tip.hidden = true;
     svg.querySelectorAll('.bar.on').forEach(bar => bar.classList.remove('on'));
   };
+}
+
+// A chart on its way - the first time it's read, or (Daily Jam) after something went wrong took it down: `count` grey
+// columns of made-up heights where columnChart's will stand (.chart-skel in /shared/skeleton.css). Its next drawing
+// takes their place. It forgets the last drawing, so a resize (chartResize) can't bring that back over them.
+function chartSkeleton(container, count) {
+  container.chartItems = null;
+  container.replaceChildren(el('div.chart-skel', { 'aria-hidden': 'true' }, Array.from({ length: count }, (_, i) => {
+    const column = el('span.skel');
+    column.style.setProperty('--h', `${Math.round(30 + 50 * Math.abs(Math.sin(i * 2.4 + 1)))}%`);
+    return column;
+  })));
 }
 
 window.addEventListener('scroll', () => {

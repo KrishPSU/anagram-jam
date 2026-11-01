@@ -1,5 +1,6 @@
 // The Controls tab: the home page banner, pausing new games, a message to everyone, and the word checker.
 
+const controlsPanel = document.getElementById('panel-controls');
 const bannerForm = document.getElementById('bannerForm');
 const bannerText = document.getElementById('bannerText');
 const bannerCount = document.getElementById('bannerCount');
@@ -20,8 +21,11 @@ const PAUSED_FALLBACK = 'New games are paused for a few minutes. Try again soon!
 
 let siteSettings = null; // { announcement, paused }, as the server has them
 
-// The settings come with the Live tab's overview
+// The settings come with the Live tab's overview. Until they've come once, grey bars stand in for what they say
+// (showControlsSkeleton); after that, what's showing stays until they're in.
 async function loadControls() {
+  const first = !siteSettings;
+  if (first) showControlsSkeleton();
   try {
     const reply = await api('overview');
     setSession(reply.session.ends);
@@ -30,10 +34,36 @@ async function loadControls() {
       ? `${plural(reply.totals.players, 'player')} in rooms, plus anyone on the home page or playing solo`
       : 'nobody is in a room right now, but anyone on the home page or playing solo will see it';
     if (document.activeElement !== bannerText) bannerText.value = siteSettings.announcement;
+    if (first) pauseToggle.disabled = false;
     showSettings();
   } catch (err) {
     showAlert(err.message);
+    if (first) hideControlsSkeleton();
+  } finally {
+    markBusy(controlsPanel, false);
   }
+}
+
+// Grey bars where what's on the home page now, whether games are paused and who a message would reach will go. The
+// switch can't be flipped meanwhile: until it shows the real setting, a flip could go the wrong way.
+function showControlsSkeleton() {
+  markBusy(controlsPanel, true);
+  bannerNow.classList.add('is-empty');
+  bannerNow.replaceChildren(skelPiece('text', '18em'));
+  pauseToggle.disabled = true;
+  pauseLabel.replaceChildren(skelPiece('text', '9em'));
+  reachCountEl.replaceChildren(skelPiece('text', '16em'));
+}
+
+// They didn't come: the switch can be flipped again, and what's still grey goes back to how the page starts out, with
+// the toast saying what went wrong. What a save (or a newer read) put up meanwhile stays.
+function hideControlsSkeleton() {
+  pauseToggle.disabled = false;
+  if (reachCountEl.querySelector('.skel')) reachCountEl.textContent = '…';
+  if (siteSettings) return;
+  bannerNow.classList.remove('is-empty');
+  bannerNow.textContent = '';
+  pauseLabel.textContent = 'New games can start';
 }
 
 function showSettings() {
@@ -127,12 +157,16 @@ wordForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const query = wordInput.value.trim();
   if (!query) return;
-  wordResultEl.replaceChildren(el('p.word-line', el('span.spinner', { 'aria-hidden': 'true' }), ' Checking…'));
+  // Grey lines where the answer will go while it's looked up (a quick answer never shows them)
+  markBusy(wordResultEl, true);
+  wordResultEl.replaceChildren(...['22em', '14em', '18em'].map(width => el('p.word-line', skelPiece('text', width))));
   try {
     const { result } = await api(`word?q=${encodeURIComponent(query)}`);
     wordResultEl.replaceChildren(...(result ? wordAnswer(result) : [el('p.word-line', 'Type at least two letters.')]));
   } catch (err) {
     wordResultEl.replaceChildren(el('p.word-line.bad', err.message));
+  } finally {
+    markBusy(wordResultEl, false);
   }
 });
 

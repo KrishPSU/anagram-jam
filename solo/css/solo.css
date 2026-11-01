@@ -90,6 +90,9 @@
   color: var(--ink-muted);
 }
 
+/* Where your best will go, while the leaderboard is asked for it (solo.js) */
+.solo-best .skel { --w: 12em; margin-left: 0.5em; }
+
 /* Under GO!, if the words still haven't come */
 .overlay-wait {
   margin: 0;

@@ -704,17 +704,142 @@ code {
 
 /* ---------- Activity ---------- */
 
-.feed { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+/* Which day: ‹ Today › with the calendar's button on the end, and the calendar under them */
+.activity-day { position: relative; display: flex; }
+.seg .seg-icon { display: inline-grid; place-items: center; padding: 0 9px; }
+.seg .seg-icon svg { display: block; }
+.seg button[aria-expanded="true"] { background: rgba(255, 255, 255, 0.16); color: #fff; }
 
-.feed-day {
-  margin: 10px 0 2px 4px;
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--faint);
+/* The calendar: the panels' dark glass, a little more solid to stand over them */
+.cal {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 292px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(24, 22, 33, 0.92);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transform-origin: top right;
+  animation: calIn 0.16s ease-out;
 }
-.feed-day:first-child { margin-top: 0; }
+.cal:focus { outline: none; }
+
+@keyframes calIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+}
+
+.cal-head {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+.cal-title { text-align: center; font-weight: 700; font-size: 15px; }
+
+.cal-nav {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 18px var(--font);
+  cursor: pointer;
+}
+.cal-nav:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.cal-nav:disabled { background: transparent; color: var(--muted); opacity: 0.3; cursor: default; }
+
+.cal-weekdays, .cal-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.cal-weekdays span { padding-bottom: 4px; text-align: center; font-weight: 700; font-size: 11px; color: var(--faint); }
+
+.cal-day {
+  appearance: none;
+  position: relative;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #fff;
+  font: 600 14px var(--font);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.cal-day:hover { background: rgba(255, 255, 255, 0.08); }
+/* Today ringed, the day showing filled in */
+.cal-day.is-today { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45); }
+.cal-day.is-showing { background: linear-gradient(135deg, var(--jam), var(--jam-deep)); }
+.cal-day:disabled { background: transparent; color: rgba(255, 255, 255, 0.22); cursor: default; }
+.cal-day:focus-visible, .cal-nav:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 1px; }
+
+/* A day with entries: a dot under its number, stronger the more it has (its title says how many) */
+.cal-dot {
+  position: absolute;
+  bottom: 4px;
+  left: calc(50% - 2px);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--jam);
+  opacity: 0.4;
+}
+.cal-dot[data-level="2"] { opacity: 0.6; }
+.cal-dot[data-level="3"] { opacity: 0.8; }
+.cal-dot[data-level="4"] { opacity: 1; }
+.cal-day.is-showing .cal-dot { background: #fff; }
+
+.cal-foot { padding-top: 4px; text-align: center; font-size: 12px; color: var(--faint); }
+
+/* On a phone: a sheet along the bottom of the screen, with the page dimmed behind it */
+.cal-backdrop { display: none; }
+@media (max-width: 600px) {
+  .cal-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(8, 6, 14, 0.55);
+    touch-action: none;
+    animation: calFade 0.2s ease;
+  }
+  .cal {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 61;
+    width: auto;
+    grid-template-columns: minmax(0, 420px);
+    justify-content: center;
+    padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: 20px 20px 0 0;
+    animation: calUp 0.26s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .cal-day { height: 44px; font-size: 16px; }
+}
+
+@keyframes calUp {
+  from { transform: translateY(100%); }
+}
+
+@keyframes calFade {
+  from { opacity: 0; }
+}
+
+/* The day's items, newest first. Read again, they're dimmed until it's in. */
+.feed { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.panel.is-loading .feed { opacity: 0.5; transition: opacity 0.2s ease; }
 
 .feed-item {
   display: grid;
@@ -743,6 +868,119 @@ code {
 .feed-text { font-weight: 600; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
 .feed-detail { margin-top: 3px; font-size: 13px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
 .feed-time { padding-top: 3px; font-size: 12px; color: var(--faint); white-space: nowrap; }
+
+/* A group: a line saying what's in it, with an arrow at its end, and its entries under it when it's open - indented
+   along a guide line that hangs from the line's icon. The space opens by its grid row going from 0fr to 1fr, so it
+   grows to just what's in it. */
+.feed-summary {
+  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.feed-summary:hover, .feed-group.is-open > .feed-summary { border-color: rgba(255, 255, 255, 0.22); }
+.feed-summary.bad:hover, .feed-group.is-open > .feed-summary.bad { border-color: rgba(251, 113, 133, 0.6); }
+
+.feed-arrow {
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin: -4px -4px 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+/* A chevron, pointing down - and up once the group is open */
+.feed-arrow::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  border-radius: 1px;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.feed-summary:hover .feed-arrow { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.feed-arrow:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 1px; }
+.feed-group.is-open .feed-arrow::before { transform: translateY(2px) rotate(225deg); }
+
+/* Closing is quick and quiet: the space folds away as it fades, and it's hidden (from screen readers and Tab too)
+   once it has */
+.feed-more {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.2s ease, opacity 0.15s ease, visibility 0s linear 0.2s;
+}
+.feed-group.is-open > .feed-more {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition: grid-template-rows 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.feed-clip { min-height: 0; overflow: hidden; }
+
+.feed-sub {
+  position: relative;
+  margin: 0;
+  padding: 6px 0 0 42px;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.feed-sub::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 29px;
+  width: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  transform-origin: top;
+}
+.feed-group.bad .feed-sub::before { background: rgba(251, 113, 133, 0.3); }
+.feed-sub .feed-item { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; padding: 8px 10px; }
+.feed-sub .feed-icon { width: 28px; height: 28px; border-radius: 8px; font-size: 14px; }
+.feed-sub .feed-body { padding-top: 0; }
+.feed-sub .feed-text { font-size: 14px; }
+
+/* Opened just now: the line draws down and the entries come in after it, one after another - each a little later
+   than the one above, up to a point, so a long group doesn't keep you waiting */
+.feed-group.is-cascading .feed-sub::before { animation: feedLine 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.feed-group.is-cascading .feed-sub > li {
+  animation: feedIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 32ms + 40ms);
+}
+
+@keyframes feedLine {
+  from { transform: scaleY(0); }
+}
+
+@keyframes feedIn {
+  from { opacity: 0; transform: translateY(-8px); }
+}
+
+/* While a day not on screen yet is read: stand-ins shaped like its items (see /shared/skeleton.css), each line as
+   tall as the text it stands for. The cards come in with their pieces, after the same moment, so a quick reply never
+   flashes them up. */
+.feed-skel { animation: skelIn 0.25s ease 0.15s both; }
+.feed-skel .feed-body { display: grid; }
+.feed-skel .feed-body .skel-line { font-size: 15px; }
+.feed-skel .feed-body .skel-line + .skel-line { margin-top: calc(0.3em + 3px); font-size: 13px; }
+.feed-skel-time { margin-top: 6px; font-size: 12px; }
+
+/* Those who turn off motion get groups that are just open or closed */
+@media (prefers-reduced-motion: reduce) {
+  .feed-more, .feed-group.is-open > .feed-more, .feed-arrow::before { transition: none; }
+  .feed-group.is-cascading .feed-sub > li, .feed-group.is-cascading .feed-sub::before { animation: none; }
+}
 
 
 /* ---------- Controls ---------- */
@@ -814,7 +1052,6 @@ code {
 .word-line.good b { color: #6ee7b7; }
 .word-line.bad b, .word-line.bad { color: #fda4af; }
 .word-line.muted { color: var(--faint); }
-.word-line .spinner { vertical-align: -0.2em; }
 
 .word-chip {
   display: inline-block;

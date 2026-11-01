@@ -1,0 +1,114 @@
+/* Skeletons: grey shapes standing in for what's on its way from the server, in place of a "Loading…" line. Each page
+   draws its own out of these pieces - shaped like what's coming, so nothing jumps when the real thing replaces it - and
+   swaps them out the moment its reply is in. A button that's waiting keeps its spinner (theme.css): a skeleton is for
+   content, not for something you pressed.
+
+   Whatever holds a skeleton should say it's busy to screen readers - aria-busy="true" on it, or a .sr-only "Loading…"
+   status line next to it - and the skeleton itself is aria-hidden, since grey bars mean nothing read out.
+
+   They fade in after a moment, so a reply that's quick never flashes one up. */
+
+/* On the white cards; the admin page and anything on the dark glass (.skel-on-dark) use a faint white instead */
+:root {
+  --skel-base: #eceef3;
+  --skel-shine: #f8f9fb;
+}
+body.admin, .skel-on-dark {
+  --skel-base: rgba(255, 255, 255, 0.07);
+  --skel-shine: rgba(255, 255, 255, 0.16);
+}
+/* ...and on the light grey of a row or a tile (--field in theme.css), a shade darker than it */
+.skel-on-field {
+  --skel-base: #e2e4e9;
+  --skel-shine: #eceef1;
+}
+
+.skel {
+  display: block;
+  flex: none;
+  width: var(--w, 100%);
+  /* Never wider than what it's in, however wide what it stands for usually is */
+  max-width: 100%;
+  height: var(--h, 1em);
+  border-radius: var(--r, 6px);
+  background: linear-gradient(90deg, var(--skel-base) 30%, var(--skel-shine) 50%, var(--skel-base) 70%);
+  background-size: 300% 100%;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+  animation: skelIn 0.25s ease 0.15s both, skelShine 1.5s ease-in-out infinite;
+}
+
+/* A line of text: as tall as the text it stands for, a little less, with the gap a line has */
+.skel-line { height: 0.75em; margin: 0.3em 0; }
+/* Inside a line of real text, for one value still coming ("Players: ▬") */
+.skel-text { display: inline-block; height: 0.8em; width: var(--w, 3em); vertical-align: -0.05em; }
+/* Round: an avatar or an icon. --size sets both sides. */
+.skel-circle { width: var(--size, 28px); height: var(--size, 28px); border-radius: 50%; }
+.skel-pill { border-radius: 999px; }
+/* A card, a chart, a tile - anything with an edge. --h sets its height. */
+.skel-block { height: var(--h, 48px); border-radius: var(--r, 12px); }
+/* A letter tile, or a space for one, as big as the tiles around it (--tile-size in theme.css) */
+.skel-tile { width: var(--tile-size); height: calc(var(--tile-size) * 1.15); border-radius: var(--radius-tile); }
+
+/* A real box - a row, a card - put up with grey pieces in it, so they sit just where what's coming will. It fades in
+   with them, so a quick reply doesn't flash an empty box either. */
+.skel-box {
+  animation: skelIn 0.25s ease 0.15s both;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* A row of skeleton pieces, spaced like the row they stand for */
+.skel-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.skel-row > .skel-grow { flex: 1; min-width: 0; }
+
+/* A list of them: each a little fainter than the one before, so a long list trails off rather than ending at an edge */
+.skel-fade > :nth-child(2) { opacity: 0.85; }
+.skel-fade > :nth-child(3) { opacity: 0.7; }
+.skel-fade > :nth-child(4) { opacity: 0.55; }
+.skel-fade > :nth-child(5) { opacity: 0.45; }
+.skel-fade > :nth-child(n + 6) { opacity: 0.35; }
+
+@keyframes skelShine {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@keyframes skelIn {
+  from { opacity: 0; }
+}
+
+/* Still for those who turn off motion: the grey stays, the shine doesn't sweep. It still waits its moment before it
+   shows, so a quick reply doesn't flash one here either. */
+@media (prefers-reduced-motion: reduce) {
+  .skel {
+    animation: skelIn 0.01ms 0.15s both !important;
+    background: var(--skel-base);
+  }
+}
+
+
+/* ---------- Admin page ---------- */
+
+/* The dashboard's own pieces: a chip (.chip in admin.css) and a small button (.btn-xs) - Remove, Close room */
+.skel-chip { --w: 5.5em; --h: 22px; border-radius: 999px; }
+.skel-btn { --w: 64px; --h: 30px; --r: 8px; }
+
+/* A chart on its way (chartSkeleton in admin/app/stats.js): a column of made-up height for each day or hour, where
+   columnChart's will stand - inside the same margins, each in the middle of its share of the width and no wider than
+   24px. Each column's --h is its height. */
+.chart-skel {
+  position: absolute;
+  inset: 10px 6px 26px 34px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-template-rows: 100%;
+  align-items: end;
+  justify-items: center;
+}
+.chart-skel .skel { width: min(24px, calc(100% - 2px)); border-radius: 4px 4px 0 0; }
+
+/* A Daily Jam word's tries bars on their way (admin/app/daily.js): as tall as the track, square where they start */
+.jam-bar-track .skel { --h: 100%; --r: 0 4px 4px 0; }

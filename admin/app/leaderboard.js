@@ -3,18 +3,26 @@
 //
 // Uses hiddenChip and accountChip from live.js.
 
+const boardPanel = document.getElementById('panel-leaderboard');
 const boardListEl = document.getElementById('boardList');
 const boardStateEl = document.getElementById('boardState');
 const boardSummaryEl = document.getElementById('boardSummary');
 const boardSearch = document.getElementById('boardSearch');
 
+const BOARD_NAME_WIDTHS = ['8em', '6em', '10em', '7em', '5em']; // the grey rows' names, so they don't all line up
+
 let boardRows = null; // the last read, as solo.js's adminBoard gives it
 let boardPlayers = 0;
 
+// Until the board has been read once, grey rows stand in for it (showBoardSkeleton); a read after that keeps the rows
+// showing until it's in.
 async function loadBoard() {
-  setState(boardStateEl, boardRows ? '' : 'Loading the leaderboard…', { loading: true });
+  if (!boardRows) showBoardSkeleton();
+  setState(boardStateEl, '');
   try {
     const reply = await api('leaderboard');
+    // Grey rows still up make way for the board, or for what went wrong
+    if (!boardRows) hideBoardSkeleton();
     if (reply.status !== 'ok') {
       setState(boardStateEl, "The leaderboard can't be reached right now (Supabase isn't answering). Try again in a bit.", { error: true });
       return;
@@ -24,8 +32,34 @@ async function loadBoard() {
     setState(boardStateEl, '');
     renderBoard();
   } catch (err) {
+    if (!boardRows) hideBoardSkeleton();
     setState(boardStateEl, err.message, { error: true });
   }
+}
+
+// Grey rows where the board's will be - place, avatar, name and when, points and Remove - each a little fainter than
+// the one above, and a grey line where the count goes
+function showBoardSkeleton() {
+  markBusy(boardPanel, true);
+  boardSummaryEl.replaceChildren(skelPiece('text', '14em'));
+  boardListEl.classList.add('skel-fade');
+  boardListEl.replaceChildren(...Array.from({ length: 10 }, (_, i) => el('li.lb-row.skel-box', { 'aria-hidden': 'true' },
+    el('span.lb-place', skelPiece('text', '1em')),
+    skelPiece('circle.avatar'),
+    el('div.lb-main',
+      el('span.lb-line', el('span.lb-name', skelPiece('text', BOARD_NAME_WIDTHS[i % BOARD_NAME_WIDTHS.length]))),
+      el('span.lb-meta', skelPiece('text', '12em')),
+    ),
+    el('span.lb-points', skelPiece('text', '3.2em')),
+    skelPiece('btn'),
+  )));
+}
+
+function hideBoardSkeleton() {
+  markBusy(boardPanel, false);
+  boardSummaryEl.textContent = '';
+  boardListEl.classList.remove('skel-fade');
+  boardListEl.replaceChildren();
 }
 
 function renderBoard() {

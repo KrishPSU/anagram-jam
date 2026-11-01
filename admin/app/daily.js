@@ -7,12 +7,13 @@
 // browser's. A day that could still be played here keeps its words hidden until "Show today's words" is ticked, so
 // opening the tab doesn't give away a Daily Jam you haven't done yet.
 //
-// Uses columnChart, dayLabel and chartResize from stats.js, and nameLine from live.js.
+// Uses columnChart, chartSkeleton, dayLabel and chartResize from stats.js, and nameLine from live.js.
 
 const JAM_LEVELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 const JAM_TRIES = 3; // a word's tries (TRIES in daily.js at the project root)
 const JAM_DAY_MS = 24 * 60 * 60 * 1000;
 
+const jamPanel = document.getElementById('panel-daily');
 const jamTitleEl = document.getElementById('jamTitle');
 const jamSubEl = document.getElementById('jamSub');
 const jamStateEl = document.getElementById('jamState');
@@ -74,12 +75,20 @@ function jamProblem(reply) {
   return 'The server didn’t take that day.';
 }
 
-// Reads the day showing, and the days for the chart if `withDays` (or they haven't been read yet)
+// Reads the day showing, and the days for the chart if `withDays` (or they haven't been read yet). Until a day has been
+// shown - the first time, or after something went wrong and took it all down - grey pieces stand in for the whole tab
+// (showJamSkeleton), and go again if the read doesn't come. Any other time, what's showing stays, dimmed, until the new
+// day's in.
 async function loadJam(withDays = true) {
   const ask = ++jamAsking;
-  const panel = document.getElementById('panel-daily');
-  panel.classList.add('is-loading');
-  if (jamBodyEl.hidden) setState(jamStateEl, 'Loading…', { loading: true });
+  const first = jamBodyEl.hidden || !jamDayReport;
+  if (first) {
+    setState(jamStateEl, '');
+    // (They're up already if this ask took over from one that put them up)
+    if (jamBodyEl.hidden) showJamSkeleton();
+  } else {
+    jamPanel.classList.add('is-loading');
+  }
   try {
     const [dayReply, daysReply] = await Promise.all([
       api(`daily/day?day=${jamDay}`),
@@ -90,6 +99,7 @@ async function loadJam(withDays = true) {
     if (problem) {
       setState(jamStateEl, jamProblem(problem), { error: true });
       jamBodyEl.hidden = true;
+      if (first) jamSubEl.textContent = '';
       return;
     }
     jamDayReport = dayReply;
@@ -99,10 +109,61 @@ async function loadJam(withDays = true) {
     jamBodyEl.hidden = false;
     renderJam();
   } catch (err) {
-    if (ask === jamAsking) setState(jamStateEl, err.message, { error: true });
+    if (ask !== jamAsking) return;
+    setState(jamStateEl, err.message, { error: true });
+    if (first) {
+      jamBodyEl.hidden = true;
+      jamSubEl.textContent = '';
+    }
   } finally {
-    if (ask === jamAsking) panel.classList.remove('is-loading');
+    if (ask === jamAsking) {
+      jamPanel.classList.remove('is-loading');
+      markBusy(jamPanel, false);
+    }
   }
+}
+
+// The tab on its way: grey pieces where the day's numbers, its three words, its players, the chart and the streaks will
+// be, which renderJam puts the real ones in place of
+function showJamSkeleton() {
+  markBusy(jamPanel, true);
+  jamSubEl.replaceChildren(skelPiece('text', '10em'));
+  for (const id of ['jamPlayers', 'jamFinished', 'jamGot', 'jamAll']) {
+    document.getElementById(id).replaceChildren(skelPiece('text', '1.6em'));
+    document.getElementById(id + 'Sub').replaceChildren(skelPiece('text', '9em'));
+  }
+  jamEmptyEl.hidden = true;
+  // A word each for easy, medium and hard, as long as theirs are (LEVELS in daily.js at the project root)
+  jamLevelsEl.replaceChildren(...[5, 7, 9].map(jamLevelSkeleton));
+  jamPlayersPaneEl.hidden = false;
+  jamPlayersEmptyEl.hidden = true;
+  jamPlayersTableEl.replaceChildren(jamPlayersHead(), el('tbody.skel-fade', { 'aria-hidden': 'true' },
+    ['8em', '6em', '9em', '5em', '7em'].map(nameWidth => el('tr',
+      el('td', el('div.jam-player', skelPiece('circle', '24px'), skelPiece('text', nameWidth))),
+      Object.keys(JAM_LEVELS).map(() => el('td', skelPiece('text', '5.5em'))),
+      el('td', skelPiece('text', '6em')),
+    ))));
+  chartSkeleton(jamChartEl, jamRange);
+  jamStreaksEl.replaceChildren(...['16em', '5em', '5em', '7em'].flatMap(width => [el('dt', skelPiece('text', '6em')), el('dd', skelPiece('text', width))]));
+  jamBodyEl.hidden = false;
+}
+
+// One of the day's words on its way, laid out as jamLevelCard lays it out: its name and how many got it, its letters,
+// the tries bars and the four facts under them
+function jamLevelSkeleton(length) {
+  return el('section.pane.jam-level.skel-box', { 'aria-hidden': 'true' },
+    el('div.jam-level-head', el('h3', skelPiece('text', '6em')), skelPiece('chip', '5.5em')),
+    el('div.jam-word',
+      el('span.mini-tiles', Array.from({ length }, () => skelPiece('tile'))),
+      el('p.jam-answer', skelPiece('text', '10em')),
+    ),
+    el('div.jam-dist', ['70%', '45%', '25%', '35%'].map(width => el('div.jam-bar',
+      el('span.jam-bar-label', skelPiece('text', '3.5em')),
+      el('span.jam-bar-track', skelPiece('block', width)),
+      el('span.jam-bar-count', skelPiece('text', '3.5em')),
+    ))),
+    el('dl.jam-facts', Array.from({ length: 4 }, () => el('div', el('dt', skelPiece('text', '4.5em')), el('dd', skelPiece('text', '2.5em'))))),
+  );
 }
 
 function renderJam() {
@@ -215,13 +276,18 @@ function renderJamPlayers(players, opened) {
   jamPlayersEmptyEl.hidden = players.length > 0;
   const levelNames = Object.keys(JAM_LEVELS);
   jamPlayersTableEl.replaceChildren(...(players.length ? [
-    el('thead', el('tr', el('th', 'Player'), levelNames.map(level => el('th', JAM_LEVELS[level])), el('th', 'Streak'))),
+    jamPlayersHead(),
     el('tbody', players.map(player => el('tr',
       el('td', el('div.jam-player', avatarEl(player.name), nameLine(player))),
       levelNames.map(level => jamPlayerCell(player.levels && player.levels[level])),
       jamStreakCell(player.streak),
     ))),
   ] : []));
+}
+
+// The players table's head row - the same while its rows are on their way (showJamSkeleton)
+function jamPlayersHead() {
+  return el('thead', el('tr', el('th', 'Player'), Object.keys(JAM_LEVELS).map(level => el('th', JAM_LEVELS[level])), el('th', 'Streak')));
 }
 
 // How one of the day's words went for a player: got it (in how many tries, and how long it took), missed it, still on

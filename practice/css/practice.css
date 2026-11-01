@@ -1,5 +1,5 @@
 /* Practice mode (practice.html). It's solo mode's word screen without the clock, so solo.css and the room page's
-   styles do most of it. This is the 🤷 button in the hint's place, and what shows while the words load. */
+   styles do most of it. This is the 🤷 button in the hint's place, and what shows if the words can't be got. */
 
 
 /* 🤷, between shuffle and delete: solo mode's glass circle, always there to tap */
@@ -20,7 +20,8 @@
 }
 
 
-/* Getting the words - or a Try again button, if they didn't come */
+/* The words didn't come: why, and a Try again button. (While they're coming, grey tiles stand where the first word's
+   will be - see practice.js.) */
 .practice-load {
   display: grid;
   justify-items: center;
@@ -34,5 +35,3 @@
   font-size: 15px;
   color: var(--on-dark-muted);
 }
-
-.practice-load .spinner { margin-right: 8px; vertical-align: -0.2em; }

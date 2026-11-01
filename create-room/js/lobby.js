@@ -104,6 +104,7 @@ function freshConnection() {
 // DOM refs
 const roomCodeEl = document.getElementById('roomCode');
 const eyebrowEl = document.getElementById('lobbyEyebrow');
+const lobbyCardEl = document.getElementById('lobbyCard');
 const waitingEl = document.getElementById('waiting');
 const playersEl = document.getElementById('players');
 const readyBtn = document.getElementById('readyBtn');
@@ -142,6 +143,7 @@ function showView(next) {
 const STATUS_TEXT = { ready: '✓ Ready', notReady: 'Not ready', inGame: 'In game' };
 
 function render() {
+  clearLobbySkeleton();
   const count = state.players.length;
   eyebrowEl.textContent = `Lobby · ${count} ${count === 1 ? 'player' : 'players'}`;
 
@@ -206,6 +208,15 @@ function playerPill(player) {
 
   pill.append(wins, status);
   return pill;
+}
+
+// The first render, once the server has said who's here: the grey shapes the lobby card starts with (game.html) make
+// way, and the status line is seen again. The players' grey rows go when the real ones replace them.
+function clearLobbySkeleton() {
+  if (!lobbyCardEl.hasAttribute('aria-busy')) return;
+  lobbyCardEl.removeAttribute('aria-busy');
+  lobbyCardEl.querySelectorAll('.lobby-skel').forEach(shape => shape.remove());
+  waitingEl.classList.remove('sr-only');
 }
 
 function statusText(me) {

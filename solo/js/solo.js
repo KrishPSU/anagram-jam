@@ -79,15 +79,25 @@ function showView(next) {
 }
 
 
-// Under the Start button: who you're playing as, and your best once the leaderboard says what it is
+// Under the Start button: who you're playing as, and your best once the leaderboard says what it is - with a grey bar
+// where it will go meanwhile (/shared/skeleton.css), which goes without a trace if you haven't got one yet
 function showBest() {
   soloBestEl.textContent = `Playing as ${playerName}`;
+  const bar = document.createElement('span');
+  bar.className = 'skel skel-text';
+  bar.setAttribute('aria-hidden', 'true');
+  soloBestEl.append(bar);
+  soloBestEl.setAttribute('aria-busy', 'true');
   request('solo-board', { token: playerToken(), count: 0 })
     .then((reply) => {
       if (reply.status !== 'ok' || !reply.you) return;
       soloBestEl.textContent = `Playing as ${playerName} · Your best: ${reply.you.points} (#${reply.you.rank} of ${reply.players})`;
     })
-    .catch(() => {});
+    .catch(() => {})
+    .finally(() => {
+      bar.remove();
+      soloBestEl.removeAttribute('aria-busy');
+    });
 }
 
 

@@ -33,7 +33,7 @@
 }
 
 /* The account button is the How to play button's twin (.help-btn in /shared/theme.css): a glass pill with the 👤 in a
-   white circle where the ? is */
+   white circle where the ? is - or, signed in, the account's photo or initial filling the circle */
 .account-btn {
   appearance: none;
   height: 44px;
@@ -67,6 +67,18 @@
   font-size: 14px;
   line-height: 1;
 }
+
+/* Signed in: the account's Google photo, or its initial on its color (an .avatar, as /shared/players.js draws them),
+   drawn in by /shared/account.js. Each is rounded itself, as the circle can't clip them - the dot hangs over its edge. */
+.account-btn i img, .account-btn i .avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+/* Taps go through the photo to the button, so PostHog records the button's click without the photo in it (account.js
+   keeps the photo's address out of what PostHog gets) */
+.account-btn i img { object-fit: cover; pointer-events: none; }
+.account-btn i .avatar { font-size: 12px; }
 
 /* Signed in: a green dot on the circle */
 .account-btn.is-signed-in i::after {

@@ -8,6 +8,7 @@
 const LIVE_EVERY = 5000;
 const IDLE_AFTER = 10 * 60 * 1000;
 
+const livePanel = document.getElementById('panel-live');
 const kpiEls = {
   people: document.getElementById('kpiPeople'),
   players: document.getElementById('kpiPlayers'),
@@ -54,12 +55,58 @@ async function refreshLive() {
     setSession(overview.session.ends);
     setState(liveStateEl, '');
     renderLive();
+    markBusy(livePanel, false);
   } catch (err) {
     setState(liveStateEl, `${err.message} Trying again…`, { error: true });
   } finally {
     liveAsking = false;
   }
   if (liveOpen) liveTimer = setTimeout(refreshLive, LIVE_EVERY);
+}
+
+// Until the first reply: grey pieces where the numbers, the deploy line, the people and the rooms will be, which
+// renderLive puts the real ones in place of. They stay through a failed ask, since another is on its way in a few
+// seconds - the line above them says what went wrong. Every ask after the first keeps what's showing until it's in.
+function showLiveSkeleton() {
+  markBusy(livePanel, true);
+  Object.values(kpiEls).forEach(kpi => kpi.replaceChildren(skelPiece('text', '1.4em')));
+  deployLine.className = 'status-line skel-box';
+  deployLine.hidden = false;
+  deployTitle.replaceChildren(skelPiece('text', '7em'));
+  deployText.replaceChildren(skelPiece('text', '11em'));
+  peopleEmptyEl.hidden = true;
+  peopleListEl.replaceChildren(el('section.people-group.skel-box', { 'aria-hidden': 'true' },
+    el('header.people-head', el('h3', skelPiece('text', '4.5em')), skelPiece('chip', '4.5em')),
+    el('ul.room-players', personSkeleton('7em'), personSkeleton('5em')),
+  ));
+  roomsEmptyEl.hidden = true;
+  roomListEl.replaceChildren(el('article.room-card.skel-box', { 'aria-hidden': 'true' },
+    el('header.room-head',
+      el('span.mini-tiles', Array.from({ length: 5 }, () => skelPiece('tile'))),
+      skelPiece('chip', '4em'),
+      el('span.room-meta', skelPiece('text', '5em')),
+    ),
+    el('ul.room-players', roomPlayerSkeleton('6em'), roomPlayerSkeleton('4.5em')),
+    el('footer.room-foot', el('span', skelPiece('text', '11em')), skelPiece('btn', '84px')),
+  ));
+}
+
+// A person's row (personRow) on its way: avatar, name, what they're up to, and how long ago and for how long
+function personSkeleton(nameWidth) {
+  return el('li.player-row',
+    skelPiece('circle'),
+    el('div.player-main', el('span.player-name', skelPiece('text', nameWidth)), el('span.player-progress', skelPiece('text', '10em'))),
+    el('span.player-when', el('span', skelPiece('text', '4em')), el('span', skelPiece('text', '3.5em'))),
+  );
+}
+
+// A room player's row (playerRow) on its way: avatar, name, a status chip, and the Remove button
+function roomPlayerSkeleton(nameWidth) {
+  return el('li.player-row',
+    skelPiece('circle'),
+    el('div.player-main', el('span.player-name', skelPiece('text', nameWidth)), el('span.player-meta', skelPiece('chip', '5.5em'))),
+    skelPiece('btn'),
+  );
 }
 
 // "Updated 3s ago", or why it isn't updating
@@ -311,7 +358,7 @@ whenActive.add(() => {
 registerTab('live', {
   open() {
     liveOpen = true;
-    if (!overview) setState(liveStateEl, 'Loading…', { loading: true });
+    if (!overview) showLiveSkeleton();
     refreshLive();
   },
   close() {

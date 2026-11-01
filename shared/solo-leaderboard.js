@@ -3,15 +3,16 @@
 // Solo is everyone's best score in two minutes; Daily is how today's Daily Jam players stand against each other. Each
 // tab lists the top 10, then your own place if it's further down, and a Show more button that fetches the next 25 until
 // everyone is listed. It's fetched fresh every time it opens or the tab changes, over the page's own connection
-// (`socket` - home/script.js, solo/js/solo.js and daily/js/daily.js each have one). Names and avatars as everywhere
-// else (/shared/players.js). The box itself is styled by the board-* rules in theme.css; what the tabs added is in
-// board.css.
+// (`socket` - home/script.js, solo/js/solo.js and daily/js/daily.js each have one), with grey rows standing in until
+// it's here (/shared/skeleton.css). Names and avatars as everywhere else (/shared/players.js). The box itself is styled
+// by the board-* rules in theme.css; what the tabs added is in board.css.
 
 (() => {
   const FIRST = 10;      // rows when it opens
   const MORE = 25;       // and for each Show more (the server sends up to 50 - see board in solo.js and daily.js at the root)
   const WORDS_A_DAY = 3; // a Daily Jam is three words (LEVELS in daily.js at the project root)
   const MEDALS = ['🥇', '🥈', '🥉'];
+  const NAME_WIDTHS = ['6em', '4.5em', '7em', '5em', '3.5em']; // the grey rows' names, so they don't all line up
 
   // What each tab asks the server for, and what it says about itself
   const TABS = {
@@ -71,13 +72,27 @@
   let gapEl = null;  // the "…" and your row under it, for as long as your rank is past the rows listed
   let youEl = null;
 
-  function setStatus(content) {
+  // The line under the rows. quiet: for screen readers only, while the grey rows say it to everyone else.
+  function setStatus(content, quiet = false) {
     statusEl.replaceChildren(...content);
     statusEl.hidden = !content.length;
+    statusEl.classList.toggle('sr-only', quiet);
+  }
+
+  // Nothing listed: the rows go, and with them your place, the count and the next ask's offset
+  function reset() {
+    shown = 0;
+    players = 0;
+    you = null;
+    gapEl = youEl = null;
+    listEl.replaceChildren();
+    listEl.classList.remove('skel-fade', 'is-loading');
+    countEl.textContent = '';
   }
 
   // Switches to a tab and fetches its first rows. Picking the tab that's already showing fetches them again.
   function select(next) {
+    if (next !== tab) reset(); // what's listed is the other tab's
     tab = next;
     for (const btn of tabsEl.querySelectorAll('[role="tab"]')) {
       const on = btn.dataset.tab === tab;
@@ -109,26 +124,34 @@
     });
   }
 
-  // The first rows of the tab showing, and your own place if it's further down
+  // The first rows of the tab showing, and your own place if it's further down. Until they're here, grey rows stand
+  // in for them (unless they're up already) - or, when this tab's rows are listed already (it was picked again), those
+  // stay up, dimmed.
   function load() {
     asked++;
-    shown = 0;
-    players = 0;
-    you = null;
-    gapEl = youEl = null;
-    listEl.replaceChildren();
-    countEl.textContent = '';
+    const again = shown > 0;
     moreBtn.hidden = true;
     busy(false);
-    const spinner = document.createElement('span');
-    spinner.className = 'spinner';
-    spinner.setAttribute('aria-hidden', 'true');
-    setStatus([spinner, 'Loading…']);
+    panelEl.setAttribute('aria-busy', 'true');
+    if (again) {
+      listEl.classList.add('is-loading');
+    } else if (!listEl.classList.contains('skel-fade')) {
+      reset();
+      listEl.classList.add('skel-fade');
+      listEl.append(...Array.from({ length: FIRST }, (_, i) => skeletonRow(i)));
+      countEl.replaceChildren(skel('skel-text', '5.5em'));
+    }
+    setStatus(['Loading…'], true);
     fetchRows(FIRST, 0, (reply) => {
+      panelEl.removeAttribute('aria-busy');
       if (!reply) {
+        // Rows that were up already stay, as they were
+        if (again) listEl.classList.remove('is-loading');
+        else reset();
         setStatus(["Couldn't load the leaderboard.", retryButton(load)]);
         return;
       }
+      reset();
       if (!reply.players) {
         setStatus([TABS[tab].empty]);
         return;
@@ -252,6 +275,39 @@
     return item;
   }
 
+  // A row on its way: the tab's own row, with grey bars where its place, name and numbers will be - a shade darker than
+  // the row they're on (.skel-on-field) - and the row fading in with them (.skel-box). i: which row, for its name's width.
+  function skeletonRow(i) {
+    const item = document.createElement('li');
+    item.className = `board-row ${tab} skel-box skel-on-field`;
+    item.setAttribute('aria-hidden', 'true');
+    const name = span('name', '');
+    name.append(holding('text', skel('skel-text', NAME_WIDTHS[i % NAME_WIDTHS.length])));
+    item.append(holding('place', skel('skel-text', '1em')), skel('skel-circle avatar'), name);
+    if (tab === 'solo') {
+      item.append(holding('words', skel('skel-text', '3.8em')), holding('pts', skel('skel-text', '3em')));
+    } else {
+      const stats = span('board-stats', '');
+      stats.append(holding('words', skel('skel-text', '4.2em')), holding('tries', skel('skel-text', '3em')), holding('time', skel('skel-text', '2.2em')));
+      item.append(stats);
+    }
+    return item;
+  }
+
+  // A grey piece from /shared/skeleton.css (className: its kind), `width` wide
+  function skel(className, width) {
+    const node = span(`skel ${className}`, '');
+    if (width) node.style.setProperty('--w', width);
+    return node;
+  }
+
+  // A span of a row's, with a grey piece where its text will be - so it's as tall as the text would make it
+  function holding(className, piece) {
+    const node = span(className, '');
+    node.append(piece);
+    return node;
+  }
+
   function span(className, text) {
     const node = document.createElement('span');
     node.className = className;
@@ -268,7 +324,9 @@
     return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
   }
 
+  // What it listed the last time it was open is old by now, so it starts again from nothing
   document.querySelectorAll('[data-solo-leaderboard]').forEach(btn => btn.addEventListener('click', () => {
+    reset();
     dialog.showModal();
     dialog.querySelector('.board-card').scrollTop = 0;
     select(btn.dataset.board === 'daily' ? 'daily' : 'solo');
