@@ -25,6 +25,7 @@ const tierEl = document.getElementById('tier');
 const tierEls = [...tierEl.querySelectorAll('li')];
 
 const view = 'game'; // the music (/js/audio.js) plays the round's track
+const roundMusic = 'practice'; // which is practice's own
 
 let lists = null;     // word length -> [the word, ...the other real words its letters make], one for each word
 const decks = {};     // word length -> the words of that length still to deal, shuffled

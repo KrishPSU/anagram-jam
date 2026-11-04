@@ -16,6 +16,7 @@ const homeBtn = document.getElementById('homeBtn');
 const leaveDialog = document.getElementById('leaveDialog');
 
 let view = null; // the screen you're on: 'intro', 'game' or 'results'. The music (/js/audio.js) follows it.
+const roundMusic = 'solo'; // the run's track
 
 
 // Same as playerToken in create-room/js/lobby.js: the random token this browser keeps. It's who you are on the

@@ -19,6 +19,7 @@ function playerToken() {
 
 let myId;          // your id in the room, from the server
 let view = null;   // the screen you're on: 'lobby', 'game' or 'results' (see showView)
+const roundMusic = 'room'; // the round's track (see audio.js)
 let countdownTimer;
 let countdownToken = null; // the round the 3-2-1 on screen is for
 let seenPlayers = new Set(); // ids already shown, so only new arrivals animate in
