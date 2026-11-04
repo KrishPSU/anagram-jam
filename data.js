@@ -152,6 +152,7 @@ function memoryData() {
   const people = new Map();   // id -> { name, mode, detail, since, seenAt, firstSeen }: everyone seen lately, and what
                               // they're doing (the players table in supabase/migrations)
   const playerStats = new Map(); // player id -> what their stats count (see newStats)
+  const rankedDays = new Set();  // the days whose board is over and has been ranked (see rankFinalBoards)
   let settings = null;
 
   function liveRun(id) {
@@ -416,6 +417,25 @@ function memoryData() {
     old.forEach(([key]) => dailyPlays.delete(key));
   }
 
+  // Each day's board that's over is ranked once, and everyone on it has their place folded into their dailyOld's best
+  // finish, as rank_final_boards in supabase/migrations does - so profile reads it rather than ranking every board again.
+  // A board is over from 3 days before today's UTC date; days back to 400 before that are looked at. A player with no
+  // stats gets them, dated by those days' goes.
+  function rankFinalBoards() {
+    const through = new Date(Date.now() - 3 * DAY_MS).toISOString().slice(0, 10);
+    const days = [...dailyWords.keys()].filter(d => d <= through && daysBetween(d, through) < DAILY_KEEP_DAYS && !rankedDays.has(d));
+    if (!days.length) return;
+    const boards = days.map(d => [d, boardOn(d)]);
+    for (const playerId of new Set(boards.flatMap(([, board]) => board.map(row => row.id)))) {
+      const opened = playsOf(playerId).filter(([, play]) => days.includes(play.day)).map(([, play]) => play.openedAt);
+      if (!playerStats.has(playerId)) playerStats.set(playerId, newStats(Math.min(...opened), Math.max(...opened)));
+      const row = playerStats.get(playerId);
+      row.firstAt = Math.min(row.firstAt, ...opened);
+      row.dailyOld = addDaily(row.dailyOld, { ...noDaily(), bestFinish: bestFinishOn(playerId, boards) });
+    }
+    days.forEach(d => rankedDays.add(d));
+  }
+
   return {
     status: () => ({ store: 'memory', reason: null }),
 
@@ -573,6 +593,7 @@ function memoryData() {
       if (start && !dailyPlays.has(key)) {
         dailyPlays.set(key, { day, level, openedAt: Date.now(), guesses: [], solved: null, answer: null, ms: null });
         retireDailyPlays(day);
+        rankFinalBoards();
       }
       if (start) noteName(playerId, name);
       return dailyPlays.has(key) ? playJson(dailyPlays.get(key)) : null;
@@ -878,9 +899,6 @@ function memoryData() {
       const plays = playsOf(playerId).map(([, play]) => play);
       const finished = plays.filter(play => play.solved !== null);
       const days = [...new Set(finished.map(play => play.day))].sort();
-      // Their best finish is from the boards that can't change any more, as the finishes in player_profile are: the
-      // days more than 3 before theirs
-      const over = days.filter(d => daysBetween(d, day) > 3);
       const today = boardOn(day);
       const place = today.findIndex(entry => entry.id === playerId);
       const times = [
@@ -897,7 +915,8 @@ function memoryData() {
         },
         rooms: { rounds: row.roomRounds, wins: row.roomWins, podiums: row.roomPodiums, best: row.roomBest, words: row.roomWords },
         daily: {
-          ...addDaily({ ...dailyNumbers(playerId, null), bestFinish: bestFinishOn(playerId, over.map(d => [d, boardOn(d)])) }, row.dailyOld),
+          // The best finish is dailyOld's, from the boards that are over (see rankFinalBoards)
+          ...addDaily(dailyNumbers(playerId, null), row.dailyOld),
           calendar: days.map(d => ({
             day: d, got: finished.filter(play => play.day === d && play.solved).length, finished: finished.filter(play => play.day === d).length,
           })),

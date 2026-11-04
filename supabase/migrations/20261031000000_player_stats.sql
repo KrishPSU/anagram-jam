@@ -89,7 +89,7 @@ create index if not exists daily_plays_by_player on daily_plays (player_id, day)
 -- { days: days they finished at least one word, finished: words finished, got: words got, tries: how many they got on
 --   try 1, 2 and 3, missed, perfect: days they got every word, hardFirstTry: hard words got on the first try, fastest:
 --   { easy, medium, hard }: their fastest time to get each level's word (ms, null for none), bestFinish: their best
---   place on a day's board that's over (see player_profile), as { rank, day, players } (null for none) }
+--   place on a day's board that's over (see rank_final_boards), as { rank, day, players } (null for none) }
 -- and anything missing counts as none ('{}' is no numbers at all). Counts are summed, each level's fastest is the
 -- faster, and the best finish the better: the higher place, then the later day - a's on a tie.
 create or replace function add_daily_old(a jsonb, b jsonb) returns jsonb
@@ -235,8 +235,60 @@ begin
   delete from daily_plays where day < p_before;
 end $$;
 
+-- The days whose board is over and has been ranked into everyone's best finish (see rank_final_boards)
+create table if not exists daily_ranked (
+  day date primary key
+);
+
+-- Each day's board that can't change any more is ranked once, and everyone on it has their place folded into their
+-- daily_old's best finish - so a player's best finish is read from their own row, however many days they've played and
+-- however many played each day, instead of every board being ranked again each time their stats are asked for. A board
+-- is over once nobody can finish a word of that day: a date is played somewhere in the world for about 50 hours, and a
+-- word opened then can still be finished for 24 hours after (see isToday in daily.js) - so the days 3 or more before
+-- today's date in UTC. Days are looked at back to 400 before that (older goes are gone, see retire_daily_plays). A
+-- player with no row gets one, dated by those days' goes. Run from open_daily like retire_daily_plays, under the same
+-- lock and for the same reasons; it isn't waited for - a later new go ranks what's left. Most calls find nothing to do.
+create or replace function rank_final_boards() returns void
+language plpgsql set search_path = public as $$
+declare
+  v_through date := (now() at time zone 'utc')::date - 3;
+begin
+  if not exists (select 1 from daily_words w
+                 where w.day <= v_through and w.day > v_through - 400
+                   and not exists (select 1 from daily_ranked r where r.day = w.day)) then
+    return;
+  end if;
+  if not pg_try_advisory_xact_lock(hashtext('retire daily_plays')) then
+    return;
+  end if;
+  with days as (
+    select distinct w.day from daily_words w
+    where w.day <= v_through and w.day > v_through - 400
+      and not exists (select 1 from daily_ranked r where r.day = w.day)
+  ), places as (
+    select d.day, s.player_id, s.rank, count(*) over (partition by d.day) as players
+    from days d cross join lateral daily_standings(d.day) s
+  ), finishes as (
+    select distinct on (player_id) player_id, jsonb_build_object('rank', rank, 'day', day, 'players', players) as finish
+    from places order by player_id, rank, day desc
+  ), goes as (
+    select p.player_id, min(p.opened_at) as first_at, max(p.opened_at) as last_at
+    from daily_plays p join days d on d.day = p.day group by p.player_id
+  )
+  insert into player_stats (player_id, first_at, updated_at, daily_old)
+    select f.player_id, g.first_at, g.last_at, add_daily_old(jsonb_build_object('bestFinish', f.finish), '{}'::jsonb)
+    from finishes f join goes g on g.player_id = f.player_id
+    on conflict (player_id) do update set
+      first_at = least(player_stats.first_at, excluded.first_at),
+      daily_old = add_daily_old(player_stats.daily_old, excluded.daily_old);
+  insert into daily_ranked (day)
+    select distinct w.day from daily_words w
+    where w.day <= v_through and w.day > v_through - 400
+    on conflict do nothing;
+end $$;
+
 -- As in the accounts migration, but the goes from over 400 days ago are folded into their players' stats as they go
--- (see retire_daily_plays)
+-- (see retire_daily_plays), and the boards that are over are ranked (see rank_final_boards)
 create or replace function open_daily(p_day date, p_level text, p_player_id text, p_start boolean, p_name text) returns jsonb
 language plpgsql set search_path = public as $$
 declare
@@ -246,6 +298,7 @@ begin
     insert into daily_plays (day, level, player_id) values (p_day, p_level, p_player_id) on conflict do nothing;
     if found then
       perform retire_daily_plays(p_day - 400);
+      perform rank_final_boards();
     end if;
     insert into players (id, name) values (p_player_id, coalesce(p_name, ''))
       on conflict (id) do update set name = excluded.name where excluded.name <> '';
@@ -267,7 +320,7 @@ end $$;
 --     no row), and standing: where they are on the leaderboard, as solo_standings has it (rank 0 = top), without top,
 --   rooms: { rounds, wins, podiums, best, words }, likewise,
 --   daily: their Daily Jam numbers, as add_daily_old has them - their goes' and daily_old's added together, the best
---     finish only from boards that are over (see finishes) - and calendar: every day they finished a word on, oldest
+--     finish being daily_old's, from the boards that are over (see rank_final_boards) - and calendar: every day they finished a word on, oldest
 --     first, as [{ day, got, finished }], today: their place on p_day's board, as { rank (1 = top, null if they
 --     haven't finished a word that day), players }, and streak: as daily_player_day has it }
 create or replace function player_profile(p_player_id text, p_day date) returns jsonb
@@ -275,19 +328,6 @@ language sql stable set search_path = public as $$
   with mine as (
     select day, count(*) filter (where solved) as got, count(*) as finished
     from daily_plays where player_id = p_player_id and solved is not null group by day
-  ), finishes as (
-    -- Their place on each day's board that can't change any more, so a best finish (and the Daily champion award, see
-    -- profile.js) isn't had and then lost as a board fills: a date is played somewhere in the world for about 50
-    -- hours, a word opened then can still be finished for 24 hours once it's over everywhere (see isToday in daily.js),
-    -- and p_day can be a day ahead of UTC's date (see dayFor in profile.js) - so the days more than 3 before p_day.
-    -- today is the live place.
-    -- Each board is ranked afresh on every ask, which costs the days they've played times each day's players; if that
-    -- gets slow, rank each board once when it's over (from open_daily, as retire_daily_plays is run) and keep each
-    -- player's best finish in player_stats for this to read.
-    select m.day, b.rank, b.players
-    from mine m cross join lateral (
-      select d.player_id, d.rank, count(*) over () as players from daily_standings(m.day) d) b
-    where b.player_id = p_player_id and m.day < p_day - 3
   )
   select jsonb_build_object(
     'since', (select floor(extract(epoch from min(t)) * 1000)::bigint
@@ -303,11 +343,7 @@ language sql stable set search_path = public as $$
     'rooms', jsonb_build_object(
       'rounds', coalesce(s.room_rounds, 0), 'wins', coalesce(s.room_wins, 0), 'podiums', coalesce(s.room_podiums, 0),
       'best', s.room_best, 'words', coalesce(s.room_words, 0)),
-    'daily', add_daily_old(
-        daily_numbers(p_player_id, 'infinity')
-          || jsonb_build_object('bestFinish', (select jsonb_build_object('rank', rank, 'day', day, 'players', players)
-                                               from finishes order by rank, day desc limit 1)),
-        coalesce(s.daily_old, '{}'::jsonb))
+    'daily', add_daily_old(daily_numbers(p_player_id, 'infinity'), coalesce(s.daily_old, '{}'::jsonb))
       || jsonb_build_object(
         'calendar', coalesce((select jsonb_agg(jsonb_build_object('day', day, 'got', got, 'finished', finished)
                                                order by day)
@@ -505,6 +541,9 @@ insert into player_stats (player_id, solo_best_rank, first_at)
     solo_best_rank = least(player_stats.solo_best_rank, excluded.solo_best_rank),
     first_at = least(player_stats.first_at, excluded.first_at);
 
+-- The Daily Jam boards already over are ranked now, so best finishes are there from the start (see rank_final_boards)
+select rank_final_boards();
+
 
 -- ---------- The shapes from before this file ----------
 
@@ -523,6 +562,7 @@ $$;
 -- As in the other migrations: row level security on with no policies, and only the secret (service_role) key can
 -- read, write or call anything
 alter table player_stats enable row level security;
+alter table daily_ranked enable row level security;
 
 revoke all on all tables in schema public from anon, authenticated;
 revoke all on all sequences in schema public from anon, authenticated;
