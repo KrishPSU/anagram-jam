@@ -1,14 +1,15 @@
 // What the server has set up for the pages, from /site-config.json (see accounts.config in account.js at the project
 // root): whether signing in is on and with which providers (and Supabase's address, where its sign-in page is),
-// PostHog's key, if there is one, and the oldest build of the iPhone app that can still play. Asked for once per page -
-// every script that wants it gets the same promise - and a server that can't say (an older one, or a blink in the
-// connection) reads as nothing set up, so the pages simply go on without accounts or analytics, and let any app in.
+// PostHog's key, if there is one, the oldest build of the iPhone app that can still play, and which reminders can be had
+// (see push.js). Asked for once per page - every script that wants it gets the same promise - and a server that can't
+// say (an older one, or a blink in the connection) reads as nothing set up, so the pages simply go on without accounts
+// or analytics, and let any app in.
 //
 // Also the random token this browser keeps (ensurePlayerToken), for the scripts that run on pages without their own
 // playerToken() - /shared/presence.js, /shared/account.js and /account/callback.js.
 
 (() => {
-  const NOTHING = { accounts: { enabled: false, providers: [], supabaseUrl: '' }, posthog: null, app: { minBuild: 1 } };
+  const NOTHING = { accounts: { enabled: false, providers: [], supabaseUrl: '' }, posthog: null, app: { minBuild: 1 }, push: { app: false, webKey: '' } };
 
   let config = null; // the promise, once asked for
 
@@ -17,6 +18,7 @@
     const accounts = raw && typeof raw.accounts === 'object' && raw.accounts ? raw.accounts : {};
     const posthog = raw && typeof raw.posthog === 'object' && raw.posthog ? raw.posthog : null;
     const app = raw && typeof raw.app === 'object' && raw.app ? raw.app : {};
+    const push = raw && typeof raw.push === 'object' && raw.push ? raw.push : {};
     return {
       accounts: {
         enabled: !!accounts.enabled,
@@ -27,6 +29,7 @@
         ? { key: posthog.key, host: typeof posthog.host === 'string' && posthog.host ? posthog.host : 'https://us.i.posthog.com' }
         : null,
       app: { minBuild: Number.isInteger(app.minBuild) && app.minBuild > 0 ? app.minBuild : 1 },
+      push: { app: !!push.app, webKey: typeof push.webKey === 'string' ? push.webKey : '' },
     };
   }
 

@@ -46,6 +46,7 @@
        (for the admin page), and PostHog - see each file -->
   <script defer src="/shared/solo-leaderboard.js"></script>
   <script defer src="/shared/account.js"></script>
+  <script defer src="/shared/reminders.js"></script>
   <script defer src="/shared/presence.js"></script>
   <script defer src="/shared/analytics.js"></script>
 
@@ -191,6 +192,8 @@
       <div class="result-actions">
         <button class="btn btn-primary" id="shareBtn" type="button">Share</button>
         <button class="btn btn-ghost" value="close">Done</button>
+        <!-- Until reminders are on, where they can be had (/shared/reminders.js) -->
+        <button class="btn btn-ghost result-remind" type="button" data-reminders="offer" hidden>🔔 Remind me tomorrow</button>
       </div>
       <p class="result-next">New words in <b class="next-in" id="resultNextIn">--:--:--</b></p>
     </form>

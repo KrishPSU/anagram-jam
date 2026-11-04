@@ -14,6 +14,8 @@
 // linkAccount). And who's on the site right now: the pages send a heartbeat with what the player is doing, for the
 // admin page, and the name they go by, for the Daily Jam board.
 //
+// Reminders (see push.js): the devices that asked for them, where they can be reached and when they want reminding.
+//
 // Player stats (see profile.js), for the account box: most are worked out from the leaderboard and Daily Jam's goes as
 // they're asked for (see profile), and the rest are counted as they happen - solo runs and rounds in rooms - along with
 // the Daily Jam numbers of goes too old to keep (see retireDailyPlays), kept under the same id as the rest.
@@ -57,6 +59,10 @@ const PLAYER_TTL = 400 * DAY_MS;
 
 // Daily Jam's goes are kept this many days (as open_daily in supabase/migrations keeps them)
 const DAILY_KEEP_DAYS = 400;
+
+// A device with reminders on that hasn't been seen in this long is cleared out (as save_push_device in
+// supabase/migrations does)
+const PUSH_DEVICE_TTL = 400 * DAY_MS;
 
 // A player's newest solo runs that two players' stats keep between them when they're merged (see linkAccount) - as
 // many as each keeps (RECENT_RUNS in profile.js), and as link_account in supabase/migrations keeps
@@ -153,6 +159,7 @@ function memoryData() {
                               // they're doing (the players table in supabase/migrations)
   const playerStats = new Map(); // player id -> what their stats count (see newStats)
   const rankedDays = new Set();  // the days whose board is over and has been ranked (see rankFinalBoards)
+  const pushDevices = new Map(); // device id -> { kind, address, keys, timeZone, hour, daily, solo, lastDay, lastSoloDay, seenAt }
   let settings = null;
 
   function liveRun(id) {
@@ -853,6 +860,68 @@ function memoryData() {
       accounts.delete(accountId);
     },
 
+    // Reminders (see push.js), as push_devices and its functions in supabase/migrations have them.
+
+    // A device turning reminders on, changing them, or saying it's still around. An address is only one device's.
+    async savePushDevice(deviceId, device) {
+      const now = Date.now();
+      pushDevices.forEach((other, id) => {
+        if (now - other.seenAt >= PUSH_DEVICE_TTL || (other.address === device.address && id !== deviceId)) pushDevices.delete(id);
+      });
+      const old = pushDevices.get(deviceId);
+      pushDevices.set(deviceId, { ...device, lastDay: old ? old.lastDay : null, lastSoloDay: old ? old.lastSoloDay : null, seenAt: now });
+    },
+
+    async removePushDevice(deviceId) {
+      pushDevices.delete(deviceId);
+    },
+
+    // An address the push service says is gone
+    async removePushAddress(address) {
+      pushDevices.forEach((device, id) => {
+        if (device.address === address) pushDevices.delete(id);
+      });
+    },
+
+    // The devices seen since `since` (ms) that want any reminder, as [{ deviceId, playerId: who their plays are under -
+    // their account, or the device itself - kind, address, keys, timeZone, hour, daily, solo, lastDay, lastSoloDay }]
+    async pushDevicesSince(since) {
+      return [...pushDevices]
+        .filter(([, device]) => device.seenAt >= since && (device.daily || device.solo))
+        .map(([deviceId, { seenAt, ...device }]) => ({ ...device, deviceId, playerId: links.get(deviceId) || deviceId }));
+    },
+
+    // What a reminder goes by, for each of players: [{ id, day }], as [{ id, day, played: they've opened a word of that
+    // day's Daily Jam, streak: as dailyPlayer's, soloBest: their leaderboard score or null, soloAt: their last solo run
+    // (ms) or null }]
+    async pushPlayers(players) {
+      return players.map(({ id, day }) => {
+        const recent = playerStats.has(id) ? playerStats.get(id).soloRecent : [];
+        return {
+          id,
+          day,
+          played: playsOf(id).some(([, play]) => play.day === day),
+          streak: streakOf(id),
+          soloBest: scores.has(id) ? scores.get(id).score : null,
+          soloAt: recent.length ? recent[recent.length - 1].at : null,
+        };
+      });
+    },
+
+    // Marks each of claims: [{ deviceId, day, solo }] as reminded on its day, unless it has been already, and resolves to
+    // the ids of those it did
+    async claimPush(claims) {
+      const claimed = [];
+      for (const { deviceId, day, solo } of claims) {
+        const device = pushDevices.get(deviceId);
+        if (!device || (device.lastDay && device.lastDay >= day)) continue;
+        device.lastDay = day;
+        if (solo) device.lastSoloDay = day;
+        claimed.push(deviceId);
+      }
+      return claimed;
+    },
+
     // Player stats (see profile.js), counted as they happen.
 
     // A solo run, as it's scored, as record_solo_play in supabase/migrations has it: its points, words (how many it
@@ -1102,6 +1171,15 @@ function supabaseData(url, key) {
     recordRound: (players, count) => call('record_round', { p_players: players, p_count: count }),
     profile: (playerId, day) => call('player_profile', { p_player_id: playerId, p_day: day }),
 
+    savePushDevice: (deviceId, { kind, address, keys, timeZone, hour, daily, solo }) => call('save_push_device', {
+      p_device_id: deviceId, p_kind: kind, p_address: address, p_keys: keys, p_time_zone: timeZone, p_hour: hour, p_daily: daily, p_solo: solo,
+    }),
+    removePushDevice: (deviceId) => call('remove_push_device', { p_device_id: deviceId }),
+    removePushAddress: (address) => call('remove_push_address', { p_address: address }),
+    pushDevicesSince: (since) => call('push_devices_since', { p_since: new Date(since).toISOString() }),
+    pushPlayers: (players) => call('push_players', { p_players: players }),
+    claimPush: (claims) => call('claim_push', { p_claims: claims }),
+
     // The database times the heartbeat itself (its now() is the same for every server instance), so `at` isn't sent
     touchPlayer: (id, name, mode, detail) => call('touch_player', { p_id: id, p_name: name || '', p_mode: mode, p_detail: detail || {} }),
 
@@ -1248,6 +1326,14 @@ function fallbackData(supabase, memory) {
     // everything else to memory: it ranks the player on every Daily Jam board they've played (see player_profile), so a
     // long-time player's can be slow enough to time out without anything being wrong with Supabase
     profile: (...args) => (outage ? Promise.reject(new Error(`Supabase isn't answering (${outage.reason})`)) : supabase.profile(...args)),
+
+    // Reminders go by the same goes and streaks, so they're Supabase's alone too
+    savePushDevice: (...args) => attemptDaily(() => supabase.savePushDevice(...args)),
+    removePushDevice: (...args) => attemptDaily(() => supabase.removePushDevice(...args)),
+    removePushAddress: (...args) => attemptDaily(() => supabase.removePushAddress(...args)),
+    pushDevicesSince: (...args) => attemptDaily(() => supabase.pushDevicesSince(...args)),
+    pushPlayers: (...args) => attemptDaily(() => supabase.pushPlayers(...args)),
+    claimPush: (...args) => attemptDaily(() => supabase.claimPush(...args)),
 
     // Except the heartbeat: it's the most frequent call on the site and nothing waits on it, so one that fails is
     // dropped - and said so at most once a minute, since every player's page sends one every 20 seconds

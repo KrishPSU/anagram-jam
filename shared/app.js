@@ -15,6 +15,15 @@
     });
   }
 
+  // A reminder tapped (see push.js) goes to the page it's about. If that's what opened the app, the plugin keeps the tap
+  // until a page is listening.
+  if (cap.isPluginAvailable('PushNotifications')) {
+    cap.Plugins.PushNotifications.addListener('pushNotificationActionPerformed', ({ notification }) => {
+      const url = notification.data && notification.data.url;
+      if (typeof url === 'string' && url.startsWith('/') && !location.pathname.startsWith(url)) location.href = url;
+    });
+  }
+
   // An app older than the oldest build that can still play (minAppBuild, set on the admin page's Controls tab) gets a
   // note over the page that it needs updating, which can't be closed, with the way to the App Store. The help and
   // privacy pages stay open to it. The build is in the app's user agent (AnagramJamApp/N, there from build 1).

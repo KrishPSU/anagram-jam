@@ -22,18 +22,22 @@ const mute_btn = document.getElementById('mute-button');
 const tracks = {};  // name -> { buffer, loopStart } once loaded ('loading' until then)
 let playing = null; // the track that's on: { name, source, gain }
 
-// The mute button covers the music and the sound effects in shared/sfx.js
+// The mute button covers the music and the sound effects in shared/sfx.js. It shows what you can hear: browsers keep a
+// page silent until it's been tapped, so until then it's 🔇 even if you've never muted anything, and pressing it is
+// what starts the music (as any other tap on the page does).
 function showMuteState() {
-  const muted = sfx.muted();
-  mute_btn.textContent = muted ? "🔇" : "🔊";
-  mute_btn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+  const silent = !sfx.sounding();
+  mute_btn.textContent = silent ? "🔇" : "🔊";
+  mute_btn.setAttribute('aria-pressed', silent ? 'true' : 'false');
 }
 
 mute_btn.addEventListener('click', () => {
-  sfx.setMuted(!sfx.muted());
+  sfx.setMuted(sfx.sounding());
   showMuteState();
   syncMusic();
 });
+
+window.addEventListener('soundchange', showMuteState);
 
 
 // Plays the track for the screen you're on, fading over from the other one - or nothing, muted. Called whenever

@@ -18,6 +18,8 @@ shows whatever is live, and a site deploy updates the app without an App Store r
   `shared/sfx.js` (`buzz`), and `home/install.js` hides its "add to home screen" hint in the app. Each one checks
   for `window.Capacitor`, so they do nothing in a browser.
 
+- `ios/App/App/AppDelegate.swift` and `App.entitlements`: push notifications (see "Reminders" below).
+
 ## Building
 
 ```sh
@@ -61,3 +63,19 @@ Apple shows its own sheet. The sign-in comes back to `/account/callback?via=app`
 opens the callback again in the web view, where the verifier is. Supabase accepts any address on the site's own host,
 so `?via=app` needs no entry in its list. The site looks for the plugin (`isPluginAvailable('AuthSession')`), not the
 build number.
+
+## Reminders
+
+Build 4 adds push notifications, through Capacitor's PushNotifications plugin (`@capacitor/push-notifications`). What to
+send and when is the server's (`push.js`) and the box that turns them on is the site's (`shared/reminders.js`), so only
+three things are here: the plugin, `App.entitlements` (the push capability), and the two callbacks in `AppDelegate.swift`
+that hand iOS's answer to the plugin. A tapped reminder carries the page it's about (`url`), and `shared/app.js` goes
+there. A reminder that arrives while the app is open shows nothing, so it can't interrupt a round.
+
+The site looks for the plugin (`isPluginAvailable('PushNotifications')`), not the build number, so older builds simply
+don't offer reminders.
+
+The project now has the push entitlement, so archiving fails until Push Notifications is on for the App ID and the
+"Anagram Jam App Store" profile has been made again. Both are in SETUP-PUSH.md at the project root, with the rest of the
+setup. Simulators can't get an address from Apple without that either, so turning reminders on needs a real iPhone
+(TestFlight is fine: it uses the same APNs service as the App Store).

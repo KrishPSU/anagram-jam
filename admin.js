@@ -784,4 +784,4 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
   };
 }
 
-module.exports = { createAdmin, addressBlock, clientAddress, checkWord, fromThisSite, timeZone, midnightIn, dateIn };
+module.exports = { createAdmin, addressBlock, clientAddress, checkWord, fromThisSite, timeZone, clockIn, midnightIn, dateIn };

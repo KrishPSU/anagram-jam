@@ -23,15 +23,21 @@ const sfx = (() => {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return null;
       ctx = new AudioCtx();
+      ctx.addEventListener('statechange', () => window.dispatchEvent(new Event('soundchange')));
     }
     return ctx;
   }
 
+  // Whether sound is really coming out. It's on unless muted, but that means nothing until a page has been tapped.
+  const sounding = () => !muted() && !!ctx && ctx.state === 'running';
+
   // Browsers only let a page make sound once it has been tapped or typed on - and iPhones only count a finger
   // that has lifted (touchend, click), not one going down. Phones also take the sound away when something else
   // wants it (a call, another app), so this keeps listening rather than stopping after the first tap.
-  function wake() {
-    if (muted()) return;
+  // The mute button's own presses are left to its click (audio.js): woken here, the press that was meant to start the
+  // sound would find it on already, and mute it.
+  function wake(event) {
+    if (muted() || event?.target?.closest?.('#mute-button')) return;
     const c = context();
     if (c && c.state !== 'running') c.resume().catch(() => {});
   }
@@ -72,6 +78,7 @@ const sfx = (() => {
   return {
     context,
     muted,
+    sounding,
     setMuted,
     tap: () => play([[520, 0, 0.05, 'sine', 0.04]]),
     tick: () => play([[880, 0, 0.05, 'square', 0.03]]),

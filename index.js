@@ -11,6 +11,7 @@ const { createDaily } = require('./daily');
 const { createAdmin, fromThisSite, addressBlock, clientAddress } = require('./admin');
 const { createAccounts } = require('./account');
 const { createProfile } = require('./profile');
+const { createPush } = require('./push');
 
 require('dotenv').config();
 
@@ -87,6 +88,21 @@ const accounts = createAccounts({
   note: (entry) => admin.note(entry),
 });
 console.log(`Signing in is ${accounts.enabled ? 'on' : 'off (no Supabase)'}`);
+
+// Reminders to play, as push notifications (see push.js): only with the keys for them (see SETUP-PUSH.md), and the pages
+// are told which are on. Apple's key goes in Vercel with its lines intact, or with \n for each line break.
+const push = createPush({
+  store: data,
+  playerIdFor,
+  apns: process.env.APNS_KEY
+    ? { keyId: process.env.APNS_KEY_ID, teamId: process.env.APNS_TEAM_ID, key: process.env.APNS_KEY.replace(/\\n/g, '\n') }
+    : null,
+  web: process.env.VAPID_PRIVATE_KEY ? { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY } : null,
+  secret: process.env.PUSH_SEND_SECRET,
+});
+const pushConfig = push.config();
+const remindersFor = [pushConfig.app && 'the app', pushConfig.webKey && 'browsers'].filter(Boolean);
+console.log(`Reminders are ${remindersFor.length ? `on for ${remindersFor.join(' and ')}` : 'off (no keys)'}`);
 
 // Each player's stats, for the account box on the home page (see profile.js): every solo run and every round played in
 // a room adds to them as it's scored
@@ -206,11 +222,11 @@ app.get('/account/callback', (req, res) => {
 
 // What the pages need to know as they start (see shared/config.js): whether they can offer signing in, and with what,
 // where their analytics go, and the oldest build of the iPhone app that can still play (the admin page's Controls tab
-// sets it). The same for everyone, so a minute's caching is fine.
+// sets it), and which reminders can be had (see push.js). The same for everyone, so a minute's caching is fine.
 app.get('/site-config.json', async (req, res) => {
   res.set('Cache-Control', 'public, max-age=60');
   const { minAppBuild } = await admin.forPlayers();
-  res.json({ ...accounts.config(), app: { minBuild: minAppBuild } });
+  res.json({ ...accounts.config(), app: { minBuild: minAppBuild }, push: pushConfig });
 });
 
 // A body that isn't JSON, or is too big, gets a 400 rather than Express's own error page
@@ -276,6 +292,42 @@ app.post('/presence', express.json({ limit: '2kb' }), express.text({ limit: '2kb
   const reply = await accounts.presence(body && typeof body === 'object' ? body : undefined);
   res.sendStatus(reply.status === 'ok' ? 204 : 400);
 }, badBody);
+
+// A device turning reminders on or off (see push.js), only from this site's own pages, and each one is a row in the
+// store, so an address gets PUSH_LIMIT.tries per window, as signing in does. Replies as save and remove there have them.
+const PUSH_LIMIT = { tries: 30, windowMs: 10 * 60 * 1000 };
+async function pushAllowed(req) {
+  if (!fromThisSite(req, true)) return false;
+  try {
+    const { count } = await data.bump(`push:${addressBlock(clientAddress(req))}`, PUSH_LIMIT.windowMs);
+    return count <= PUSH_LIMIT.tries;
+  } catch (err) {
+    console.error('Counting reminder changes failed:', err.message);
+    return true;
+  }
+}
+
+app.post('/push/device', express.json({ limit: '4kb' }), async (req, res) => {
+  if (!(await pushAllowed(req))) return res.status(429).json({ status: 'unavailable' });
+  res.json(await push.save(req.body || undefined));
+}, badBody);
+
+app.post('/push/device/remove', express.json({ limit: '1kb' }), async (req, res) => {
+  if (!(await pushAllowed(req))) return res.status(429).json({ status: 'unavailable' });
+  res.json(await push.remove(req.body || undefined));
+}, badBody);
+
+// The hour's reminders, called by the job in Supabase (see supabase/migrations/20261104000000_push_reminders.sql). The
+// reply waits until they're sent: on Vercel the function stops once it's answered.
+app.post('/push/send', async (req, res) => {
+  if (!push.canSend(req.get('authorization'))) return res.sendStatus(403);
+  try {
+    res.json(await push.sendDue());
+  } catch (err) {
+    console.error('Sending reminders failed:', err.message);
+    res.sendStatus(503);
+  }
+});
 
 // Practice mode's words, all of them at once (see practiceWords in solo.js): the page asks once and deals from them for
 // as long as it's open. They're the same for everyone until the next deploy, so Vercel's CDN can answer for a day.

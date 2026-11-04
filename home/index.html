@@ -36,8 +36,9 @@
   <script src="script.js" defer></script>
   <script src="/shared/solo-leaderboard.js" defer></script>
   <script src="install.js" defer></script>
-  <!-- Your account, who's on the site right now (for the admin page), and PostHog - see each file -->
+  <!-- Your account, reminders to play, who's on the site right now (for the admin page), and PostHog - see each file -->
   <script src="/shared/account.js" defer></script>
+  <script src="/shared/reminders.js" defer></script>
   <script src="/shared/presence.js" defer></script>
   <script src="/shared/analytics.js" defer></script>
 
@@ -142,6 +143,9 @@
         <button class="install-open" type="button" id="installBtn">📲 Add Anagram Jam to your home screen</button>
         <button class="install-hide" type="button" id="installHide" aria-label="Don't show this again" title="Don't show this again">×</button>
       </p>
+
+      <!-- Where reminders can be had (/shared/reminders.js fills it in) -->
+      <button class="reminders-link" type="button" data-reminders hidden></button>
 
       <!-- The help page and the privacy policy (info/) -->
       <p class="home-links"><a href="/support">Help</a><span aria-hidden="true"> · </span><a href="/privacy">Privacy</a></p>

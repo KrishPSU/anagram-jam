@@ -396,6 +396,8 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
   gap: 10px;
 }
 
+.result-remind { grid-column: 1 / -1; }
+
 .result-next {
   margin: -4px 0 0;
   font-size: 13px;

@@ -3,7 +3,7 @@
   "appName": "Anagram Jam",
   "webDir": "www",
   "backgroundColor": "#232526",
-  "appendUserAgent": "AnagramJamApp/3",
+  "appendUserAgent": "AnagramJamApp/4",
   "server": {
     "url": "https://www.anagramjam.com/",
     "errorPath": "index.html",

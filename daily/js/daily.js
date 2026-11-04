@@ -24,6 +24,7 @@ const homeBtn = document.getElementById('homeBtn');
 const leaveDialog = document.getElementById('leaveDialog');
 
 let view = null;  // the screen: 'day' or 'game'. The music (/js/audio.js) follows it.
+const roundMusic = 'room'; // a word's track, the same as a room's round (see audio.js)
 let day = null;   // the date being played, as the player has it ('2026-10-28')
 let today = null; // the server's word on it (see today in daily.js at the project root): { number, levels, streak }
 let loading = false;

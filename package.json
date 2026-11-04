@@ -5,6 +5,7 @@
     "express": "^5.1.0",
     "ioredis": "^5.11.1",
     "socket.io": "^4.8.1",
+    "web-push": "^3.6.7",
     "word-exists": "^1.0.0"
   },
   "name": "anagram-game",

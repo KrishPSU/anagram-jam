@@ -431,6 +431,22 @@
   text-underline-offset: 3px;
 }
 
+/* Reminders (/shared/reminders.js), as quiet as the line below */
+.reminders-link {
+  margin: -10px 0 -4px;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 /* Add to home screen (install.js). Quiet, under the start card. */
 
 .install-hint {

@@ -45,6 +45,7 @@
   <script defer src="/js/audio.js"></script>
   <!-- Your account, who's on the site right now (for the admin page), and PostHog - see each file -->
   <script defer src="/shared/account.js"></script>
+  <script defer src="/shared/reminders.js"></script>
   <script defer src="/shared/presence.js"></script>
   <script defer src="/shared/analytics.js"></script>
 
@@ -168,6 +169,8 @@
       <div class="end-actions">
         <button class="btn btn-go" id="playAgain" type="button"><span class="spinner" aria-hidden="true"></span>Play again</button>
         <button class="btn btn-glass" type="button" data-solo-leaderboard>🏆 Leaderboard</button>
+        <!-- Until reminders are on, where they can be had (/shared/reminders.js) -->
+        <button class="btn btn-glass" type="button" data-reminders="offer" hidden>🔔 Remind me to play</button>
       </div>
     </section>
 
