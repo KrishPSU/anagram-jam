@@ -14,4 +14,32 @@
       requestAnimationFrame(() => cap.Plugins.SplashScreen.hide().catch(() => {}));
     });
   }
+
+  // An app older than the oldest build that can still play (minAppBuild, set on the admin page's Controls tab) gets a
+  // note over the page that it needs updating, which can't be closed, with the way to the App Store. The help and
+  // privacy pages stay open to it. The build is in the app's user agent (AnagramJamApp/N, there from build 1).
+  const APP_STORE = 'https://apps.apple.com/app/id6828193475';
+  const build = Number((navigator.userAgent.match(/AnagramJamApp\/(\d+)/) || [])[1]) || 1;
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!window.siteConfig || /^\/(privacy|support|info)\b/.test(location.pathname)) return;
+    window.siteConfig().then((config) => {
+      if (build < config.app.minBuild) askToUpdate();
+    });
+  });
+
+  function askToUpdate() {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'update-dialog';
+    dialog.setAttribute('aria-labelledby', 'updateTitle');
+    dialog.innerHTML = `
+      <div class="card update-card">
+        <h2 id="updateTitle">Time to update</h2>
+        <p>There's a new version of Anagram Jam. Update the app to keep playing.</p>
+        <a class="btn btn-primary" href="${APP_STORE}">Update in the App Store</a>
+        <a class="update-help" href="/support">Help</a>
+      </div>`;
+    dialog.addEventListener('cancel', e => e.preventDefault());
+    document.body.append(dialog);
+    dialog.showModal();
+  }
 })();

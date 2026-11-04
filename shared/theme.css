@@ -290,9 +290,9 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   70%, 100% { box-shadow: 0 0 0 10px rgba(255, 95, 168, 0); }
 }
 
-/* ...and the solo leaderboard's box (shared/solo-leaderboard.js) and the account box (shared/account.js) are made the
-   same way */
-.howto-dialog, .board-dialog, .account-dialog {
+/* ...and the solo leaderboard's box (shared/solo-leaderboard.js), the account box (shared/account.js) and the iPhone
+   app's note to update (shared/app.js) are made the same way */
+.howto-dialog, .board-dialog, .account-dialog, .update-dialog {
   width: min(calc(100vw - 32px), 420px);
   max-height: none;
   padding: 0;
@@ -301,16 +301,16 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   overflow: visible;
 }
 
-.howto-dialog[open], .board-dialog[open], .account-dialog[open] { animation: popIn 0.2s ease-out; }
+.howto-dialog[open], .board-dialog[open], .account-dialog[open], .update-dialog[open] { animation: popIn 0.2s ease-out; }
 
-.howto-dialog::backdrop, .board-dialog::backdrop, .account-dialog::backdrop {
+.howto-dialog::backdrop, .board-dialog::backdrop, .account-dialog::backdrop, .update-dialog::backdrop {
   background: rgba(16, 14, 24, 0.6);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
 
 /* Scrolls inside itself on short screens */
-.howto-card, .board-card, .account-card {
+.howto-card, .board-card, .account-card, .update-card {
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
@@ -320,12 +320,17 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   padding: 20px;
 }
 
+.update-card { text-align: center; padding: 28px 22px 22px; }
+.update-card h2 { margin: 0; font-weight: 800; font-size: 22px; }
+.update-card p { margin: 0; line-height: 1.45; color: var(--ink-muted); }
+.update-help { color: var(--ink-muted); font-size: 14px; }
+
 /* The box is centred (the account box is held near the top instead - see .account-dialog), so it keeps the bigger of
    the top and bottom safe areas clear at both ends: in the iPhone app the page runs under the status bar and home
    indicator (in a browser tab the page starts below them, and they're 0). It's a block of its own because a line with
    env() in it always replaces the line before, even where dvh is unknown. */
 @supports (max-height: 100dvh) {
-  .howto-card, .board-card, .account-card {
+  .howto-card, .board-card, .account-card, .update-card {
     max-height: calc(100dvh - 32px - 2 * max(env(safe-area-inset-top, 0px), env(safe-area-inset-bottom, 0px)));
   }
 }

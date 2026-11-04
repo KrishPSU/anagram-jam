@@ -322,6 +322,18 @@
         </section>
 
         <section class="pane">
+          <h3>iPhone app updates</h3>
+          <p class="pane-sub">The oldest build of the iPhone app that can still play. On an older build, every page shows "Time to update" with a button to the App Store, until it's updated (the help and privacy pages stay open). Raise it only once the update is live on the App Store. The build is the number in brackets in App Store Connect: 1.0 (3) is build 3.</p>
+          <form class="inline-form" id="appBuildForm">
+            <label class="sr-only" for="appBuildInput">Oldest build that can play</label>
+            <input class="input" id="appBuildInput" type="number" min="1" max="9999" step="1" inputmode="numeric" autocomplete="off">
+            <button class="btn btn-primary btn-sm" id="appBuildBtn" type="submit">Save</button>
+          </form>
+          <p class="preview-label">Now</p>
+          <p class="notice-preview" id="appBuildNow"></p>
+        </section>
+
+        <section class="pane">
           <h3>Message everyone</h3>
           <p class="pane-sub">Pops up for 10 seconds on every Anagram Jam page that's open right now: the home page, rooms and solo (<span id="reachCount">…</span>).</p>
           <form class="inline-form" id="broadcastForm">

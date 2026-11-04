@@ -1,14 +1,14 @@
 // What the server has set up for the pages, from /site-config.json (see accounts.config in account.js at the project
-// root): whether signing in is on and with which providers (and Supabase's address, where its sign-in page is), and
-// PostHog's key, if there is one. Asked for once per page - every script that wants it gets the same promise - and a
-// server that can't say (an older one, or a blink in the connection) reads as nothing set up, so the pages simply go
-// on without accounts or analytics.
+// root): whether signing in is on and with which providers (and Supabase's address, where its sign-in page is),
+// PostHog's key, if there is one, and the oldest build of the iPhone app that can still play. Asked for once per page -
+// every script that wants it gets the same promise - and a server that can't say (an older one, or a blink in the
+// connection) reads as nothing set up, so the pages simply go on without accounts or analytics, and let any app in.
 //
 // Also the random token this browser keeps (ensurePlayerToken), for the scripts that run on pages without their own
 // playerToken() - /shared/presence.js, /shared/account.js and /account/callback.js.
 
 (() => {
-  const NOTHING = { accounts: { enabled: false, providers: [], supabaseUrl: '' }, posthog: null };
+  const NOTHING = { accounts: { enabled: false, providers: [], supabaseUrl: '' }, posthog: null, app: { minBuild: 1 } };
 
   let config = null; // the promise, once asked for
 
@@ -16,6 +16,7 @@
   function tidy(raw) {
     const accounts = raw && typeof raw.accounts === 'object' && raw.accounts ? raw.accounts : {};
     const posthog = raw && typeof raw.posthog === 'object' && raw.posthog ? raw.posthog : null;
+    const app = raw && typeof raw.app === 'object' && raw.app ? raw.app : {};
     return {
       accounts: {
         enabled: !!accounts.enabled,
@@ -25,6 +26,7 @@
       posthog: posthog && typeof posthog.key === 'string' && posthog.key
         ? { key: posthog.key, host: typeof posthog.host === 'string' && posthog.host ? posthog.host : 'https://us.i.posthog.com' }
         : null,
+      app: { minBuild: Number.isInteger(app.minBuild) && app.minBuild > 0 ? app.minBuild : 1 },
     };
   }
 

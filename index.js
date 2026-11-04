@@ -205,10 +205,12 @@ app.get('/account/callback', (req, res) => {
 });
 
 // What the pages need to know as they start (see shared/config.js): whether they can offer signing in, and with what,
-// and where their analytics go. The same for everyone, so a minute's caching is fine.
-app.get('/site-config.json', (req, res) => {
+// where their analytics go, and the oldest build of the iPhone app that can still play (the admin page's Controls tab
+// sets it). The same for everyone, so a minute's caching is fine.
+app.get('/site-config.json', async (req, res) => {
   res.set('Cache-Control', 'public, max-age=60');
-  res.json(accounts.config());
+  const { minAppBuild } = await admin.forPlayers();
+  res.json({ ...accounts.config(), app: { minBuild: minAppBuild } });
 });
 
 // A body that isn't JSON, or is too big, gets a 400 rather than Express's own error page

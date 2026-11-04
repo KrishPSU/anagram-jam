@@ -51,8 +51,10 @@ const SETTINGS_FOR = 15 * 1000; // each instance reads the settings again this o
 const STATS_FOR = 60 * 1000;    // and the stats
 
 const DEFAULT_PAUSED_MESSAGE = 'New games are paused for a few minutes. Try again soon!';
-// sessionsFrom: sessions signed in before this don't count anymore ("Sign out everywhere else")
-const DEFAULT_SETTINGS = { announcement: '', paused: false, sessionsFrom: 0 };
+// sessionsFrom: sessions signed in before this don't count anymore ("Sign out everywhere else"). minAppBuild: the oldest
+// build of the iPhone app that can still play - older ones are asked to update (see /shared/app.js)
+const DEFAULT_SETTINGS = { announcement: '', paused: false, sessionsFrom: 0, minAppBuild: 1 };
+const APP_BUILD_MAX = 9999;
 
 // Word lengths each mode deals: rooms 3 to 5 letters (getRandomWords in index.js), solo 3 to 10 (solo.js)
 const ROOM_LENGTHS = [3, 5];
@@ -341,10 +343,11 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
     return value;
   }
 
-  // What players are told: the home page's banner, and whether new games can start (with what to tell them if not)
+  // What players are told: the home page's banner, whether new games can start (with what to tell them if not), and
+  // the oldest build of the iPhone app that can still play
   async function forPlayers() {
-    const { announcement, paused } = await settings();
-    return { announcement, paused, pausedMessage: announcement || DEFAULT_PAUSED_MESSAGE };
+    const { announcement, paused, minAppBuild } = await settings();
+    return { announcement, paused, pausedMessage: announcement || DEFAULT_PAUSED_MESSAGE, minAppBuild };
   }
 
 
@@ -580,7 +583,7 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
       people,
       rooms: views,
       storage: storageStatus(),
-      settings: { announcement: current.announcement, paused: current.paused },
+      settings: { announcement: current.announcement, paused: current.paused, minAppBuild: current.minAppBuild },
       session: { ends: res.locals.session.exp },
     });
   });
@@ -673,12 +676,15 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
     res.json(await statsReport(timeZone(req.query.tz), days));
   });
 
-  // { announcement, paused } - either or both
+  // { announcement, paused, minAppBuild } - any of them
   api.post('/settings', async (req, res) => {
     const body = bodyOf(req);
     const changes = {};
     if (typeof body.announcement === 'string') changes.announcement = text(body.announcement, MESSAGE_MAX);
     if (typeof body.paused === 'boolean') changes.paused = body.paused;
+    if (Number.isInteger(body.minAppBuild) && body.minAppBuild >= 1 && body.minAppBuild <= APP_BUILD_MAX) {
+      changes.minAppBuild = body.minAppBuild;
+    }
     const before = await settings();
     const after = await saveSettings(changes);
     if ('announcement' in changes && changes.announcement !== before.announcement) {
@@ -687,7 +693,10 @@ function createAdmin({ app, store, solo, daily, accounts, rooms, storageStatus, 
     if ('paused' in changes && changes.paused !== before.paused) {
       noteAction(req, changes.paused ? 'Paused new games' : 'Let new games start again');
     }
-    res.json({ announcement: after.announcement, paused: after.paused });
+    if ('minAppBuild' in changes && changes.minAppBuild !== before.minAppBuild) {
+      noteAction(req, changes.minAppBuild > 1 ? `Asked iPhone app builds before ${changes.minAppBuild} to update` : 'Let every build of the iPhone app play');
+    }
+    res.json({ announcement: after.announcement, paused: after.paused, minAppBuild: after.minAppBuild });
   });
 
   // A pop-up on every page open right now

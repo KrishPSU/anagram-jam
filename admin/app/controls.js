@@ -1,4 +1,5 @@
-// The Controls tab: the home page banner, pausing new games, a message to everyone, and the word checker.
+// The Controls tab: the home page banner, pausing new games, the oldest iPhone app build that can play, a message to
+// everyone, and the word checker.
 
 const controlsPanel = document.getElementById('panel-controls');
 const bannerForm = document.getElementById('bannerForm');
@@ -9,6 +10,10 @@ const bannerSaveBtn = document.getElementById('bannerSaveBtn');
 const bannerClearBtn = document.getElementById('bannerClearBtn');
 const pauseToggle = document.getElementById('pauseToggle');
 const pauseLabel = document.getElementById('pauseLabel');
+const appBuildForm = document.getElementById('appBuildForm');
+const appBuildInput = document.getElementById('appBuildInput');
+const appBuildBtn = document.getElementById('appBuildBtn');
+const appBuildNow = document.getElementById('appBuildNow');
 const reachCountEl = document.getElementById('reachCount');
 const broadcastForm = document.getElementById('broadcastForm');
 const broadcastText = document.getElementById('broadcastText');
@@ -19,7 +24,7 @@ const wordResultEl = document.getElementById('wordResult');
 
 const PAUSED_FALLBACK = 'New games are paused for a few minutes. Try again soon!';
 
-let siteSettings = null; // { announcement, paused }, as the server has them
+let siteSettings = null; // { announcement, paused, minAppBuild }, as the server has them
 
 // The settings come with the Live tab's overview. Until they've come once, grey bars stand in for what they say
 // (showControlsSkeleton); after that, what's showing stays until they're in.
@@ -34,6 +39,7 @@ async function loadControls() {
       ? `${plural(reply.totals.players, 'player')} in rooms, plus anyone on the home page or playing solo`
       : 'nobody is in a room right now, but anyone on the home page or playing solo will see it';
     if (document.activeElement !== bannerText) bannerText.value = siteSettings.announcement;
+    if (document.activeElement !== appBuildInput) appBuildInput.value = siteSettings.minAppBuild;
     if (first) pauseToggle.disabled = false;
     showSettings();
   } catch (err) {
@@ -52,6 +58,8 @@ function showControlsSkeleton() {
   bannerNow.replaceChildren(skelPiece('text', '18em'));
   pauseToggle.disabled = true;
   pauseLabel.replaceChildren(skelPiece('text', '9em'));
+  appBuildBtn.disabled = true;
+  appBuildNow.replaceChildren(skelPiece('text', '14em'));
   reachCountEl.replaceChildren(skelPiece('text', '16em'));
 }
 
@@ -59,15 +67,21 @@ function showControlsSkeleton() {
 // the toast saying what went wrong. What a save (or a newer read) put up meanwhile stays.
 function hideControlsSkeleton() {
   pauseToggle.disabled = false;
+  appBuildBtn.disabled = false;
   if (reachCountEl.querySelector('.skel')) reachCountEl.textContent = '…';
   if (siteSettings) return;
   bannerNow.classList.remove('is-empty');
   bannerNow.textContent = '';
   pauseLabel.textContent = 'New games can start';
+  appBuildNow.textContent = '';
 }
 
 function showSettings() {
-  const { announcement, paused } = siteSettings;
+  const { announcement, paused, minAppBuild } = siteSettings;
+  appBuildBtn.disabled = false;
+  appBuildNow.textContent = minAppBuild > 1
+    ? `Builds before ${minAppBuild} are asked to update.`
+    : 'Every build of the app can play.';
   bannerCount.textContent = `${bannerText.value.length} / 160`;
   const shown = announcement || (paused ? PAUSED_FALLBACK : '');
   bannerNow.textContent = shown || 'Nothing - the banner is down.';
@@ -114,6 +128,33 @@ pauseToggle.addEventListener('change', async () => {
   pauseToggle.disabled = true;
   await saveSettings({ paused: pauseToggle.checked }, pauseToggle.checked ? 'New games are paused.' : 'New games can start again.');
   pauseToggle.disabled = false;
+});
+
+// Raising it shuts older apps out, so that takes two presses; lowering it doesn't
+let appBuildArmedUntil = 0;
+appBuildForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const build = Number(appBuildInput.value);
+  if (!Number.isInteger(build) || build < 1 || build > 9999) {
+    appBuildInput.focus();
+    return showAlert('A build is a whole number from 1 up.', 'info');
+  }
+  if (!siteSettings || build === siteSettings.minAppBuild) return;
+  if (build > siteSettings.minAppBuild && Date.now() > appBuildArmedUntil) {
+    appBuildArmedUntil = Date.now() + 4000;
+    appBuildBtn.textContent = 'Lock out older?';
+    appBuildBtn.classList.add('armed');
+    setTimeout(() => {
+      appBuildBtn.textContent = 'Save';
+      appBuildBtn.classList.remove('armed');
+    }, 4000);
+    return;
+  }
+  appBuildArmedUntil = 0;
+  appBuildBtn.textContent = 'Save';
+  appBuildBtn.classList.remove('armed');
+  appBuildBtn.disabled = true;
+  await saveSettings({ minAppBuild: build }, build > 1 ? `Builds before ${build} are asked to update now.` : 'Every build of the app can play again.');
 });
 
 // Two presses, since it goes straight out to everyone
