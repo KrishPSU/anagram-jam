@@ -45,12 +45,17 @@
   }
 
   // The iPhone app (mobile/): its web view shows anagramjam.com and hands any other site to Safari, where a sign-in
-  // can't finish (the verifier is in the app's own storage). From build 2 the app lets Supabase's and Apple's pages
-  // through (allowNavigation in mobile/capacitor.config.json), so Apple works in it; Google never signs anyone in
-  // inside an app's web view, so it's for the website. The build is in the app's user agent (AnagramJamApp/N).
+  // can't finish (the verifier is in the app's own storage). Build 2 lets Supabase's and Apple's pages through
+  // (allowNavigation in mobile/capacitor.config.json), so Apple works in it, as a plain form; Google never signs
+  // anyone in inside an app's web view, so there it's for the website. From build 3 both run in iOS's sign-in sheet
+  // instead (the AuthSession plugin, mobile/ios/App/App/AuthSessionPlugin.swift), where Google works and Apple shows
+  // its own sheet. The build is in the app's user agent (AnagramJamApp/N); old builds run this script too, so the
+  // plugin is looked for rather than assumed.
   const inApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   const appBuild = inApp ? Number((navigator.userAgent.match(/AnagramJamApp\/(\d+)/) || [])[1]) || 1 : 0;
   const appCanSignIn = !inApp || appBuild >= 2;
+  const authSession = inApp && window.Capacitor.isPluginAvailable && window.Capacitor.isPluginAvailable('AuthSession')
+    ? window.Capacitor.Plugins.AuthSession : null;
 
   const PROVIDERS = {
     google: {
@@ -304,14 +309,14 @@
       // PKCE needs SHA-256, which browsers only give to pages on https (or localhost)
       parts.push(status('Needs a secure connection (https) to sign in.'));
     } else {
-      const offered = appCanSignIn ? providers.filter(p => !(inApp && p === 'google')) : [];
+      const offered = appCanSignIn ? providers.filter(p => !(inApp && !authSession && p === 'google')) : [];
       if (offered.length) {
         const actions = make('div', 'account-actions');
         actions.append(...offered.map(providerButton));
         parts.push(actions);
       }
       if (inApp && !appCanSignIn) parts.push(status("This version of the app can't sign in yet. Sign in on the website, anagramjam.com, for now - the app's next update will have it."));
-      else if (inApp && providers.includes('google')) parts.push(make('p', 'account-fine', 'Google sign-in works on the website, anagramjam.com.'));
+      else if (inApp && !authSession && providers.includes('google')) parts.push(make('p', 'account-fine', 'Google sign-in works on the website, anagramjam.com.'));
       if (!providers.length) parts.push(status('No way to sign in is set up on this server.'));
     }
     const fine = make('p', 'account-fine');
@@ -999,21 +1004,43 @@
   async function signIn(provider, btn) {
     if (busy) return;
     setBusy(btn, true);
+    let url;
     try {
       const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
       localStorage.setItem(SIGN_IN_KEY, JSON.stringify({ verifier, returnTo: location.pathname + location.search, at: Date.now() }));
       const params = new URLSearchParams({
         provider,
-        redirect_to: `${location.origin}/account/callback`,
+        // In the app's sign-in sheet, the callback page hands the code back to the app (see /account/callback.js).
+        // Supabase takes any address on the site's own host, so this needs no entry in its list.
+        redirect_to: `${location.origin}/account/callback${authSession ? '?via=app' : ''}`,
         code_challenge: base64url(new Uint8Array(digest)),
         code_challenge_method: 's256',
       });
-      location.href = `${config.accounts.supabaseUrl.replace(/\/+$/, '')}/auth/v1/authorize?${params}`;
+      url = `${config.accounts.supabaseUrl.replace(/\/+$/, '')}/auth/v1/authorize?${params}`;
     } catch {
       setBusy(btn, false);
       message = "Couldn't start the sign-in. Please try again.";
       render();
+      return;
+    }
+    if (!authSession) {
+      location.href = url;
+      return;
+    }
+    // The app (build 3 on): the sign-in runs in iOS's sheet, then the callback page it came back to opens here, in the
+    // web view that has the verifier. Closing the sheet just ends it.
+    try {
+      const back = new URL((await authSession.start({ url, ephemeral: true })).url);
+      back.searchParams.delete('via');
+      location.href = `/account/callback${back.search}${back.hash}`;
+    } catch (err) {
+      localStorage.removeItem(SIGN_IN_KEY);
+      setBusy(btn, false);
+      if (!(err && err.code === 'cancelled')) {
+        message = "Couldn't finish the sign-in. Please try again.";
+        render();
+      }
     }
   }
 

@@ -51,5 +51,13 @@ Old app versions stay on people's phones, so site code must check that a plugin 
 Build 2 lets the sign-in pages through: `allowNavigation` in capacitor.config.json names `*.supabase.co` and
 `appleid.apple.com`, which the web view would otherwise hand to Safari, where a sign-in can't finish (the verifier is in
 the app's own storage). The site tells builds apart by the user agent (`AnagramJamApp/2`): build 1 is sent to the
-website to sign in, build 2 and up get Continue with Apple. Google never signs anyone in inside an app's web view, so it
-stays off in the app (see shared/account.js).
+website to sign in, build 2 gets Continue with Apple, as a plain form. Google never signs anyone in inside an app's web
+view, so it stays off in build 2 (see shared/account.js).
+
+Build 3 adds the AuthSession plugin (`ios/App/App/AuthSessionPlugin.swift`, registered in AppViewController): Continue
+with Google and Continue with Apple open iOS's sign-in sheet (ASWebAuthenticationSession), where Google is allowed and
+Apple shows its own sheet. The sign-in comes back to `/account/callback?via=app` inside the sheet; that page goes to
+`com.krishchavan.anagramjam://account/callback`, which closes the sheet and hands the address to the page, and the page
+opens the callback again in the web view, where the verifier is. Supabase accepts any address on the site's own host,
+so `?via=app` needs no entry in its list. The site looks for the plugin (`isPluginAvailable('AuthSession')`), not the
+build number.

@@ -9,6 +9,7 @@
   const SIGN_IN_KEY = 'signIn';        // localStorage: { verifier, returnTo, at }, left by /shared/account.js
   const SIGN_IN_TTL = 10 * 60 * 1000;  // older than this and it isn't trusted
   const SIGNED_IN_FLAG = 'signedInAs'; // sessionStorage: the name, for the toast on the page we go back to
+  const APP_RETURN = 'com.krishchavan.anagramjam://account/callback'; // callbackScheme in AuthSessionPlugin.swift
 
   const statusEl = document.getElementById('status');
   const backEl = document.getElementById('back');
@@ -29,6 +30,15 @@
   // Supabase answers in the query string; some of its errors come in the hash instead
   const params = new URLSearchParams(location.search);
   const hashParams = new URLSearchParams(location.hash.replace(/^#/, ''));
+
+  // A sign-in from the iPhone app (build 3 on, see /shared/account.js) comes back here inside iOS's sign-in sheet,
+  // which doesn't have the verifier - the app's web view does. Going to the app's own scheme closes the sheet and
+  // gives the app this address, which opens it again in the web view, without 'via', to finish there.
+  const inApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  if (params.get('via') === 'app' && !inApp) {
+    location.replace(`${APP_RETURN}${location.search}${location.hash}`);
+    return;
+  }
   const code = params.get('code');
   const error = params.get('error') || hashParams.get('error');
   const errorText = params.get('error_description') || hashParams.get('error_description');

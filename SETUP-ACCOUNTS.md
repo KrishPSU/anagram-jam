@@ -9,6 +9,8 @@ The website gets all of this with the site deploy. The iPhone app needs one new 
 it: its web view hands other sites to Safari, where a sign-in can't finish, so mobile/capacitor.config.json now lets
 `*.supabase.co` and `appleid.apple.com` through and calls itself build 2 (`AnagramJamApp/2`). Until that build is on
 people's phones, the app's account box sends them to the website to sign in (see mobile/README.md, "Signing in").
+Build 3 runs both sign-ins in iOS's sign-in sheet instead, which is what lets Google work in the app too (same section);
+nothing about it needs setting up here.
 
 ## What you need
 
@@ -174,7 +176,8 @@ Redeploy) after adding them.
 4. **Apple, on the iPhone.** In Safari on the phone, 👤 offers both; sign in with Apple to see that it works on the
    web. In the app as it is today (build 1), 👤 says to sign in on the website for now. Once build 2 (see the top of
    this file) is on the phone, 👤 in the app offers Continue with Apple only, says Google works on the website, and
-   Apple's sheet appears inside the app; back in the app you're signed in.
+   Apple's sign-in form appears inside the app; back in the app you're signed in. From build 3, 👤 offers both, and
+   each opens iOS's sign-in sheet (Apple's with the phone's Apple ID); when it closes, you're signed in.
 5. **The admin page.** Live tab: "On the site" counts you and the People section says what you're doing. Leaderboard
    tab: a Google chip on your row. Daily Jam tab: you're under Players.
 6. **PostHog.** Activity shows `$pageview`s within a minute. Session replay shows your session with the name field
@@ -242,9 +245,9 @@ The admin page's banner, or its message to everyone, is enough. Something like:
 > your best from each device is merged into one. Daily Jam has a leaderboard now too. The privacy policy
 > (anagramjam.com/privacy) is updated: it explains the new analytics and how to turn them off on your device.
 
-In the iPhone app the box only offers Apple (from build 2 - the build before it sends people to the website), because
-Google doesn't allow sign-ins from inside apps; the help page (/support) explains that and everything else about
-accounts, so point people there.
+In the iPhone app the box offers Google and Apple from build 3. Build 2 only offers Apple, because Google doesn't allow
+sign-ins from inside apps' web views, and the build before it sends people to the website; the help page (/support)
+explains that and everything else about accounts, so point people there.
 
 ## Checklist
 

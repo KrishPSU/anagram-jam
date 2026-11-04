@@ -30,6 +30,8 @@ class AppViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         super.capacitorDidLoad()
+        // Signing in with Google or Apple, in iOS's sign-in sheet (see AuthSessionPlugin.swift)
+        bridge?.registerPluginInstance(AuthSessionPlugin())
         guard let webView = webView else { return }
         if let capacitorDelegate = webView.navigationDelegate {
             let filter = NavigationFailureFilter(passingTo: capacitorDelegate, offlinePage: bridge?.config.errorPathURL)
