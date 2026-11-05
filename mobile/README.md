@@ -70,7 +70,8 @@ Build 4 adds push notifications, through Capacitor's PushNotifications plugin (`
 send and when is the server's (`push.js`) and the box that turns them on is the site's (`shared/reminders.js`), so only
 three things are here: the plugin, `App.entitlements` (the push capability), and the two callbacks in `AppDelegate.swift`
 that hand iOS's answer to the plugin. A tapped reminder carries the page it's about (`url`), and `shared/app.js` goes
-there. A reminder that arrives while the app is open shows nothing, so it can't interrupt a round.
+there. A reminder that arrives while the app is open shows nothing, so it can't interrupt a round (the box's **Send a test**
+says so when one gets there, as it would otherwise look like it hadn't).
 
 The site looks for the plugin (`isPluginAvailable('PushNotifications')`), not the build number, so older builds simply
 don't offer reminders.

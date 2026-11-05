@@ -24,10 +24,11 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(request));
 });
 
-// A reminder (see push.js), which comes whether or not the game is open
+// A reminder (see push.js), which comes whether or not the game is open. It takes the place of one still showing from
+// another day, and renotify is what makes that alert them instead of swapping it silently.
 self.addEventListener('push', (event) => {
   const { title, body, url } = event.data.json();
-  event.waitUntil(self.registration.showNotification(title, { body, icon: '/icon-192.png?v=2', tag: 'reminder', data: { url } }));
+  event.waitUntil(self.registration.showNotification(title, { body, icon: '/icon-192.png?v=2', tag: 'reminder', renotify: true, data: { url } }));
 });
 
 // Tapped: to that page, if it's open already

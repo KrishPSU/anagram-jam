@@ -57,11 +57,17 @@ iPhones and iPads in a browser only get them once the game has been added to the
 
 ## 4. Apple: turn on push for the app
 
+Done on 2026-11-04: the key is `26NVYS88PL`. These steps are here in case it ever has to be made again.
+
 In [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources), team WEREWARDS LLC:
 
 1. **Identifiers** -> Anagram Jam (`com.krishchavan.anagramjam`) -> tick **Push Notifications** -> Save.
-2. **Keys** -> + -> name it "Anagram Jam Push", tick **Apple Push Notifications service (APNs)** -> Continue -> Register.
-   Download the `.p8` file. **Apple only lets you download it once.** Note the **Key ID** on that page.
+2. **Keys** -> + -> name it "Anagram Jam Push", tick **Apple Push Notifications service (APNs)** -> Configure. Choose
+   **Production** and **Topic Specific**, add the topic `com.krishchavan.anagramjam`, and save. These can't be changed
+   afterwards. Apple's default, Sandbox, wouldn't work: TestFlight and the App Store use Production. Topic Specific keeps
+   the key from sending to WeRewards as well, and Apple only offers it for a single environment.
+   Then Continue -> Register, and download the `.p8` file. **Apple only lets you download it once.** Note the **Key ID**
+   on that page.
 3. **Profiles** -> Anagram Jam App Store -> Edit -> Save -> Download, then open the file to install it. Changing the App ID
    made the old one out of date, and archiving fails until this is done.
 
@@ -91,9 +97,18 @@ Build 4 is ready in `mobile/` (`AnagramJamApp/4`, build number 4). See "Releasin
 
 ## If something goes wrong
 
+- To check a device, open its Reminders box and tap **Send a test**, once reminders are on. It sends one straight away
+  through the same path, and doesn't use up that day's reminder. Do this first: real reminders skip a player who has
+  nothing to be reminded of, so one who has played today's Daily Jam and done a solo run in the last three days gets
+  none, and a device set to the next hour staying quiet usually means that.
+- A test that says "Sent" and doesn't show up has reached the push service, so look at the device: notifications allowed
+  for the browser or app, and no Do Not Disturb or other Focus. A computer has to be awake with the browser running.
 - To stop all reminders at once, in the SQL Editor: `select cron.unschedule('send-push-reminders');`
   (running the migration again puts it back).
 - To see who has reminders on: `select kind, time_zone, hour, daily, solo, last_day, seen_at from push_devices;`
+- If `site-config.json` says `"app":false` after a redeploy, look for `APNS_KEY can't be read as a key` in Vercel's logs.
+  Line breaks lost in pasting are handled, so this means part of the key is missing. Copy it again with
+  `pbcopy < ~/Downloads/AuthKey_26NVYS88PL.p8`, paste it over the old value, and redeploy.
 - A run's result is logged in Vercel: `Reminders: 12 due, 11 sent, 1 gone, 0 failed`. **Gone** is normal: that address no
   longer works (the app was deleted), and it's been removed. **Failed** means the service turned it down, and the reason
-  is logged just above it.
+  is logged just above it. **Due** but not sent, with nothing failed, means the rules skipped them (see the first point).

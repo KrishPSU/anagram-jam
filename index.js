@@ -11,7 +11,7 @@ const { createDaily } = require('./daily');
 const { createAdmin, fromThisSite, addressBlock, clientAddress } = require('./admin');
 const { createAccounts } = require('./account');
 const { createProfile } = require('./profile');
-const { createPush } = require('./push');
+const { createPush, readApnsKey } = require('./push');
 
 require('dotenv').config();
 
@@ -90,13 +90,14 @@ const accounts = createAccounts({
 console.log(`Signing in is ${accounts.enabled ? 'on' : 'off (no Supabase)'}`);
 
 // Reminders to play, as push notifications (see push.js): only with the keys for them (see SETUP-PUSH.md), and the pages
-// are told which are on. Apple's key goes in Vercel with its lines intact, or with \n for each line break.
+// are told which are on. Apple's key that can't be read counts as none, so the app's reminders wait for it to be fixed
+// instead of each failing as it's sent.
+const apnsKey = process.env.APNS_KEY ? readApnsKey(process.env.APNS_KEY) : null;
+if (process.env.APNS_KEY && !apnsKey) console.error("APNS_KEY can't be read as a key, so the app gets no reminders (see SETUP-PUSH.md)");
 const push = createPush({
   store: data,
   playerIdFor,
-  apns: process.env.APNS_KEY
-    ? { keyId: process.env.APNS_KEY_ID, teamId: process.env.APNS_TEAM_ID, key: process.env.APNS_KEY.replace(/\\n/g, '\n') }
-    : null,
+  apns: apnsKey ? { keyId: process.env.APNS_KEY_ID, teamId: process.env.APNS_TEAM_ID, key: apnsKey } : null,
   web: process.env.VAPID_PRIVATE_KEY ? { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY } : null,
   secret: process.env.PUSH_SEND_SECRET,
 });
@@ -293,8 +294,9 @@ app.post('/presence', express.json({ limit: '2kb' }), express.text({ limit: '2kb
   res.sendStatus(reply.status === 'ok' ? 204 : 400);
 }, badBody);
 
-// A device turning reminders on or off (see push.js), only from this site's own pages, and each one is a row in the
-// store, so an address gets PUSH_LIMIT.tries per window, as signing in does. Replies as save and remove there have them.
+// A device turning reminders on or off or asking for a test one (see push.js), only from this site's own pages. Each one
+// is a row in the store or a push sent, so an address gets PUSH_LIMIT.tries per window, as signing in does. Replies as
+// save, remove and test there have them.
 const PUSH_LIMIT = { tries: 30, windowMs: 10 * 60 * 1000 };
 async function pushAllowed(req) {
   if (!fromThisSite(req, true)) return false;
@@ -315,6 +317,11 @@ app.post('/push/device', express.json({ limit: '4kb' }), async (req, res) => {
 app.post('/push/device/remove', express.json({ limit: '1kb' }), async (req, res) => {
   if (!(await pushAllowed(req))) return res.status(429).json({ status: 'unavailable' });
   res.json(await push.remove(req.body || undefined));
+}, badBody);
+
+app.post('/push/test', express.json({ limit: '4kb' }), async (req, res) => {
+  if (!(await pushAllowed(req))) return res.status(429).json({ status: 'unavailable' });
+  res.json(await push.test(req.body || undefined));
 }, badBody);
 
 // The hour's reminders, called by the job in Supabase (see supabase/migrations/20261104000000_push_reminders.sql). The

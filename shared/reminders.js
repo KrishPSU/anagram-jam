@@ -1,6 +1,6 @@
-// Reminders to play (see push.js at the project root): the box that turns them on, changes them and turns them off, for
-// this device. Any button with data-reminders opens it. They're all hidden where reminders can't be had, and the ones
-// with data-reminders="offer" (after a Daily Jam word or a solo run) go away once they're on.
+// Reminders to play (see push.js at the project root): the box that turns them on, changes them, tests them and turns
+// them off, for this device. Any button with data-reminders opens it. They're all hidden where reminders can't be had,
+// and the ones with data-reminders="offer" (after a Daily Jam word or a solo run) go away once they're on.
 //
 // Reminders reach the iPhone app through Capacitor's PushNotifications plugin, and a browser through Web Push, with the
 // service worker (/sw.js) showing them. An app installed before the plugin was added doesn't have it, and a phone's
@@ -20,7 +20,8 @@
 
   let webKey = '';    // the server's public key, for asking a browser for an address
   let dialog = null;
-  let controls = null; // what's in the box: { daily, solo, hour, on, off, note }
+  let controls = null; // what's in the box: { daily, solo, hour, on, test, off, note }
+  let testHeard = false; // the app has heard the test it asked for (see sendTest)
 
   const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -170,16 +171,20 @@
         </div>
         <p class="reminders-note" role="status" hidden></p>
         <button class="btn btn-primary" type="button" data-action="on">Turn on reminders</button>
+        <button class="reminders-test" type="button" data-action="test">Send a test</button>
         <button class="reminders-off" type="button" data-action="off">Turn off reminders</button>
       </form>`;
     const find = (selector) => dialog.querySelector(selector);
     controls = {
       daily: find('[data-field="daily"]'), solo: find('[data-field="solo"]'), hour: find('[data-field="hour"]'),
-      on: find('[data-action="on"]'), off: find('[data-action="off"]'), note: find('.reminders-note'),
+      on: find('[data-action="on"]'), test: find('[data-action="test"]'), off: find('[data-action="off"]'),
+      note: find('.reminders-note'),
     };
     [controls.daily, controls.solo, controls.hour].forEach(control => control.addEventListener('change', changed));
     controls.on.addEventListener('click', turnOn);
+    controls.test.addEventListener('click', sendTest);
     controls.off.addEventListener('click', turnOff);
+    if (plugin) plugin.addListener('pushNotificationReceived', testArrived);
     dialog.addEventListener('click', (e) => {
       if (e.target === dialog) dialog.close();
     });
@@ -197,6 +202,7 @@
   function showState() {
     const on = !!stored();
     controls.on.hidden = on;
+    controls.test.hidden = !on;
     controls.off.hidden = !on;
     controls.on.disabled = !controls.daily.checked && !controls.solo.checked;
     showButtons();
@@ -204,6 +210,7 @@
 
   function setBusy(busy) {
     controls.on.disabled = busy;
+    controls.test.disabled = busy;
     controls.off.disabled = busy;
   }
 
@@ -259,6 +266,27 @@
     if (address && await saveOnServer(address, next)) store({ ...next, seen: localDay() });
     else showNote("Couldn't save that just now. We'll try again next time you play.", true);
     showState();
+  }
+
+  // The app shows nothing for a reminder that arrives while it's open (see mobile/README.md), so it's said here instead
+  function testArrived() {
+    testHeard = true;
+    showNote("It got here! You'll see reminders as a banner when you're not in the game.");
+  }
+
+  // A reminder right now, to see they get through (see test in push.js). The push service taking it is as far as the
+  // server can see, so the note says where to look if it doesn't turn up.
+  async function sendTest() {
+    setBusy(true);
+    showNote('');
+    testHeard = false;
+    const address = await findAddress();
+    const sent = !!address && await post('/push/test', address);
+    setBusy(false);
+    if (!sent) showNote("Couldn't send one just now. Please try again.", true);
+    else if (!testHeard) showNote(plugin
+      ? "Sent. If nothing happens in a few seconds, check that notifications are on for Anagram Jam in your iPhone's Settings."
+      : 'Sent. If nothing shows up in a few seconds, check that your device allows notifications from this browser and that Do Not Disturb is off.');
   }
 
   async function turnOff() {

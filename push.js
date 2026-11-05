@@ -33,6 +33,7 @@ const SEND_TIMEOUT = 10 * 1000;
 const APNS_ADDRESS = 'https://api.push.apple.com'; // TestFlight and the App Store both use this one
 const APP_TOPIC = 'com.krishchavan.anagramjam';    // the app's bundle ID
 const SITE = 'https://www.anagramjam.com';         // who's sending, for the web push services
+const TEST_REMINDER = { url: '/', title: 'Test reminder', body: 'If you can see this, reminders are working on this device.' };
 
 // Who a web push address can belong to. The server sends to these addresses hourly, and a page can say anything, so
 // without this list a script could have it making requests to wherever it liked.
@@ -40,6 +41,20 @@ const WEB_PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^updates\.push\.services\.moz
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const daysBetween = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
+
+// Apple's key as it comes out of an environment variable. Pasted into a box, a key's line breaks can turn into spaces or
+// \n, or go altogether, and OpenSSL can't read it without them ("DECODER routines::unsupported"), so it's put back
+// together from what's between its BEGIN and END lines. Null if that still isn't a key: part of it is missing, say.
+function readApnsKey(text) {
+  const body = String(text).replace(/-----[A-Z ]*-----/g, '').replace(/\\n|[^A-Za-z0-9+/=]/g, '');
+  const key = `-----BEGIN PRIVATE KEY-----\n${body.replace(/.{1,64}/g, '$&\n')}-----END PRIVATE KEY-----\n`;
+  try {
+    crypto.createPrivateKey(key);
+    return key;
+  } catch {
+    return null;
+  }
+}
 
 const isToken = (token) => typeof token === 'string' && token.length >= 16;
 const isText = (text, max) => typeof text === 'string' && text.length > 0 && text.length <= max;
@@ -194,6 +209,21 @@ function createPush({ store, playerIdFor, apns, web, secret, makeSender = {} }) 
     return crypto.timingSafeEqual(digest(header), digest(`Bearer ${secret}`));
   }
 
+  // Sends a message to a device. senders: those made so far, as a run only needs one of each kind. Resolves to what a
+  // send does ('sent', 'gone' or 'failed'), and an address that's gone is forgotten.
+  async function deliver(senders, device, message) {
+    let outcome;
+    try {
+      if (!senders[device.kind]) senders[device.kind] = device.kind === 'apns' ? makeApns(apns) : makeWeb(web);
+      outcome = await senders[device.kind].send(device, message);
+    } catch (err) {
+      console.error('Sending a reminder failed:', err.message);
+      outcome = 'failed';
+    }
+    if (outcome === 'gone') await store.removePushAddress(device.address).catch(err => console.error('Removing a dead push address failed:', err.message));
+    return outcome;
+  }
+
   // Sends the reminders of the hour. The hour can come and go without a run (Supabase or the site being down), and then
   // that hour's are simply missed: better than them turning up late.
   // Each device is claimed for its day before anything's sent, so two runs at once can't both send to it, and one that
@@ -223,28 +253,25 @@ function createPush({ store, playerIdFor, apns, web, secret, makeSender = {} }) 
 
     const chosen = sends.filter(({ device }) => claimed.has(device.deviceId));
     const senders = {};
-    function senderFor(kind) {
-      if (!senders[kind]) senders[kind] = kind === 'apns' ? makeApns(apns) : makeWeb(web);
-      return senders[kind];
-    }
-    async function deliver({ device, message }) {
-      let outcome;
-      try {
-        outcome = await senderFor(device.kind).send(device, message);
-      } catch (err) {
-        console.error('Sending a reminder failed:', err.message);
-        outcome = 'failed';
-      }
-      tally[outcome]++;
-      if (outcome === 'gone') await store.removePushAddress(device.address).catch(err => console.error('Removing a dead push address failed:', err.message));
-    }
-    for (let i = 0; i < chosen.length; i += AT_ONCE) await Promise.all(chosen.slice(i, i + AT_ONCE).map(deliver));
+    const sendOne = async ({ device, message }) => { tally[await deliver(senders, device, message)]++; };
+    for (let i = 0; i < chosen.length; i += AT_ONCE) await Promise.all(chosen.slice(i, i + AT_ONCE).map(sendOne));
     Object.values(senders).forEach(sender => sender.close());
     console.log(`Reminders: ${tally.due} due, ${tally.sent} sent, ${tally.gone} gone, ${tally.failed} failed`);
     return tally;
   }
 
-  return { config, save, remove, canSend, sendDue };
+  // A reminder right now, for someone checking they get through to this device: going by the rules above, a player who
+  // keeps up might not be due one for days. It goes to the address the page gives, as save takes one, and uses up nothing.
+  // Replies { status: 'ok' } once the push service has taken it, or { status } 'bad' or 'unavailable'.
+  async function test({ kind, address, keys } = {}) {
+    if (!isAddress(kind, address, keys)) return { status: 'bad' };
+    const senders = {};
+    const outcome = await deliver(senders, { kind, address, keys }, TEST_REMINDER);
+    Object.values(senders).forEach(sender => sender.close());
+    return { status: outcome === 'sent' ? 'ok' : 'unavailable' };
+  }
+
+  return { config, save, remove, canSend, sendDue, test };
 }
 
-module.exports = { createPush, reminderFor, FIRST_HOUR, LAST_HOUR };
+module.exports = { createPush, readApnsKey, reminderFor, FIRST_HOUR, LAST_HOUR };
