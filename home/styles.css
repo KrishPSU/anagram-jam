@@ -431,8 +431,8 @@
   text-underline-offset: 3px;
 }
 
-/* Reminders (/shared/reminders.js), as quiet as the line below */
-.reminders-link {
+/* Reminders (/shared/reminders.js) and sharing the game (script.js), as quiet as the line below */
+.reminders-link, .share-link {
   margin: -10px 0 -4px;
   padding: 6px 10px;
   border: 0;

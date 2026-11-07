@@ -80,3 +80,12 @@ The project now has the push entitlement, so archiving fails until Push Notifica
 "Anagram Jam App Store" profile has been made again. Both are in SETUP-PUSH.md at the project root, with the rest of the
 setup. Simulators can't get an address from Apple without that either, so turning reminders on needs a real iPhone
 (TestFlight is fine: it uses the same APNs service as the App Store).
+
+Build 5 is version 1.0.1: build 4 was 1.0, and 1.0 went out on the App Store with build 3 (without reminders), so a
+build with reminders needed a version number of its own. Nothing else changed between 4 and 5.
+
+## Sharing the app
+
+A link to the App Store shows the listing's first screenshot when it's sent in iMessage, and only a new App Store
+version can change that. The home page's **Share Anagram Jam** sends `https://www.anagramjam.com/app` instead, which
+shows the site's banner (`share.png` at the project root) and opens the App Store on an iPhone (see `/app` in index.js).

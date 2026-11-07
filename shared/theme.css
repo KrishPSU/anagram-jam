@@ -376,7 +376,7 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
 }
 .reminders-note { margin: 0; font-size: 14px; line-height: 1.4; color: var(--go-deep); }
 .reminders-note.bad { color: var(--bad); }
-.reminders-off, .reminders-test {
+.reminders-off, .reminders-test, .reminders-later {
   justify-self: center;
   padding: 6px 8px;
   border: 0;

@@ -102,3 +102,18 @@
   font-weight: 600;
   text-underline-offset: 3px;
 }
+
+/* The page a shared link to the app opens off an iPhone (/app) */
+.app-card { display: grid; gap: 16px; }
+.app-card p { margin: 0; }
+.app-banner {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+.app-actions { display: grid; gap: 10px; }
+.app-actions .btn { text-decoration: none; }
+.info-card .app-actions a { font-weight: 700; }
+.info-card .app-actions .btn-primary { color: #fff; }
+.info-card .app-actions .btn-ghost { color: var(--ink); }

@@ -38,6 +38,11 @@ function showResults(reply) {
     sfx.win();
     confetti();
   }
+
+  // Once the score has had a moment, the reminders box may ask (shared/reminders.js)
+  setTimeout(() => {
+    if (view === 'results' && window.offerReminders) window.offerReminders();
+  }, 2500);
 }
 
 // The line under the score: what share of players it beats, and your best. Or why it isn't on the leaderboard.

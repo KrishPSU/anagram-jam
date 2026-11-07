@@ -22,6 +22,7 @@ const shareBtn = document.getElementById('shareBtn');
 
 let shown = null; // { level, play } in the box
 let asked = 0;    // the latest ask for numbers - a slow reply to an earlier one is ignored
+let justFinished = false; // the box is for a word just played (play.js), not one opened again from the list
 
 
 // play: the finished go (see playFor in daily.js at the project root). result: today's numbers for it, or null to
@@ -207,12 +208,18 @@ resultDialog.addEventListener('click', (event) => {
   if (event.target === resultDialog) resultDialog.close();
 });
 
-// Then it's back to today's list - moved on to tomorrow's words if it's past midnight
+// Then it's back to today's list - moved on to tomorrow's words if it's past midnight. After a word just played, the
+// reminders box may ask once it's there (shared/reminders.js).
 resultDialog.addEventListener('close', () => {
   shown = null;
   asked++;
   if (view === 'game' && onWord) return;
   backToDay();
+  if (!justFinished) return;
+  justFinished = false;
+  setTimeout(() => {
+    if (view === 'day' && window.offerReminders) window.offerReminders();
+  }, 500);
 });
 
 

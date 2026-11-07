@@ -292,6 +292,31 @@ socket.on('liveStats', ({ playing, announcement, paused }) => {
 });
 
 
+// ---------- Sharing the game ----------
+
+// The link is /app (see index.js): the App Store on an iPhone, and the banner (/share.png) in an iMessage preview.
+// Phones get the share sheet; everywhere else the link is copied.
+const shareAppBtn = document.getElementById('shareAppBtn');
+
+shareAppBtn.addEventListener('click', async () => {
+  const url = `${window.location.origin}/app`;
+  if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+    try {
+      await navigator.share({ url });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // closed the share sheet
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showAlert('Link copied. Send it to your friends!', 'success');
+  } catch {
+    showAlert(`Share this link: ${url}`, 'info');
+  }
+});
+
+
 // ---------- Title tiles that scramble and solve themselves ----------
 
 const GAP = 6;

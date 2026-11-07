@@ -183,6 +183,12 @@ app.get('/icon-512.png', (req, res) => {
   res.sendFile(path.join(__dirname, 'icon-512.png'));
 });
 
+// The picture a shared link shows (the og:image on each page): made from the game's own tiles, rather than the App
+// Store's first screenshot, which is what a link to the App Store shows
+app.get('/share.png', (req, res) => {
+  res.sendFile(path.join(__dirname, 'share.png'));
+});
+
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
 // app.use('/admin', express.static(path.join(__dirname, 'edit-menu-app')));
 
@@ -212,6 +218,18 @@ app.get('/privacy', (req, res) => {
 
 app.get('/support', (req, res) => {
   res.sendFile(path.join(__dirname, 'info', 'support.html'));
+});
+
+// The link to share the iPhone app (the home page's Share button). An iPhone goes straight to the App Store. Anything
+// else gets a page with the App Store link and the way into the game - and so does a link preview, whose fetcher says
+// it's a Mac (iMessage's is "...Safari/601.2.4 facebookexternalhit/1.1 Facebot Twitterbot/1.0"), so it shows this
+// site's banner rather than the App Store's first screenshot.
+const APP_STORE = 'https://apps.apple.com/app/id6828193475';
+app.get('/app', (req, res) => {
+  const agent = req.get('user-agent') || '';
+  res.set('Vary', 'User-Agent');
+  if (/iPhone|iPod/.test(agent) && !/bot|facebookexternalhit|AnagramJamApp/i.test(agent)) return res.redirect(302, APP_STORE);
+  res.sendFile(path.join(__dirname, 'info', 'app.html'));
 });
 
 // Where Supabase sends the browser back to after signing in, with the code the page there trades in (see account.js)

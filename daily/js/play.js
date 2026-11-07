@@ -236,6 +236,7 @@ function outOfTries(play, result) {
 // Done, got or not: the clock stops at the server's time for it
 function finishWord(play) {
   onWord = false;
+  justFinished = true;
   clearInterval(clock);
   clockEl.textContent = formatTime(play.ms);
   landAll();

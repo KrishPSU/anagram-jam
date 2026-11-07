@@ -1,6 +1,7 @@
 // Reminders to play (see push.js at the project root): the box that turns them on, changes them, tests them and turns
 // them off, for this device. Any button with data-reminders opens it. They're all hidden where reminders can't be had,
-// and the ones with data-reminders="offer" (after a Daily Jam word or a solo run) go away once they're on.
+// and the ones with data-reminders="offer" (after a Daily Jam word or a solo run) go away once they're on. After a Daily
+// Jam word or a solo run the box also asks by itself, once a session (see offerReminders).
 //
 // Reminders reach the iPhone app through Capacitor's PushNotifications plugin, and a browser through Web Push, with the
 // service worker (/sw.js) showing them. An app installed before the plugin was added doesn't have it, and a phone's
@@ -20,8 +21,9 @@
 
   let webKey = '';    // the server's public key, for asking a browser for an address
   let dialog = null;
-  let controls = null; // what's in the box: { daily, solo, hour, on, test, off, note }
+  let controls = null; // what's in the box: { daily, solo, hour, on, test, off, later, title, intro, note }
   let testHeard = false; // the app has heard the test it asked for (see sendTest)
+  let asking = false;    // the box opened by itself (see offerReminders), so it says why and has a Not now
 
   const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -151,10 +153,10 @@
     dialog.innerHTML = `
       <form class="reminders-card card" method="dialog">
         <div class="howto-head">
-          <h2 id="remindersTitle">Reminders</h2>
+          <h2 id="remindersTitle"></h2>
           <button class="howto-close" aria-label="Close">×</button>
         </div>
-        <p class="reminders-intro">A nudge on this device, once a day at most.</p>
+        <p class="reminders-intro"></p>
         <div class="reminders-rows">
           <label class="reminders-row">
             <span><b>Daily Jam</b><small>If you haven't played today's words</small></span>
@@ -173,17 +175,20 @@
         <button class="btn btn-primary" type="button" data-action="on">Turn on reminders</button>
         <button class="reminders-test" type="button" data-action="test">Send a test</button>
         <button class="reminders-off" type="button" data-action="off">Turn off reminders</button>
+        <button class="reminders-later" type="button" data-action="later">Not now</button>
       </form>`;
     const find = (selector) => dialog.querySelector(selector);
     controls = {
       daily: find('[data-field="daily"]'), solo: find('[data-field="solo"]'), hour: find('[data-field="hour"]'),
       on: find('[data-action="on"]'), test: find('[data-action="test"]'), off: find('[data-action="off"]'),
+      later: find('[data-action="later"]'), title: find('#remindersTitle'), intro: find('.reminders-intro'),
       note: find('.reminders-note'),
     };
     [controls.daily, controls.solo, controls.hour].forEach(control => control.addEventListener('change', changed));
     controls.on.addEventListener('click', turnOn);
     controls.test.addEventListener('click', sendTest);
     controls.off.addEventListener('click', turnOff);
+    controls.later.addEventListener('click', () => dialog.close());
     if (plugin) plugin.addListener('pushNotificationReceived', testArrived);
     dialog.addEventListener('click', (e) => {
       if (e.target === dialog) dialog.close();
@@ -204,6 +209,7 @@
     controls.on.hidden = on;
     controls.test.hidden = !on;
     controls.off.hidden = !on;
+    controls.later.hidden = on || !asking;
     controls.on.disabled = !controls.daily.checked && !controls.solo.checked;
     showButtons();
   }
@@ -214,8 +220,13 @@
     controls.off.disabled = busy;
   }
 
-  async function open() {
+  async function open(byItself = false) {
     if (!dialog) makeDialog();
+    asking = byItself;
+    controls.title.textContent = asking ? 'Want a reminder to play?' : 'Reminders';
+    controls.intro.textContent = asking
+      ? "We'll send a nudge to this device on days you haven't played, once a day at most."
+      : 'A nudge on this device, once a day at most.';
     const settings = stored() || { hour: HOURS.usual, daily: true, solo: true };
     controls.daily.checked = settings.daily;
     controls.solo.checked = settings.solo;
@@ -312,12 +323,38 @@
     });
   }
 
-  window.siteConfig().then((config) => {
+  // Whether reminders can be had here at all
+  const available = window.siteConfig().then((config) => {
     webKey = config.push.webKey;
     const canWeb = !inApp && !!webKey && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-    if (!canWeb && !(plugin && config.push.app)) return;
-    document.querySelectorAll('[data-reminders]').forEach(button => button.addEventListener('click', open));
+    return canWeb || !!(plugin && config.push.app);
+  });
+
+  available.then((can) => {
+    if (!can) return;
+    document.querySelectorAll('[data-reminders]').forEach(button => button.addEventListener('click', () => open()));
     showButtons();
     checkIn();
   });
+
+
+  // ---------- Asking ----------
+
+  const ASKED = 'remindersAsked'; // in sessionStorage once the box has asked by itself
+
+  // Called after a Daily Jam word or a solo run (daily/js/result.js, solo/js/results.js): the box opens by itself if
+  // reminders could be on here and aren't. Once a session at most, a session being while the app (or the tab) stays
+  // open, so playing again doesn't ask again. Not once notifications have been refused either: only the phone's or the
+  // browser's settings can undo that, so there'd be nothing to say yes to.
+  window.offerReminders = async () => {
+    if (!(await available) || stored()) return;
+    try {
+      if (sessionStorage.getItem(ASKED)) return;
+    } catch {
+      return;
+    }
+    if ((await permission().catch(() => 'denied')) === 'denied' || document.querySelector('dialog[open]')) return;
+    sessionStorage.setItem(ASKED, '1');
+    open(true);
+  };
 })();
