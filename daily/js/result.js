@@ -208,8 +208,9 @@ resultDialog.addEventListener('click', (event) => {
   if (event.target === resultDialog) resultDialog.close();
 });
 
-// Then it's back to today's list - moved on to tomorrow's words if it's past midnight. After a word just played, the
-// reminders box may ask once it's there (shared/reminders.js).
+// Then it's back to today's list - moved on to tomorrow's words if it's past midnight. After a word just played, once
+// the list is there: the app, for a phone that hasn't got it (/shared/get-app.js) - or once that's been asked this
+// session, reminders (shared/reminders.js).
 resultDialog.addEventListener('close', () => {
   shown = null;
   asked++;
@@ -218,8 +219,9 @@ resultDialog.addEventListener('close', () => {
   if (!justFinished) return;
   justFinished = false;
   setTimeout(() => {
-    if (view === 'day' && window.offerReminders) window.offerReminders();
-  }, 500);
+    if (view !== 'day') return;
+    if (!(window.offerApp && window.offerApp()) && window.offerReminders) window.offerReminders();
+  }, 600);
 });
 
 

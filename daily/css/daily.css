@@ -40,7 +40,7 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
   min-height: 60px;
   padding: 10px 16px;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-items: center;
   column-gap: 12px;
@@ -69,6 +69,7 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
   color: var(--ink-muted);
 }
 
+/* On a narrow screen "Continue · 2 tries left" goes onto two lines, rather than past the card's edge */
 .level-state {
   grid-column: 2;
   grid-row: 1 / 3;
@@ -76,7 +77,7 @@ body.daily { --glow-a: rgba(255, 170, 90, 0.34); --glow-b: rgba(255, 95, 168, 0.
   font-weight: 800;
   font-size: 15px;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  text-align: right;
 }
 
 .daily-level.new { border-color: transparent; background: linear-gradient(135deg, #fff1f7, #fff7ed); }

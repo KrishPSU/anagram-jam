@@ -12,6 +12,7 @@ const { createAdmin, fromThisSite, addressBlock, clientAddress } = require('./ad
 const { createAccounts } = require('./account');
 const { createProfile } = require('./profile');
 const { createPush, readApnsKey } = require('./push');
+const { staticOptions, sendAsset, sendPage } = require('./assets');
 
 require('dotenv').config();
 
@@ -150,74 +151,76 @@ server.listen(PORT || 3000, () => {
 
 
 
-// Serve static assets for home (if present) and for game pages
-app.use(express.static(path.join(__dirname, 'create-room')));
-app.use('/', express.static(path.join(__dirname, 'home')));
+// Serve static assets for home (if present) and for game pages. ETags from each file's contents, and a year in the
+// browser for a file asked for at its version - the pages are sent with each one's (see assets.js). The pages
+// themselves go out through sendPage, so the folders don't serve their index.html.
+app.use(express.static(path.join(__dirname, 'create-room'), staticOptions()));
+app.use('/', express.static(path.join(__dirname, 'home'), staticOptions({ index: false })));
 // /admin is admin.js's, behind its sign-in
-app.use('/solo', express.static(path.join(__dirname, 'solo')));
-app.use('/practice', express.static(path.join(__dirname, 'practice')));
-app.use('/daily', express.static(path.join(__dirname, 'daily')));
-app.use('/shared', express.static(path.join(__dirname, 'shared')));
-app.use('/info', express.static(path.join(__dirname, 'info')));
+app.use('/solo', express.static(path.join(__dirname, 'solo'), staticOptions()));
+app.use('/practice', express.static(path.join(__dirname, 'practice'), staticOptions()));
+app.use('/daily', express.static(path.join(__dirname, 'daily'), staticOptions()));
+app.use('/shared', express.static(path.join(__dirname, 'shared'), staticOptions()));
+app.use('/info', express.static(path.join(__dirname, 'info'), staticOptions()));
 // The page Supabase sends the browser back to after signing in, and its script (see account.js)
-app.use('/account', express.static(path.join(__dirname, 'account')));
+app.use('/account', express.static(path.join(__dirname, 'account'), staticOptions()));
 
 // Serve PWA files (manifest.json and service worker)
 app.get('/manifest.json', (req, res) => {
-  res.sendFile(path.join(__dirname, 'manifest.json'));
+  sendAsset(res, path.join(__dirname, 'manifest.json'));
 });
 
 app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
-  res.sendFile(path.join(__dirname, 'sw.js'));
+  sendAsset(res, path.join(__dirname, 'sw.js'));
 });
 
 // Serve the icon files (only these - serving the whole project root would expose the server code).
 // Each filename is written out in full: Vercel only bundles files it can find named in the code, and the
 // path that used to be built from req.path left both icons out, so they were a 404 there.
 app.get('/icon-192.png', (req, res) => {
-  res.sendFile(path.join(__dirname, 'icon-192.png'));
+  sendAsset(res, path.join(__dirname, 'icon-192.png'));
 });
 
 app.get('/icon-512.png', (req, res) => {
-  res.sendFile(path.join(__dirname, 'icon-512.png'));
+  sendAsset(res, path.join(__dirname, 'icon-512.png'));
 });
 
 // The picture a shared link shows (the og:image on each page): made from the game's own tiles, rather than the App
 // Store's first screenshot, which is what a link to the App Store shows
 app.get('/share.png', (req, res) => {
-  res.sendFile(path.join(__dirname, 'share.png'));
+  sendAsset(res, path.join(__dirname, 'share.png'));
 });
 
-app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room')));
+app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room'), staticOptions()));
 // app.use('/admin', express.static(path.join(__dirname, 'edit-menu-app')));
 
 
 // Routes
 // Optional home route (adjust if you have a home page)
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'home', 'index.html'));
+  sendPage(res, path.join(__dirname, 'home', 'index.html'));
 });
 
 app.get('/solo', (req, res) => {
-  res.sendFile(path.join(__dirname, 'solo', 'solo.html'));
+  sendPage(res, path.join(__dirname, 'solo', 'solo.html'));
 });
 
 app.get('/practice', (req, res) => {
-  res.sendFile(path.join(__dirname, 'practice', 'practice.html'));
+  sendPage(res, path.join(__dirname, 'practice', 'practice.html'));
 });
 
 app.get('/daily', (req, res) => {
-  res.sendFile(path.join(__dirname, 'daily', 'daily.html'));
+  sendPage(res, path.join(__dirname, 'daily', 'daily.html'));
 });
 
 // The privacy policy and the help page (info/), linked from the home page - the App Store asks for both
 app.get('/privacy', (req, res) => {
-  res.sendFile(path.join(__dirname, 'info', 'privacy.html'));
+  sendPage(res, path.join(__dirname, 'info', 'privacy.html'));
 });
 
 app.get('/support', (req, res) => {
-  res.sendFile(path.join(__dirname, 'info', 'support.html'));
+  sendPage(res, path.join(__dirname, 'info', 'support.html'));
 });
 
 // The link to share the iPhone app (the home page's Share button). An iPhone goes straight to the App Store. Anything
@@ -229,14 +232,12 @@ app.get('/app', (req, res) => {
   const agent = req.get('user-agent') || '';
   res.set('Vary', 'User-Agent');
   if (/iPhone|iPod/.test(agent) && !/bot|facebookexternalhit|AnagramJamApp/i.test(agent)) return res.redirect(302, APP_STORE);
-  res.sendFile(path.join(__dirname, 'info', 'app.html'));
+  sendPage(res, path.join(__dirname, 'info', 'app.html'));
 });
 
 // Where Supabase sends the browser back to after signing in, with the code the page there trades in (see account.js)
 app.get('/account/callback', (req, res) => {
-  res.sendFile(path.join(__dirname, 'account', 'callback.html'), (err) => {
-    if (err && !res.headersSent) res.status(404).type('text').send('Not found');
-  });
+  sendPage(res, path.join(__dirname, 'account', 'callback.html'));
 });
 
 // What the pages need to know as they start (see shared/config.js): whether they can offer signing in, and with what,
@@ -364,7 +365,7 @@ app.get('/practice/words.json', (req, res) => {
 app.get('/game/:roomCode', async (req, res) => {
   const room = await findRoom(req.params.roomCode);
   if (room) {
-    res.sendFile(path.join(__dirname, 'create-room', 'game.html'));
+    sendPage(res, path.join(__dirname, 'create-room', 'game.html'));
   } else {
     res.redirect('/');
   }

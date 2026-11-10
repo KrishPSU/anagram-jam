@@ -165,6 +165,7 @@ function stopRound() {
   timer.stop();
   landAll();
   clearInterval(finishWatch);
+  gameStateEl.classList.remove('frozen');
   roundId = null;
   currentWords = [];
   currentHashes = [];
@@ -487,13 +488,21 @@ function roundOver(results) {
   roundEnding = true;
   timer.stop();
   clearInterval(finishWatch);
-  // Whoever finished has just seen their last word land; everyone else is stopped mid-word
+  // Everyone else is stopped mid-word: everything on the screen stops where it is, music and all, and dims under "Round
+  // over!" (game-state.css) - for whoever finished, once their last word has landed. Then the results come down over it
+  // on their curtain (results.js).
   const byYou = results.finisherId === myId;
-  if (!byYou) {
-    showFeedback('Round over!');
-    if (results.finisherName) showAlert(`${results.finisherName} got through all ${currentWords.length} words!`, 'info');
-  }
-  setTimeout(() => showResults(results), byYou ? 900 : 1800);
+  if (!byYou && results.finisherName) showAlert(`${results.finisherName} got through all ${currentWords.length} words!`, 'info');
+  const round = roundId;
+  setTimeout(() => {
+    if (roundId !== round) return;
+    landAll();
+    gameStateEl.dataset.frozen = byYou ? 'You finished!' : 'Round over!';
+    gameStateEl.classList.add('frozen');
+    holdMusic(true);
+    sfx.freeze();
+  }, byYou ? 450 : 0);
+  setTimeout(() => showResults(results), byYou ? 1200 : 1600);
 }
 
 

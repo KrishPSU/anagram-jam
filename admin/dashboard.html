@@ -24,6 +24,8 @@
   <link rel="stylesheet" href="/shared/skeleton.css">
   <link rel="stylesheet" href="/admin/assets/admin.css">
 
+  <!-- Loads the page again if the rest didn't all come (it's the one script here that doesn't need the session) -->
+  <script defer src="/admin/assets/boot.js"></script>
   <!-- Only served to someone signed in (see admin.js). core.js first: the tabs register with it. -->
   <script defer src="/shared/toast.js"></script>
   <script defer src="/shared/players.js"></script>

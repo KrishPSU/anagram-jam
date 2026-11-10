@@ -39,9 +39,11 @@ function showResults(reply) {
     confetti();
   }
 
-  // Once the score has had a moment, the reminders box may ask (shared/reminders.js)
+  // Once the score has had a moment: the app, for a phone that hasn't got it (/shared/get-app.js) - or once that's been
+  // asked this session, reminders (shared/reminders.js)
   setTimeout(() => {
-    if (view === 'results' && window.offerReminders) window.offerReminders();
+    if (view !== 'results') return;
+    if (!(window.offerApp && window.offerApp()) && window.offerReminders) window.offerReminders();
   }, 2500);
 }
 

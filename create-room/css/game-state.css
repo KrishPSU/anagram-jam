@@ -10,10 +10,43 @@
   display: block;
 }
 
+/* A room's round is over (game.js roundOver): everything on the screen stops where it is and dims, under what happened,
+   until the results come down over it on their curtain (results.js) */
+.game-state.frozen { pointer-events: none; }
+.game-state.frozen *, .game-state.frozen *::before, .game-state.frozen *::after { animation-play-state: paused !important; }
+
+.game-state::after {
+  content: attr(data-frozen);
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(12, 10, 20, 0.55);
+  color: #fff;
+  font-weight: 900;
+  font-size: clamp(34px, 11vw, 56px);
+  line-height: 1.1;
+  text-align: center;
+  text-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.game-state.frozen::after {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s ease;
+}
+
 .game-ui {
   position: absolute;
   inset: 0;
   display: grid;
+  /* As wide as the screen, never as wide as the word or the buttons would like */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto 1fr;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -228,6 +261,15 @@
 
 @media (min-width: 600px) {
   .game-content { --tile-size: 60px; --tile-gap: 10px; }
+}
+
+/* A room's five letters across a narrow phone - or one set to a bigger display size, which makes the screen narrower.
+   (Solo's longer words size themselves to fit from these - fitTiles in solo/js/tiles.js reads them as numbers.) */
+@media (max-width: 324px) {
+  .game-content { --tile-size: 46px; --tile-gap: 6px; }
+}
+@media (max-width: 286px) {
+  .game-content { --tile-size: 40px; }
 }
 
 .progress {

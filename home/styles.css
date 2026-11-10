@@ -109,8 +109,9 @@
   width: 100%;
 }
 
+/* Seven across ("ANAGRAM") on even the narrowest screen - a phone set to a bigger display size is one */
 .title-tiles {
-  --tile-size: 38px;
+  --tile-size: min(38px, calc((100vw - 68px) / 7));
   margin: 0;
   display: grid;
   justify-items: center;
@@ -246,6 +247,7 @@
 /* Single column: the hero fills the space above and the start card sits at the bottom, clear of the screen edge */
 @media (max-width: 859px) {
   .home-layout {
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 1fr auto;
     align-content: stretch;
     /* Room at the top for the Account and How to play buttons, so a short screen doesn't push the title under them */
@@ -273,10 +275,13 @@
   gap: 16px;
 }
 
+/* One column as wide as the card, never as wide as something in it would like (a phone's bigger text setting makes the
+   buttons' words wider) - so nothing in it can push past its edge */
 .start-card {
   width: 100%;
   padding: 20px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -344,6 +349,7 @@
 
 .mode {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   margin-top: 8px;
 }
@@ -405,12 +411,13 @@
 
 .solo-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-/* Two to a row: a little less padding, so the labels fit on a small phone */
-.solo-row .btn { min-width: 0; padding: 0 10px; white-space: nowrap; }
+/* Two to a row: a little less padding, so the labels fit on a small phone - and where they still don't (bigger text),
+   they go onto two lines rather than out of the button */
+.solo-row .btn { min-width: 0; padding: 6px 8px; hyphens: auto; }
 
 /* The day's words: a touch of pink, since they're new every day */
 .solo-row .daily-btn { border-color: #fbcfe8; background: linear-gradient(135deg, #fff1f7, #fff7ed); }
@@ -447,7 +454,7 @@
   cursor: pointer;
 }
 
-/* Add to home screen (install.js). Quiet, under the start card. */
+/* Download the app (/shared/get-app.js). Quiet, under the start card. */
 
 .install-hint {
   margin: -10px 0 0;
@@ -482,18 +489,6 @@
   cursor: pointer;
 }
 .install-hide:hover { background: var(--glass); color: #fff; }
-
-/* In the steps card's Share step */
-.install-share {
-  width: 18px;
-  height: 18px;
-  vertical-align: -3px;
-  fill: none;
-  stroke: var(--you);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 
 /* Drifting letters */
 

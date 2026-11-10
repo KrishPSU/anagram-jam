@@ -75,6 +75,51 @@ const sfx = (() => {
     });
   }
 
+  // One tone sliding from one pitch to another: [from, to (Hz), start offset (s), duration (s), wave, volume]
+  function glide([from, to, start, duration, type, volume]) {
+    if (muted()) return;
+    const c = context();
+    if (!c) return;
+    wake();
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    const t = c.currentTime + start;
+    osc.type = type;
+    osc.frequency.setValueAtTime(from, t);
+    osc.frequency.exponentialRampToValueAtTime(to, t + duration);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(volume, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t);
+    osc.stop(t + duration + 0.02);
+  }
+
+  // A rush of air: noise through a filter sweeping down from `from` Hz to `to` Hz, loudest at `peak` seconds in
+  function rush(from, to, duration, peak, volume) {
+    if (muted()) return;
+    const c = context();
+    if (!c) return;
+    wake();
+    const t = c.currentTime;
+    const buffer = c.createBuffer(1, Math.ceil(c.sampleRate * duration), c.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+    const noise = c.createBufferSource();
+    noise.buffer = buffer;
+    const filter = c.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 0.9;
+    filter.frequency.setValueAtTime(from, t);
+    filter.frequency.exponentialRampToValueAtTime(to, t + duration);
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(volume, t + peak);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    noise.connect(filter).connect(gain).connect(c.destination);
+    noise.start(t);
+  }
+
   return {
     context,
     muted,
@@ -94,6 +139,14 @@ const sfx = (() => {
     hint: () => play([[1047, 0, 0.1, 'sine', 0.1], [1568, 0.06, 0.18, 'sine', 0.07]]),
     // Practice mode's 🤷: here's the word
     shrug: () => play([[587, 0, 0.12, 'sine', 0.1], [440, 0.1, 0.26, 'sine', 0.08]]),
+    // A room's round stopping dead when someone finishes (create-room/js/game.js), like a record being stopped
+    freeze: () => glide([520, 70, 0, 0.45, 'triangle', 0.16]),
+    // Then its results coming down on their curtain (create-room/js/results.js): the cloth rushing down, and the thump as
+    // it lands, 0.58 s in (curtain-drop in create-room/css/results.css)
+    curtain: () => {
+      rush(2600, 260, 0.62, 0.42, 0.14);
+      glide([110, 42, 0.58, 0.32, 'sine', 0.42]);
+    },
     // A short buzz for a right answer, a pattern of them for a wrong one. In the app: a tap, or the phone's error buzz.
     buzz: (pattern) => {
       if (muted()) return;

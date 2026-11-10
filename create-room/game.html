@@ -44,6 +44,7 @@
   <script defer src="/shared/sfx.js"></script>
   <script defer src="/shared/players.js"></script>
   <script defer src="/shared/how-to-play.js"></script>
+  <script defer src="/shared/slide.js"></script>
   <script defer src="js/lobby.js"></script>
   <script defer src="js/timer.js"></script>
   <script defer src="js/game.js"></script>
@@ -51,6 +52,8 @@
   <script defer src="js/audio.js"></script>
   <script defer src="js/leaderboard.js"></script>
   <script defer src="js/keyboard.js"></script>
+  <!-- "Get the app", once a session after a game -->
+  <script defer src="/shared/get-app.js"></script>
   <!-- Your account (its name is the one the room sees) and PostHog - see each file -->
   <script defer src="/shared/account.js"></script>
   <script defer src="/shared/analytics.js"></script>
@@ -202,8 +205,9 @@
   </div>
 
 
-  <!-- The round you just played. Play again takes you back to the lobby ready for the next one; Back to lobby, not ready yet. -->
-  <section class="results" id="resultsView" hidden>
+  <!-- The round you just played, on a red curtain that drops down over it (results.js). Play again takes you back to the
+       lobby ready for the next one; Back to lobby, not ready yet. -->
+  <section class="results curtain" id="resultsView" hidden>
     <section class="winner-card" aria-labelledby="winnerTitle">
       <p class="eyebrow" id="roomLabel">Results</p>
       <div class="winner"><span id="winnerName">Player Name</span></div>

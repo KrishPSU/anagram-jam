@@ -21,6 +21,7 @@ const mute_btn = document.getElementById('mute-button');
 
 const tracks = {};  // name -> { buffer, loopStart } once loaded ('loading' until then)
 let playing = null; // the track that's on: { name, source, gain }
+let musicHeld = false; // a room's round has just ended: quiet until its results are down (see holdMusic)
 
 // The mute button covers the music and the sound effects in shared/sfx.js. It shows what you can hear: browsers keep a
 // page silent until it's been tapped, so until then it's 🔇 even if you've never muted anything, and pressing it is
@@ -43,7 +44,7 @@ window.addEventListener('soundchange', showMuteState);
 // Plays the track for the screen you're on, fading over from the other one - or nothing, muted. Called whenever
 // the screen changes (showView), the mute button is pressed, or a track has loaded.
 function syncMusic() {
-  const wanted = sfx.muted() ? null : (view === 'game' ? roundMusic : 'lobby');
+  const wanted = sfx.muted() || (musicHeld && view !== 'lobby') ? null : (view === 'game' ? roundMusic : 'lobby');
   if (playing && playing.name === wanted) return;
   if (playing) stopTrack(playing, wanted ? FADE_SECONDS : 0);
   playing = null;
@@ -67,6 +68,20 @@ function syncMusic() {
   // If no tap has woken the audio context yet, this starts with it
   source.start();
   playing = { name: wanted, source, gain };
+}
+
+// When a room's round ends, everything on the screen stops (game.js roundOver), and the music winds down with it like a
+// record being stopped. It comes back once the results have landed (results.js) - or with the lobby, whichever is first.
+function holdMusic(on) {
+  musicHeld = on;
+  if (on && playing) {
+    const now = sfx.context().currentTime;
+    playing.source.playbackRate.setValueAtTime(1, now);
+    playing.source.playbackRate.linearRampToValueAtTime(0.3, now + 0.6);
+    stopTrack(playing, 0.6);
+    playing = null;
+  }
+  syncMusic();
 }
 
 function stopTrack({ source, gain }, fade) {

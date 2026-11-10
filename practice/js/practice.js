@@ -10,6 +10,7 @@ const FIRST_LENGTH = 3;   // as in solo.js
 const LONGEST = 10;       // and words stay this long after that
 const GOT_PER_LENGTH = 5; // a letter longer after this many got
 const REVEAL_MS = 2000;   // how long 🤷's word stays up before the next one
+const APP_AFTER = 5;      // words got before "Get the app" may ask (see answerReady)
 
 const homeBtn = document.getElementById('homeBtn');
 const solvedPillEl = document.getElementById('solvedPill');
@@ -157,6 +158,9 @@ function answerReady() {
   sfx.correct();
   sfx.buzz(30);
   setTimeout(nextWord, 400);
+  // Practice never ends, so a few words in counts as a game played: the app, for a phone that hasn't got it
+  // (/shared/get-app.js)
+  if (solved === APP_AFTER && window.offerApp) setTimeout(window.offerApp, 900);
 }
 
 // 🤷, or ?: the word goes up in the answer row for a moment, then the next one comes. It doesn't count toward the words

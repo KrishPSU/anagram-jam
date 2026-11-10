@@ -250,11 +250,14 @@ leaveDialog.addEventListener('close', () => {
   if (leaveDialog.returnValue === 'leave') backToDay();
 });
 
-// Today's list again - a new one if it's past midnight
+// Today's list again - a new one if it's past midnight. The word slides away to the right, uncovering it
+// (/shared/slide.js).
 function backToDay() {
-  showView('day');
-  if (!today || localDay() !== day) loadDay();
-  else showDay();
+  slideScreen(() => {
+    showView('day');
+    if (!today || localDay() !== day) loadDay();
+    else showDay();
+  }, 'back');
 }
 
 

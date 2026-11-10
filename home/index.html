@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- data-slide: coming back here, the page you were on slides away to the right (see /shared/theme.css) -->
+<html lang="en" data-slide="back">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -46,7 +47,7 @@
   <script src="/shared/how-to-play.js" defer></script>
   <script src="script.js" defer></script>
   <script src="/shared/solo-leaderboard.js" defer></script>
-  <script src="install.js" defer></script>
+  <script src="/shared/get-app.js" defer></script>
   <!-- Your account, reminders to play, who's on the site right now (for the admin page), and PostHog - see each file -->
   <script src="/shared/account.js" defer></script>
   <script src="/shared/reminders.js" defer></script>
@@ -149,9 +150,10 @@
         <p class="sr-only" id="busyStatus" role="status"></p>
       </form>
 
-      <!-- Phones and tablets only, until it's installed or the × is tapped (install.js) -->
+      <!-- iPhones (the App Store) and Android phones (installed from here), until it's installed or the × is tapped
+           (/shared/get-app.js) -->
       <p class="install-hint" id="installHint" hidden>
-        <button class="install-open" type="button" id="installBtn">📲 Add Anagram Jam to your home screen</button>
+        <button class="install-open" type="button" id="installBtn">📲 Download the app</button>
         <button class="install-hide" type="button" id="installHide" aria-label="Don't show this again" title="Don't show this again">×</button>
       </p>
 

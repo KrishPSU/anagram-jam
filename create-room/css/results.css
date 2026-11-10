@@ -56,6 +56,7 @@
   font-size: clamp(22px, 6vw, 30px);
   line-height: 1.1;
   overflow-wrap: anywhere;
+  hyphens: auto;
   box-shadow: 0 0 30px rgba(255, 215, 0, 0.5), 0 0 60px rgba(255, 215, 0, 0.3), inset 0 0 20px rgba(255, 255, 255, 0.3);
   animation: winnerGlow 2s ease-in-out infinite;
 }
@@ -86,6 +87,7 @@
   line-height: 1.05;
   text-wrap: balance;
   overflow-wrap: anywhere;
+  hyphens: auto;
 }
 
 .winner-tag {
@@ -142,7 +144,7 @@
 .rank-row.you { font-weight: 800; }
 
 .rank-row .place {
-  width: 26px;
+  min-width: 26px;
   flex: none;
   text-align: center;
   font-weight: 800;
@@ -160,25 +162,31 @@
 /* 🏁 for whoever got through every word first, which ended the round */
 .rank-row .finished { flex: none; }
 
+/* At most half the row, so the name always has some: "20 pts · 10/10 solved" takes two lines on a narrow screen */
 .rank-row .stats {
-  white-space: nowrap;
+  max-width: 50%;
+  text-align: right;
   font-size: 14px;
   color: var(--on-dark-muted);
   font-variant-numeric: tabular-nums;
 }
 
+/* Who got it first (or what it was worth) as wide as it needs, up to not quite half the row - a long name goes onto
+   another line rather than squeezing the word */
 .word-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) fit-content(45%);
   gap: 2px 12px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* A long word on a narrow screen breaks onto another line rather than running into the time beside it */
 .word-row .word {
   font-weight: 800;
   font-size: 17px;
   letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
 }
 
 .word-row .scramble {
@@ -193,6 +201,7 @@
   grid-row: 1 / span 2;
   align-self: center;
   text-align: right;
+  overflow-wrap: anywhere;
   font-size: 14px;
   color: var(--on-dark-muted);
 }
@@ -212,3 +221,71 @@
   z-index: 50;
   pointer-events: none;
 }
+
+
+/* ---------- The curtain (a room's results, results.js) ---------- */
+
+/* Red velvet hung across the whole screen behind the results: folds catching the light, a little darker at the top,
+   where the light doesn't reach, and at the foot, where the cloth gathers - and a gold fringe along the bottom */
+.results.curtain::before,
+.results.curtain::after {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.results.curtain::before {
+  top: 0;
+  bottom: 0;
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 28%, rgba(255, 196, 140, 0.16), transparent 70%),
+    linear-gradient(180deg, rgba(24, 0, 6, 0.6) 0%, rgba(24, 0, 6, 0) 24%, rgba(24, 0, 6, 0) 66%, rgba(24, 0, 6, 0.62) 100%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.22) 0, rgba(0, 0, 0, 0) 46px, rgba(255, 255, 255, 0.04) 92px, rgba(0, 0, 0, 0) 138px, rgba(0, 0, 0, 0.22) 184px),
+    repeating-linear-gradient(90deg, #4c0711 0, #840d1b 12px, #bb1829 25px, #dc2e3d 32px, #bb1829 39px, #840d1b 52px, #4c0711 64px);
+}
+
+.results.curtain::after {
+  bottom: 0;
+  height: calc(14px + env(safe-area-inset-bottom, 0px));
+  background:
+    linear-gradient(#f7d774, #b8860b) top / 100% 5px no-repeat,
+    repeating-linear-gradient(90deg, #e9c25a 0 2px, rgba(184, 134, 11, 0.85) 2px 4px, transparent 4px 6px) bottom / 100% calc(100% - 5px) no-repeat;
+}
+
+/* The cards are a deep wine on the velvet, edged in gold */
+.results.curtain .winner-card,
+.results.curtain .panel {
+  background: rgba(30, 4, 10, 0.6);
+  border-color: rgba(247, 215, 116, 0.28);
+}
+
+/* Down over the round it falls, bouncing to a stop (a thump as it lands, 58% in - sfx.curtain), while the round,
+   frozen where it was (game-state.css), darkens under it. Back to the lobby, it goes up again. (slideScreen in
+   /shared/slide.js; the browser plays these over pictures of the two screens.) */
+html[data-slide="curtain-drop"]::view-transition-new(root) {
+  animation: curtain-drop 1s both;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.55);
+}
+html[data-slide="curtain-drop"]::view-transition-old(root) { animation: curtain-shade 1s ease-in both; }
+
+html[data-slide="curtain-lift"]::view-transition-old(root) {
+  z-index: 1;
+  animation: curtain-lift 0.7s cubic-bezier(0.5, 0, 0.75, 0) both;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.55);
+}
+html[data-slide="curtain-lift"]::view-transition-new(root) { animation: none; box-shadow: none; }
+
+@keyframes curtain-drop {
+  0% { transform: translateY(-100%); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5); }
+  58% { transform: translateY(0); animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1); }
+  72% { transform: translateY(-3.5%); animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.4); }
+  84% { transform: translateY(0); animation-timing-function: cubic-bezier(0.2, 0.6, 0.4, 1); }
+  92% { transform: translateY(-1%); animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.4); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes curtain-shade { to { opacity: 0.35; } }
+@keyframes curtain-lift { to { transform: translateY(-100%); } }

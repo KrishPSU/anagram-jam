@@ -55,8 +55,9 @@ body:not(.lobby) .lobby-help { display: none; }
   text-align: center;
 }
 
+/* Five across on even the narrowest screen */
 .code-tiles {
-  --tile-size: 46px;
+  --tile-size: min(46px, calc((100vw - 56px) / 5));
   display: flex;
   gap: 6px;
 }
@@ -114,6 +115,11 @@ body:not(.lobby) .lobby-help { display: none; }
   background: var(--field);
   font-weight: 700;
   font-size: 15px;
+}
+
+/* The narrowest screens: a little closer together, so a long name still leaves room for the rest */
+@media (max-width: 300px) {
+  .player-pill { gap: 6px; padding-left: 6px; padding-right: 8px; }
 }
 
 .player-pill.you { background: var(--you-bg); }

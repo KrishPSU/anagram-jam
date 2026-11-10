@@ -79,10 +79,12 @@
 .board-row.daily .name { grid-area: name; }
 .board-row.daily .board-stats { grid-area: stats; }
 
+/* Each number stays whole, but on a narrow screen they take a second line rather than running past the row's edge */
 .board-stats {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 2px 10px;
   white-space: nowrap;
 }
 
@@ -127,3 +129,20 @@
 /* The tab's rows while they're fetched again (it was picked again): still up, dimmed, until the new ones are in. The
    first time, grey rows stand in instead (skeletonRow in solo-leaderboard.js). */
 .board-list.is-loading { opacity: 0.5; transition: opacity 0.2s ease; }
+
+/* The narrowest screens: a solo row's words go under the name, so the name keeps some room beside the points */
+@media (max-width: 359px) {
+  .board-row.solo {
+    display: grid;
+    grid-template-columns: 24px 28px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "place avatar name pts"
+      "place avatar words pts";
+    column-gap: 8px;
+  }
+  .board-row.solo .place { grid-area: place; }
+  .board-row.solo .avatar { grid-area: avatar; }
+  .board-row.solo .name { grid-area: name; }
+  .board-row.solo .words { grid-area: words; }
+  .board-row.solo .pts { grid-area: pts; min-width: 0; }
+}

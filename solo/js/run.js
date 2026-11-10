@@ -320,7 +320,8 @@ async function finishRun() {
   } else {
     await wait(700);
   }
-  showResults(reply);
+  // The results slide in over the run (/shared/slide.js)
+  slideScreen(() => showResults(reply));
 }
 
 // The answers, for the server to score. Resolves to its reply, or null if it couldn't be reached (results.js has a

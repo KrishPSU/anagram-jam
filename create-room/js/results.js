@@ -14,26 +14,45 @@ let shownRound = null; // the round whose results are on screen
 
 
 // results: the server's (see buildResults in index.js) - the winner has the most points, and the finisher got
-// through every word first, which ended the round
+// through every word first, which ended the round. Straight from the round, they come down over it on a red curtain
+// (results.css), with a thump as it lands; coming back to them (a reload, say), they're just there.
 function showResults(results) {
   // Already showing them - the connection only dropped for a moment
   if (view === 'results' && shownRound === results.round) return;
   shownRound = results.round;
-  showView('results');
-
   const won = results.winnerId === myId;
-  const winner = results.players.find(p => p.id === results.winnerId) || { points: 0 };
-  roomLabelEl.textContent = `Results · Room ${state.roomCode}`;
-  winnerNameEl.textContent = results.winnerName;
-  winnerTitleEl.textContent = won ? 'You win!' : `${results.winnerName} wins!`;
-  winnerTagEl.textContent = winnerTagline(results, winner);
-  showRanking(results);
-  showGameWords(results.words);
+  const fill = () => {
+    showView('results');
+    const winner = results.players.find(p => p.id === results.winnerId) || { points: 0 };
+    roomLabelEl.textContent = `Results · Room ${state.roomCode}`;
+    winnerNameEl.textContent = results.winnerName;
+    winnerTitleEl.textContent = won ? 'You win!' : `${results.winnerName} wins!`;
+    winnerTagEl.textContent = winnerTagline(results, winner);
+    showRanking(results);
+    showGameWords(results.words);
+  };
 
-  if (won) {
-    sfx.win();
-    confetti();
+  let landed;
+  if (view === 'game') {
+    if (canSlide()) sfx.curtain();
+    landed = slideScreen(fill, 'curtain-drop');
+  } else {
+    fill();
+    landed = Promise.resolve();
   }
+
+  landed.then(() => {
+    holdMusic(false);
+    if (shownRound !== results.round || view !== 'results') return;
+    if (won) {
+      sfx.win();
+      confetti();
+    }
+    // Once the results have had a moment: the app, for a phone that hasn't got it (/shared/get-app.js)
+    setTimeout(() => {
+      if (shownRound === results.round && view === 'results' && window.offerApp) window.offerApp();
+    }, 2500);
+  });
 }
 
 // What won it: the most points, or the same points but sooner - and who finished first, if that was someone else
@@ -52,11 +71,13 @@ function toLobby(button, ready) {
   button.classList.add('is-loading');
   request(ready ? 'play-again' : 'back-to-lobby')
     .then(() => {
-      // Shown straight away - the server's room-state confirms it
+      // Shown straight away - the server's room-state confirms it. The curtain goes back up off the lobby.
       const me = state.players.find(p => p.isYou);
       if (me) me.status = ready ? 'ready' : 'notReady';
-      showView('lobby');
-      render();
+      slideScreen(() => {
+        showView('lobby');
+        render();
+      }, 'curtain-lift');
     })
     .catch(() => showAlert("Couldn't reach the game. Try again."))
     .finally(() => {

@@ -78,7 +78,8 @@ async function openWord(level, btn) {
     showResult(level, reply.play, reply.result);
     return;
   }
-  beginWord(level, reply);
+  // The word slides in over today's list (/shared/slide.js)
+  slideScreen(() => beginWord(level, reply));
 }
 
 function beginWord(level, reply) {

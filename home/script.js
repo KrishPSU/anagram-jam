@@ -349,10 +349,20 @@ function makeTileRow(rowEl) {
     });
   }
 
-  layout(false);
-  window.addEventListener('resize', () => layout(false));
+  // Straight into place, without sliding there: on arriving at the page (it's coming in from the side, or out from under
+  // the page you were on - see the slides in /shared/theme.css), when the font comes in, and when the screen turns
+  function place() {
+    tiles.forEach((tile) => { tile.style.transition = 'none'; });
+    layout(false);
+    void rowEl.offsetWidth; // in place before the sliding comes back
+    tiles.forEach((tile) => { tile.style.transition = ''; });
+  }
+
+  place();
+  window.addEventListener('resize', place);
 
   return {
+    place,
     scramble() {
       order = derange(tiles.length);
       layout(true);
@@ -382,7 +392,7 @@ async function scrambleTitle() {
 
 // Wait for the font so the tiles are measured at their real size
 (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => {
-  titleRows.forEach(row => row.solve());
+  titleRows.forEach(row => row.place());
   scrambleTitle();
 });
 

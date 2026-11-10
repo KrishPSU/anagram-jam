@@ -1,6 +1,9 @@
 /* The admin pages: the sign-in card and the dashboard. Colors, tiles, buttons, toasts and the backdrop come from
    /shared/theme.css. The dashboard is dark panels on the same backdrop - denser than the game's white cards. */
 
+/* The admin pages switch straight over, without the game's slide between pages (see /shared/theme.css) */
+@view-transition { navigation: none; }
+
 body.admin {
   --glow-a: rgba(124, 108, 240, 0.30);
   --glow-b: rgba(255, 95, 168, 0.16);
@@ -255,6 +258,19 @@ h1, h2, h3, p { margin: 0; }
   font-size: 14px;
 }
 .state.is-error { color: #fecdd3; background: rgba(190, 18, 60, 0.28); }
+.boot-failed { justify-content: space-between; }
+
+/* Until the dashboard's scripts have opened a tab (core.js) - a slow first load, say - it says so, rather than standing
+   empty */
+.panels:not(:has(> [role="tabpanel"]:not([hidden]))):not(:has(> .boot-failed))::before {
+  content: "Loading the dashboard…";
+  display: block;
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 14px;
+}
 
 .empty {
   padding: 36px 16px;
@@ -269,7 +285,7 @@ h1, h2, h3, p { margin: 0; }
 
 /* ---------- Bits ---------- */
 
-.btn-xs { height: 30px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
+.btn-xs { min-height: 30px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
 .btn.armed { background: rgba(225, 29, 72, 0.9); border-color: transparent; color: #fff; }
 .btn-glass:hover { background: rgba(255, 255, 255, 0.18); }
 
@@ -377,7 +393,7 @@ textarea.input { resize: vertical; line-height: 1.45; }
 
 .inline-form { display: flex; gap: 8px; }
 .inline-form .input { flex: 1; min-width: 0; }
-.inline-form .btn { flex: none; height: 42px; }
+.inline-form .btn { flex: none; min-height: 42px; }
 
 code {
   padding: 1px 6px;

@@ -1,4 +1,6 @@
-// Minimal service worker: no static asset caching, just passthrough - and it shows reminders to play (see push.js).
+// Minimal service worker: it shows reminders to play (see push.js), and that's all. It has no fetch handler on purpose:
+// one that only passed every request on to the network still had to be started up before each page could load (and it
+// stood between the admin page and its sign-in), for nothing - the browser does the same by itself.
 
 self.addEventListener('install', (event) => {
   console.log('Service Worker: Installing (no static cache)...');
@@ -11,17 +13,6 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName))))
   );
   return self.clients.claim();
-});
-
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-
-  // Let non-GET requests and socket.io traffic pass through untouched
-  if (request.method !== 'GET' || request.url.includes('/socket.io/')) {
-    return;
-  }
-
-  event.respondWith(fetch(request));
 });
 
 // A reminder (see push.js), which comes whether or not the game is open. It takes the place of one still showing from
