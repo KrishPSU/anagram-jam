@@ -12,7 +12,7 @@ const { createAdmin, fromThisSite, addressBlock, clientAddress } = require('./ad
 const { createAccounts } = require('./account');
 const { createProfile } = require('./profile');
 const { createPush, readApnsKey } = require('./push');
-const { staticOptions, sendAsset, sendPage } = require('./assets');
+const { staticOptions, sendAsset, sendPage, pageVersions } = require('./assets');
 
 require('dotenv').config();
 
@@ -193,25 +193,39 @@ app.get('/share.png', (req, res) => {
 });
 
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room'), staticOptions()));
+
+// The Socket.IO client the pages use, from the server's own package so the two always match. Socket.IO serves it too
+// (/socket.io/socket.io.js), but with no way to keep it: the pages load it before they can draw, so that was a trip to
+// the server on every page. From here it's versioned and kept like the rest (see assets.js).
+app.get('/vendor/socket.io.min.js', (req, res) => {
+  sendAsset(res, path.join(__dirname, 'node_modules', 'socket.io', 'client-dist', 'socket.io.min.js'));
+});
 // app.use('/admin', express.static(path.join(__dirname, 'edit-menu-app')));
 
 
 // Routes
-// Optional home route (adjust if you have a home page)
+// The pages the game moves between itself - opened at their versions (see /shared/slide.js and assets.js)
+const PAGES = {
+  '/': path.join(__dirname, 'home', 'index.html'),
+  '/solo/': path.join(__dirname, 'solo', 'solo.html'),
+  '/practice/': path.join(__dirname, 'practice', 'practice.html'),
+  '/daily/': path.join(__dirname, 'daily', 'daily.html'),
+};
+
 app.get('/', (req, res) => {
-  sendPage(res, path.join(__dirname, 'home', 'index.html'));
+  sendPage(res, PAGES['/']);
 });
 
 app.get('/solo', (req, res) => {
-  sendPage(res, path.join(__dirname, 'solo', 'solo.html'));
+  sendPage(res, PAGES['/solo/']);
 });
 
 app.get('/practice', (req, res) => {
-  sendPage(res, path.join(__dirname, 'practice', 'practice.html'));
+  sendPage(res, PAGES['/practice/']);
 });
 
 app.get('/daily', (req, res) => {
-  sendPage(res, path.join(__dirname, 'daily', 'daily.html'));
+  sendPage(res, PAGES['/daily/']);
 });
 
 // The privacy policy and the help page (info/), linked from the home page - the App Store asks for both
@@ -242,11 +256,12 @@ app.get('/account/callback', (req, res) => {
 
 // What the pages need to know as they start (see shared/config.js): whether they can offer signing in, and with what,
 // where their analytics go, and the oldest build of the iPhone app that can still play (the admin page's Controls tab
-// sets it), and which reminders can be had (see push.js). The same for everyone, so a minute's caching is fine.
+// sets it), which reminders can be had (see push.js), and each page's version (see /shared/slide.js). The same for
+// everyone, so a minute's caching is fine.
 app.get('/site-config.json', async (req, res) => {
   res.set('Cache-Control', 'public, max-age=60');
   const { minAppBuild } = await admin.forPlayers();
-  res.json({ ...accounts.config(), app: { minBuild: minAppBuild }, push: pushConfig });
+  res.json({ ...accounts.config(), app: { minBuild: minAppBuild }, push: pushConfig, pages: pageVersions(PAGES) });
 });
 
 // A body that isn't JSON, or is too big, gets a 400 rather than Express's own error page

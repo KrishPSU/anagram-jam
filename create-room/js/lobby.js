@@ -478,7 +478,7 @@ leaveDialog.addEventListener('close', () => {
   if (leaveDialog.returnValue !== 'leave') return;
   // Waits (briefly) for the server to take you out, so the room doesn't think your connection just dropped
   socket.timeout(1500).emit('leave-room', () => {
-    window.location.href = "/";
+    goTo('/', 'back');
   });
 });
 

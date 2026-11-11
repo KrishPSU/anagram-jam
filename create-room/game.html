@@ -37,6 +37,11 @@
   <link rel="stylesheet" href="css/game-state.css">
   <link rel="stylesheet" href="css/results.css">
 
+  <!-- Slides between pages and screens. In the head, not deferred: a page arriving starts off to the side (see the file). -->
+  <script src="/shared/slide.js"></script>
+
+  <!-- Socket.IO first: the scripts after it connect with it -->
+  <script defer src="/vendor/socket.io.min.js"></script>
   <script defer src="/shared/app.js"></script>
   <script defer src="/shared/config.js"></script>
   <script defer src="/shared/socket.js"></script>
@@ -44,7 +49,6 @@
   <script defer src="/shared/sfx.js"></script>
   <script defer src="/shared/players.js"></script>
   <script defer src="/shared/how-to-play.js"></script>
-  <script defer src="/shared/slide.js"></script>
   <script defer src="js/lobby.js"></script>
   <script defer src="js/timer.js"></script>
   <script defer src="js/game.js"></script>
@@ -58,7 +62,6 @@
   <script defer src="/shared/account.js"></script>
   <script defer src="/shared/analytics.js"></script>
 
-  <script src="/socket.io/socket.io.js"></script>
 
   <!-- Service Worker Registration -->
   <script>
@@ -89,7 +92,7 @@
   <!-- Lobby screen only. Opens the box from /shared/how-to-play.js. -->
   <button class="help-btn lobby-help" type="button" data-how-to-play><i aria-hidden="true">?</i>How to play</button>
 
-  <div class="lobby-wrapper" id="lobbyWrapper">
+  <div class="lobby-wrapper" id="lobbyWrapper" data-screen>
     <div class="floating-shapes">
       <div class="shape"></div>
       <div class="shape"></div>
@@ -137,7 +140,7 @@
   <p class="reconnecting" id="reconnecting" role="status" hidden><span class="spinner" aria-hidden="true"></span>Reconnecting…</p>
 
 
-  <div class="game-state" id="gameState">
+  <div class="game-state" id="gameState" data-screen>
     <div class="floating-shapes">
       <div class="shape"></div>
       <div class="shape"></div>
@@ -207,7 +210,7 @@
 
   <!-- The round you just played, on a red curtain that drops down over it (results.js). Play again takes you back to the
        lobby ready for the next one; Back to lobby, not ready yet. -->
-  <section class="results curtain" id="resultsView" hidden>
+  <section class="results curtain" id="resultsView" data-screen hidden>
     <section class="winner-card" aria-labelledby="winnerTitle">
       <p class="eyebrow" id="roomLabel">Results</p>
       <div class="winner"><span id="winnerName">Player Name</span></div>

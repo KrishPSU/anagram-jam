@@ -105,7 +105,7 @@ function showBest() {
 // Home right away, except in the middle of a run - that asks first, and the clock doesn't stop while it does
 homeBtn.addEventListener('click', () => {
   if (view !== 'game' || !running) {
-    window.location.href = '/';
+    goTo('/', 'back');
     return;
   }
   leaveDialog.returnValue = '';
@@ -118,7 +118,7 @@ leaveDialog.addEventListener('click', (event) => {
 });
 
 leaveDialog.addEventListener('close', () => {
-  if (leaveDialog.returnValue === 'leave') window.location.href = '/';
+  if (leaveDialog.returnValue === 'leave') goTo('/', 'back');
 });
 
 

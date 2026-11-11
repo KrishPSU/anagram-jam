@@ -48,19 +48,34 @@ body.solo { --glow-a: rgba(16, 185, 129, 0.30); --glow-b: rgba(34, 184, 207, 0.2
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Under the page, the plain dark the iPhone app shows for a moment between two pages (mobile/capacitor.config.json's
+   backgroundColor), so moving from page to page never flickers (/shared/slide.js). The page's own backdrop - the
+   gradient, and the glows on it - is the body's, so it slides with the page. */
 html {
   min-height: 100%;
-  background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%) fixed;
+  background: var(--bg-1);
 }
 
+/* Its own stacking context, so the glows (z-index -1) sit on the body's gradient rather than under it */
 body {
   margin: 0;
   min-height: 100vh;
   min-height: 100dvh;
+  isolation: isolate;
+  background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%) fixed;
   font-family: var(--font);
   color: var(--on-dark);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Over everything as a page leaves, fading in to that plain dark (/shared/slide.js) */
+.page-cover {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  background: var(--bg-1);
+  pointer-events: none;
 }
 
 /* Drifting color glows. Oversized so the layer's edge never slides into view. */
@@ -1293,47 +1308,10 @@ button { font: inherit; touch-action: manipulation; -webkit-touch-callout: none;
   from { opacity: 0; transform: translateY(8px) scale(0.94); }
 }
 
-/* Moving between screens. Opening a page slides it in from the right, over the page before, which drifts a little to
-   the left and darkens. Going back home is the other way round: home's <html> has data-slide="back", so the page you
-   were on slides off to the right and home comes out from under it. Screens inside a page (a Daily Jam word and back,
-   a solo run's results, a room's results) move the same way, with slideScreen in /shared/slide.js. The browser does
-   it (View Transitions): it holds a picture of the old page until the new one is ready, then plays these over both.
-   Browsers without it switch pages as they always have. */
-@view-transition { navigation: auto; }
-
-:root {
-  --slide-time: 0.45s;
-  --slide-ease: cubic-bezier(0.33, 1, 0.68, 1);
-  --slide-shadow: -16px 0 40px rgba(0, 0, 0, 0.35);
-}
-
-/* What the page underneath darkens to */
-::view-transition { background: #0b0b0d; }
-
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: var(--slide-time);
-  animation-timing-function: var(--slide-ease);
-  animation-fill-mode: both;
-  /* Each page is drawn as it is - the browser's own cross-fade blends the two together */
-  mix-blend-mode: normal;
-}
-
-::view-transition-new(root) { animation-name: slide-in; box-shadow: var(--slide-shadow); }
-::view-transition-old(root) { animation-name: slide-under; }
-
-html[data-slide="back"]::view-transition-old(root) { z-index: 1; animation-name: slide-away; box-shadow: var(--slide-shadow); }
-html[data-slide="back"]::view-transition-new(root) { animation-name: slide-out-from-under; box-shadow: none; }
-
-/* Inside a page the home and mute buttons stay where they are, rather than going with the screen */
-html[data-slide] .home-btn { view-transition-name: home-btn; }
-html[data-slide] .mute { view-transition-name: mute-btn; }
-html[data-slide] .toast-stack { view-transition-name: toasts; }
-
-@keyframes slide-in { from { transform: translateX(100%); } }
-@keyframes slide-under { to { transform: translateX(-30%); opacity: 0.5; } }
-@keyframes slide-away { to { transform: translateX(100%); } }
-@keyframes slide-out-from-under { from { transform: translateX(-30%); opacity: 0.5; } }
+/* A page arriving from another (see /shared/slide.js): off to the side until its slide in starts, on its first frame.
+   Not see-through instead: iOS doesn't draw a page whose content can't be seen until the page has finished loading. */
+html[data-arrive="forward"] body { transform: translateX(100%); }
+html[data-arrive="back"] body { transform: translateX(-100%); }
 
 .sr-only {
   position: absolute;
@@ -1349,8 +1327,6 @@ html[data-slide] .toast-stack { view-transition-name: toasts; }
 
 /* Players who turn off motion in their OS settings get a still screen */
 @media (prefers-reduced-motion: reduce) {
-  @view-transition { navigation: none; }
-
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

@@ -165,7 +165,6 @@ function stopRound() {
   timer.stop();
   landAll();
   clearInterval(finishWatch);
-  gameStateEl.classList.remove('frozen');
   roundId = null;
   currentWords = [];
   currentHashes = [];
@@ -176,6 +175,9 @@ function stopRound() {
   serverPoints = 0;
   roundEnding = false;
   locked = false;
+  // Under the results' curtain while it comes down (results.js), the round stays as it was
+  if (gameStateEl.classList.contains('held')) return;
+  gameStateEl.classList.remove('frozen');
   tilesEl.replaceChildren();
   slotsEl.replaceChildren();
 }

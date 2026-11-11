@@ -15,7 +15,7 @@ let shownRound = null; // the round whose results are on screen
 
 // results: the server's (see buildResults in index.js) - the winner has the most points, and the finisher got
 // through every word first, which ended the round. Straight from the round, they come down over it on a red curtain
-// (results.css), with a thump as it lands; coming back to them (a reload, say), they're just there.
+// (dropCurtain), with a thump as it lands; coming back to them (a reload, say), they're just there.
 function showResults(results) {
   // Already showing them - the connection only dropped for a moment
   if (view === 'results' && shownRound === results.round) return;
@@ -33,9 +33,9 @@ function showResults(results) {
   };
 
   let landed;
-  if (view === 'game') {
-    if (canSlide()) sfx.curtain();
-    landed = slideScreen(fill, 'curtain-drop');
+  if (view === 'game' && canSlide()) {
+    sfx.curtain();
+    landed = dropCurtain(fill);
   } else {
     fill();
     landed = Promise.resolve();
@@ -55,6 +55,28 @@ function showResults(results) {
   });
 }
 
+// Down over the round, which stays up under it meanwhile - frozen where it was (game.js) and darkening - until it lands
+// (results.css). fill puts the results on the page. Resolves once it's down.
+function dropCurtain(fill) {
+  gameStateEl.classList.add('held');
+  fill();
+  resultsEl.classList.add('pinned', 'dropping');
+  return new Promise((resolve) => {
+    const landed = () => {
+      clearTimeout(fallback);
+      resultsEl.removeEventListener('animationend', onEnd);
+      resultsEl.classList.remove('pinned', 'dropping');
+      gameStateEl.classList.remove('held', 'frozen');
+      resolve();
+    };
+    const onEnd = (e) => {
+      if (e.target === resultsEl) landed();
+    };
+    resultsEl.addEventListener('animationend', onEnd);
+    const fallback = setTimeout(landed, 1500);
+  });
+}
+
 // What won it: the most points, or the same points but sooner - and who finished first, if that was someone else
 function winnerTagline(results, winner) {
   const pts = `${winner.points} ${winner.points === 1 ? 'point' : 'points'}`;
@@ -71,13 +93,18 @@ function toLobby(button, ready) {
   button.classList.add('is-loading');
   request(ready ? 'play-again' : 'back-to-lobby')
     .then(() => {
-      // Shown straight away - the server's room-state confirms it. The curtain goes back up off the lobby.
+      // Shown straight away - the server's room-state confirms it. The curtain goes back up off the lobby, held to the
+      // screen as it is (scrolled down to the words, say) so it goes up a screen tall.
       const me = state.players.find(p => p.isYou);
       if (me) me.status = ready ? 'ready' : 'notReady';
+      const scrolled = window.scrollY;
+      resultsEl.classList.add('pinned');
+      resultsEl.scrollTop = scrolled;
       slideScreen(() => {
+        resultsEl.classList.remove('pinned');
         showView('lobby');
         render();
-      }, 'curtain-lift');
+      }, 'lift');
     })
     .catch(() => showAlert("Couldn't reach the game. Try again."))
     .finally(() => {

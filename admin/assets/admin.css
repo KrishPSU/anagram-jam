@@ -1,9 +1,6 @@
 /* The admin pages: the sign-in card and the dashboard. Colors, tiles, buttons, toasts and the backdrop come from
    /shared/theme.css. The dashboard is dark panels on the same backdrop - denser than the game's white cards. */
 
-/* The admin pages switch straight over, without the game's slide between pages (see /shared/theme.css) */
-@view-transition { navigation: none; }
-
 body.admin {
   --glow-a: rgba(124, 108, 240, 0.30);
   --glow-b: rgba(255, 95, 168, 0.16);

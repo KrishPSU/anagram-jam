@@ -188,7 +188,7 @@ function showFeedback(text) {
 
 
 homeBtn.addEventListener('click', () => {
-  window.location.href = '/';
+  goTo('/', 'back');
 });
 shrugBtn.addEventListener('click', giveUp);
 retryBtn.addEventListener('click', loadWords);

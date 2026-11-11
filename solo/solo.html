@@ -41,13 +41,17 @@
   <link rel="stylesheet" href="/solo/css/solo.css">
   <link rel="stylesheet" href="/shared/board.css">
 
+  <!-- Slides between pages and screens. In the head, not deferred: a page arriving starts off to the side (see the file). -->
+  <script src="/shared/slide.js"></script>
+
+  <!-- Socket.IO first: the scripts after it connect with it -->
+  <script defer src="/vendor/socket.io.min.js"></script>
   <script defer src="/shared/app.js"></script>
   <script defer src="/shared/config.js"></script>
   <script defer src="/shared/socket.js"></script>
   <script defer src="/shared/toast.js"></script>
   <script defer src="/shared/sfx.js"></script>
   <script defer src="/shared/players.js"></script>
-  <script defer src="/shared/slide.js"></script>
   <script defer src="/solo/js/solo.js"></script>
   <script defer src="/solo/js/tiles.js"></script>
   <script defer src="/solo/js/run.js"></script>
@@ -63,7 +67,6 @@
   <script defer src="/shared/presence.js"></script>
   <script defer src="/shared/analytics.js"></script>
 
-  <script src="/socket.io/socket.io.js"></script>
 
   <!-- Service Worker Registration -->
   <script>
@@ -91,7 +94,7 @@
 
 
   <!-- Before a run: the rules -->
-  <main class="solo-intro" id="introView">
+  <main class="solo-intro" id="introView" data-screen>
     <header class="solo-head">
       <p class="eyebrow">Solo mode</p>
       <div class="code-tiles" aria-label="Solo">
@@ -125,7 +128,7 @@
 
 
   <!-- The run -->
-  <div class="game-state" id="gameState">
+  <div class="game-state" id="gameState" data-screen>
     <div class="game-ui">
       <header class="game-header">
         <div class="solo-score" id="scorePill" aria-live="polite">0 pts</div>
@@ -170,7 +173,7 @@
 
 
   <!-- After a run: the score, where it puts you, and the words -->
-  <section class="results" id="resultsView" hidden>
+  <section class="results" id="resultsView" data-screen hidden>
     <section class="winner-card solo-result" aria-labelledby="finalTitle">
       <p class="eyebrow">Solo · Results</p>
       <h1 class="solo-final" id="finalTitle"><b id="finalPoints">0</b><span id="finalUnit">points</span></h1>

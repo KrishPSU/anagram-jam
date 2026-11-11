@@ -83,10 +83,13 @@
 
   if (off()) return;
 
-  siteConfig().then(({ posthog }) => {
+  // Once the page has slid in, where it does (whenSettled in /shared/slide.js): PostHog and its replays are a lot of work
+  // for a phone, and a page sliding in is busy enough
+  const later = window.whenSettled || (callback => callback());
+  siteConfig().then(({ posthog }) => later(() => {
     // off() again: the privacy page's button may have been pressed while the config was on its way
     if (posthog && !off() && !window.posthog) load(posthog.key, posthog.host);
-  });
+  }));
 
   // The official snippet, written out: a stand-in `posthog` that remembers every call made to it, then the real one
   // (array.js) reads the init call and the queued calls out of it and takes its place as window.posthog. So

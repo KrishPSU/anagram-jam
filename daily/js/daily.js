@@ -230,7 +230,7 @@ setInterval(tickDay, 1000);
 // Home from today's words. From a word, back to today's words - and while it's being played, that asks first.
 homeBtn.addEventListener('click', () => {
   if (view !== 'game') {
-    window.location.href = '/';
+    goTo('/', 'back');
     return;
   }
   if (!onWord) {

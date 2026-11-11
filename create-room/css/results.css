@@ -262,21 +262,24 @@
   border-color: rgba(247, 215, 116, 0.28);
 }
 
-/* Down over the round it falls, bouncing to a stop (a thump as it lands, 58% in - sfx.curtain), while the round,
-   frozen where it was (game-state.css), darkens under it. Back to the lobby, it goes up again. (slideScreen in
-   /shared/slide.js; the browser plays these over pictures of the two screens.) */
-html[data-slide="curtain-drop"]::view-transition-new(root) {
-  animation: curtain-drop 1s both;
+/* While the curtain moves, the results are held to the screen, a screen tall, over everything else (results.js) */
+.results.pinned {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.55);
 }
-html[data-slide="curtain-drop"]::view-transition-old(root) { animation: curtain-shade 1s ease-in both; }
 
-html[data-slide="curtain-lift"]::view-transition-old(root) {
-  z-index: 1;
-  animation: curtain-lift 0.7s cubic-bezier(0.5, 0, 0.75, 0) both;
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.55);
+/* Down over the round (dropCurtain in results.js), which stays up under it, frozen where it was (game-state.css) and
+   darkening - bouncing to a stop, with a thump as it lands 58% of the way in (sfx.curtain). Back to the lobby, it goes up
+   again (/shared/slide.js). */
+.results.dropping { animation: curtain-drop 1s both; }
+
+.game-state.held {
+  display: block;
+  animation: curtain-shade 1s ease-in both;
 }
-html[data-slide="curtain-lift"]::view-transition-new(root) { animation: none; box-shadow: none; }
 
 @keyframes curtain-drop {
   0% { transform: translateY(-100%); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5); }
@@ -288,4 +291,3 @@ html[data-slide="curtain-lift"]::view-transition-new(root) { animation: none; bo
 }
 
 @keyframes curtain-shade { to { opacity: 0.35; } }
-@keyframes curtain-lift { to { transform: translateY(-100%); } }

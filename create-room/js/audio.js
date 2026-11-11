@@ -92,19 +92,22 @@ function stopTrack({ source, gain }, fade) {
   source.stop(now + fade);
 }
 
-// The round's track, so it's ready the moment the round starts, and the lobby's unless the page is all round
-// (practice is). Unless muted - then they wait until they're wanted.
+// The track for the screen you're on, then the round's, so it's ready the moment the round starts (practice is all
+// round). One at a time, and not while the page is still sliding in (whenSettled in /shared/slide.js): fetching and
+// decoding a song is a lot of work for a phone, and a decoded one takes up ~65 MB. Unless muted - then they wait until
+// they're wanted.
 function loadMusic() {
-  loadTrack(roundMusic);
-  if (view !== 'game') loadTrack('lobby');
+  whenSettled(() => {
+    loadTrack(view === 'game' ? roundMusic : 'lobby').then(() => loadTrack(roundMusic));
+  });
 }
 
-// Fetched and decoded once
+// Fetched and decoded once. Resolves when it's done, either way.
 function loadTrack(name) {
   const ctx = sfx.context();
-  if (tracks[name] || !ctx) return;
+  if (tracks[name] || !ctx) return Promise.resolve();
   tracks[name] = 'loading';
-  fetch(MUSIC[name])
+  return fetch(MUSIC[name])
     .then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.arrayBuffer();

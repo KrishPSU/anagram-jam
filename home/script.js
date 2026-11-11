@@ -199,20 +199,20 @@ startForm.addEventListener('submit', (e) => {
 // Solo mode is a page of its own, and needs a name for its leaderboard just as a room does
 soloBtn.addEventListener('click', () => {
   if (pending || !takeName()) return;
-  // The slash saves a redirect, as for the game page
-  document.location.href = '/solo/';
+  // The slash saves a redirect, as for the game page. It slides in from the right (/shared/slide.js).
+  goTo('/solo/');
 });
 
 // Practice has no leaderboard, so it needs no name - and Daily Jam goes by whatever name there is (today's leaderboard
 // shows it, or a blank), so it doesn't ask for one either
 practiceBtn.addEventListener('click', () => {
   if (pending) return;
-  document.location.href = '/practice/';
+  goTo('/practice/');
 });
 
 dailyBtn.addEventListener('click', () => {
   if (pending) return;
-  document.location.href = '/daily/';
+  goTo('/daily/');
 });
 
 
@@ -258,7 +258,7 @@ function openGamePage(roomCode) {
   clearTimeout(busyTimeout);
   localStorage.setItem('name', playerNameInput.value.trim());
   // Ending the URL in a slash skips the redirect the server would otherwise add
-  document.location.href = "/game/" + roomCode + "/";
+  goTo("/game/" + roomCode + "/");
 }
 
 
