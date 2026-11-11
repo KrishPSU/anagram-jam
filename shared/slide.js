@@ -13,22 +13,22 @@
 //
 // Loaded in each page's <head>, not deferred: a page that's arriving has to be off to the side from its very first frame.
 
-const EASE_OUT = 'cubic-bezier(0.33, 1, 0.68, 1)'; // fast, then settling
+const EASE_OUT = 'cubic-bezier(0.25, 1, 0.5, 1)'; // most of the way at once, then settling
 const EASE_IN = 'cubic-bezier(0.4, 0, 1, 1)';      // gathering speed on the way out
 
 // [keyframes, timing] of each move
 const MOVES = {
   // In from the right edge...
-  in: [[{ transform: 'translateX(100%)' }, { transform: 'none' }], { duration: 420, easing: EASE_OUT }],
+  in: [[{ transform: 'translateX(100%)' }, { transform: 'none' }], { duration: 280, easing: EASE_OUT }],
   // ...while what was there drifts off to the left, fading
-  under: [[{ transform: 'none', opacity: 1 }, { transform: 'translateX(-18%)', opacity: 0 }], { duration: 180, easing: EASE_IN }],
+  under: [[{ transform: 'none', opacity: 1 }, { transform: 'translateX(-18%)', opacity: 0 }], { duration: 120, easing: EASE_IN }],
   // Going back: away to the right...
-  away: [[{ transform: 'none' }, { transform: 'translateX(100%)' }], { duration: 260, easing: EASE_IN }],
+  away: [[{ transform: 'none' }, { transform: 'translateX(100%)' }], { duration: 180, easing: EASE_IN }],
   // ...and what it goes back to coming in from the left
-  back: [[{ transform: 'translateX(-18%)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 320, easing: EASE_OUT }],
+  back: [[{ transform: 'translateX(-18%)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 220, easing: EASE_OUT }],
   // A room's results going back up off the lobby (results.js drops them down), and the lobby coming up
-  lift: [[{ transform: 'none' }, { transform: 'translateY(-100%)' }], { duration: 420, easing: 'cubic-bezier(0.5, 0, 0.75, 0)' }],
-  rise: [[{ transform: 'translateY(16px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 260, easing: EASE_OUT }],
+  lift: [[{ transform: 'none' }, { transform: 'translateY(-100%)' }], { duration: 300, easing: 'cubic-bezier(0.5, 0, 0.75, 0)' }],
+  rise: [[{ transform: 'translateY(16px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 200, easing: EASE_OUT }],
 };
 
 const ARRIVING = 'slideIn';       // sessionStorage: { how, at }, left by goTo for the page it's going to
