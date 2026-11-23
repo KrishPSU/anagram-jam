@@ -3,7 +3,7 @@
   "appName": "Anagram Jam",
   "webDir": "www",
   "backgroundColor": "#232526",
-  "appendUserAgent": "AnagramJamApp/5",
+  "appendUserAgent": "AnagramJamApp/6",
   "server": {
     "url": "https://www.anagramjam.com/",
     "errorPath": "index.html",
@@ -19,10 +19,7 @@
       "style": "DARK"
     },
     "SplashScreen": {
-      "launchAutoHide": true,
-      "launchShowDuration": 6000,
-      "backgroundColor": "#232526",
-      "showSpinner": false
+      "launchShowDuration": 0
     }
   }
 }

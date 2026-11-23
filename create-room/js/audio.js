@@ -39,12 +39,15 @@ mute_btn.addEventListener('click', () => {
 });
 
 window.addEventListener('soundchange', showMuteState);
+window.addEventListener('otheraudiochange', syncMusic);
 
 
-// Plays the track for the screen you're on, fading over from the other one - or nothing, muted. Called whenever
-// the screen changes (showView), the mute button is pressed, or a track has loaded.
+// Plays the track for the screen you're on, fading over from the other one - or nothing, muted, or in the iPhone app
+// while the phone is playing something of its own (sfx.yielding: their song carries on, with the game's sound effects
+// over it). Called whenever the screen changes (showView), the mute button is pressed, a track has loaded, or the
+// phone's own music starts or stops.
 function syncMusic() {
-  const wanted = sfx.muted() || (musicHeld && view !== 'lobby') ? null : (view === 'game' ? roundMusic : 'lobby');
+  const wanted = sfx.muted() || sfx.yielding() || (musicHeld && view !== 'lobby') ? null : (view === 'game' ? roundMusic : 'lobby');
   if (playing && playing.name === wanted) return;
   if (playing) stopTrack(playing, wanted ? FADE_SECONDS : 0);
   playing = null;
@@ -143,4 +146,7 @@ function seamless(buffer) {
 
 
 showMuteState();
-if (!sfx.muted()) loadMusic();
+// Not while the phone is playing its own (then they wait until they're wanted, as when muted)
+sfx.known.then(() => {
+  if (!sfx.muted() && !sfx.yielding()) loadMusic();
+});

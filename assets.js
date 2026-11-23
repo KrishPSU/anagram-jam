@@ -110,9 +110,12 @@ function renderPage(pageFile) {
 
 const pageVersion = (html) => crypto.createHash('sha1').update(html).digest('hex').slice(0, 10);
 
-function sendPage(res, pageFile) {
-  const html = renderPage(pageFile);
+// fill: what goes in the page's {{NAME}} gaps, for a page that isn't the same for everyone ({ ROOM_CODE: 'ABCDE' } for
+// a room's). Letters and digits only, so nothing from an address can end up as markup.
+function sendPage(res, pageFile, fill) {
+  let html = renderPage(pageFile);
   if (html === null) return res.status(404).type('text').send('Not found');
+  if (fill) html = html.replace(/\{\{([A-Z_]+)\}\}/g, (gap, name) => String(fill[name] ?? '').replace(/[^A-Za-z0-9]/g, ''));
   const version = pageVersion(html);
   res.set('ETag', `"page-${version}"`);
   res.set('Cache-Control', res.req.query.v === version ? KEEP : 'no-cache');

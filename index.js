@@ -194,6 +194,31 @@ app.get('/share.png', (req, res) => {
 
 app.use('/game/:roomCode', express.static(path.join(__dirname, 'create-room'), staticOptions()));
 
+// What ties links to this site to the iPhone app (mobile/): an iPhone that has the app reads this file (through
+// Apple's servers, when the app is installed or updated) and from then on opens these addresses in the app instead of
+// Safari - a room link above all. The app names the site in turn (App.entitlements), and AppViewController.swift takes
+// the link to its page. Only what's played: signing in has to stay in the browser sheet it starts in, and the help and
+// privacy pages are linked from the App Store. Asked for at exactly this address, with no redirect, as JSON.
+const APP_LINKS = {
+  applinks: {
+    details: [{
+      appIDs: ['UXXL68D688.com.krishchavan.anagramjam'],
+      components: [
+        { '/': '/' },
+        { '/': '/game/*' },
+        { '/': '/daily' }, { '/': '/daily/' },
+        { '/': '/solo' }, { '/': '/solo/' },
+        { '/': '/practice' }, { '/': '/practice/' },
+        { '/': '/app' },
+      ],
+    }],
+  },
+};
+app.get('/.well-known/apple-app-site-association', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json(APP_LINKS);
+});
+
 // The Socket.IO client the pages use, from the server's own package so the two always match. Socket.IO serves it too
 // (/socket.io/socket.io.js), but with no way to keep it: the pages load it before they can draw, so that was a trip to
 // the server on every page. From here it's versioned and kept like the rest (see assets.js).
@@ -380,7 +405,8 @@ app.get('/practice/words.json', (req, res) => {
 app.get('/game/:roomCode', async (req, res) => {
   const room = await findRoom(req.params.roomCode);
   if (room) {
-    sendPage(res, path.join(__dirname, 'create-room', 'game.html'));
+    // The room's own address goes in the page, for Safari's banner to hand to the iPhone app (see game.html)
+    sendPage(res, path.join(__dirname, 'create-room', 'game.html'), { ROOM_CODE: room.roomCode });
   } else {
     res.redirect('/');
   }

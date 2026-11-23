@@ -18,6 +18,10 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		A7A1E0012F0B4C1200A1B2C3 /* AppViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A1E0002F0B4C1200A1B2C3 /* AppViewController.swift */; };
 		A7A1E0032F0B4C1200A1B2C3 /* AuthSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A1E0022F0B4C1200A1B2C3 /* AuthSessionPlugin.swift */; };
+		A7A1E0112F0B4C1200A1B2C3 /* LaunchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A1E0102F0B4C1200A1B2C3 /* LaunchView.swift */; };
+		A7A1E0132F0B4C1200A1B2C3 /* LaunchPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A1E0122F0B4C1200A1B2C3 /* LaunchPlugin.swift */; };
+		A7A1E0152F0B4C1200A1B2C3 /* OtherAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A1E0142F0B4C1200A1B2C3 /* OtherAudioPlugin.swift */; };
+		A7A1E0172F0B4C1200A1B2C3 /* Rubik-Black.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A7A1E0162F0B4C1200A1B2C3 /* Rubik-Black.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +39,10 @@
 		A7A1E0002F0B4C1200A1B2C3 /* AppViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewController.swift; sourceTree = "<group>"; };
 		A7A1E0022F0B4C1200A1B2C3 /* AuthSessionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthSessionPlugin.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		A7A1E0102F0B4C1200A1B2C3 /* LaunchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LaunchView.swift"; sourceTree = "<group>"; };
+		A7A1E0122F0B4C1200A1B2C3 /* LaunchPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LaunchPlugin.swift"; sourceTree = "<group>"; };
+		A7A1E0142F0B4C1200A1B2C3 /* OtherAudioPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "OtherAudioPlugin.swift"; sourceTree = "<group>"; };
+		A7A1E0162F0B4C1200A1B2C3 /* Rubik-Black.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Rubik-Black.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,6 +80,10 @@
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				A7A1E0002F0B4C1200A1B2C3 /* AppViewController.swift */,
 				A7A1E0022F0B4C1200A1B2C3 /* AuthSessionPlugin.swift */,
+				A7A1E0162F0B4C1200A1B2C3 /* Rubik-Black.ttf */,
+				A7A1E0142F0B4C1200A1B2C3 /* OtherAudioPlugin.swift */,
+				A7A1E0122F0B4C1200A1B2C3 /* LaunchPlugin.swift */,
+				A7A1E0102F0B4C1200A1B2C3 /* LaunchView.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -153,6 +165,7 @@
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
+				A7A1E0172F0B4C1200A1B2C3 /* Rubik-Black.ttf in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
@@ -170,6 +183,9 @@
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				A7A1E0012F0B4C1200A1B2C3 /* AppViewController.swift in Sources */,
 				A7A1E0032F0B4C1200A1B2C3 /* AuthSessionPlugin.swift in Sources */,
+				A7A1E0152F0B4C1200A1B2C3 /* OtherAudioPlugin.swift in Sources */,
+				A7A1E0132F0B4C1200A1B2C3 /* LaunchPlugin.swift in Sources */,
+				A7A1E0112F0B4C1200A1B2C3 /* LaunchView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -311,7 +327,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = UXXL68D688;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.4;
@@ -319,7 +335,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.krishchavan.anagramjam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -335,7 +351,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = UXXL68D688;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.4;
@@ -343,7 +359,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.krishchavan.anagramjam;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";

@@ -6,10 +6,41 @@
   const cap = window.Capacitor;
   if (!cap || !cap.isNativePlatform || !cap.isNativePlatform()) return;
 
-  // The app keeps its launch screen up until a page is ready (or 6 seconds pass) - this one is once all its scripts
-  // have built it and it has drawn. Each plugin is checked for first: an app installed before it was added
-  // doesn't have it.
-  if (cap.isPluginAvailable('SplashScreen')) {
+  // The app opens on its loading screen - letter tiles falling in and spelling the game's name out (LaunchView.swift
+  // in mobile/) - and keeps it up until the first page says it's ready: once all its scripts have built it, its font
+  // is in (or a second and a half has gone by), and it has drawn. On the home page, at its top, the loading screen's
+  // tiles then glide onto the page's own title: the app asks where those are (launchTitle('hide'), which also hides
+  // them, so there's only ever one set to see) and says when its tiles have landed on them (launchTitle('show')).
+  // Any other page gives no boxes, and the loading screen fades instead.
+  // Each plugin is checked for first: an app installed before it was added doesn't have it. Apps before build 6 have a
+  // still launch screen instead (the SplashScreen plugin), which this takes down.
+  const whenDrawn = (then) => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const fonts = document.fonts ? document.fonts.ready : Promise.resolve();
+      Promise.race([fonts, new Promise(resolve => setTimeout(resolve, 1500))]).catch(() => {}).then(() => requestAnimationFrame(then));
+    });
+  };
+  if (cap.isPluginAvailable('Launch')) {
+    let hidden = null; // the title, while the loading screen's tiles are on their way to it
+    const show = () => {
+      if (hidden) hidden.style.visibility = '';
+      hidden = null;
+    };
+    window.launchTitle = (what) => {
+      if (what !== 'hide') return show();
+      const title = document.querySelector('.title-tiles');
+      const tiles = title ? [...title.querySelectorAll('.tile')] : [];
+      if (tiles.length !== 10 || window.scrollY > 1) return null;
+      const boxes = tiles.map(tile => tile.getBoundingClientRect());
+      // All there to be landed on: on the screen, and a tile's shape
+      if (boxes.some(box => box.width < 10 || box.top < 0 || box.bottom > window.innerHeight)) return null;
+      hidden = title;
+      title.style.visibility = 'hidden';
+      setTimeout(show, 3000); // never left hidden, whatever becomes of the loading screen
+      return boxes.map(box => [box.left, box.top, box.width, box.height]);
+    };
+    whenDrawn(() => cap.Plugins.Launch.ready().catch(() => {}));
+  } else if (cap.isPluginAvailable('SplashScreen')) {
     document.addEventListener('DOMContentLoaded', () => {
       requestAnimationFrame(() => cap.Plugins.SplashScreen.hide().catch(() => {}));
     });

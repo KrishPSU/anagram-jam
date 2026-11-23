@@ -12,11 +12,27 @@ const sfx = (() => {
   const cap = window.Capacitor;
   const haptics = cap && cap.isPluginAvailable && cap.isPluginAvailable('Haptics') ? cap.Plugins.Haptics : null;
 
-  // iPhones: play through the silent switch, like the music did back when it was an <audio> element (Web Audio
-  // would otherwise go quiet whenever the switch is on silent)
+  // iPhones: the game's sound is the kind a game has ('ambient'), not the kind a music player has ('playback', which
+  // this used to ask for). So the silent switch silences it, it plays alongside whatever the phone is already playing
+  // rather than stopping it, and the phone doesn't put up its media player (lock screen, Control Center) for it.
   try {
-    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    if (navigator.audioSession) navigator.audioSession.type = 'ambient';
   } catch {}
+
+  // In the iPhone app, whether the phone is already playing something of its own - a song, a podcast. Then the game's
+  // music stays off and leaves it be (audio.js), and the sound effects still play over it, as iPhone games do. The app
+  // tells it (OtherAudioPlugin.swift, there from build 6): asked as the page starts, and told again whenever the app
+  // comes back to the front. A browser can't know, so there the music plays along with it.
+  const otherAudio = cap && cap.isPluginAvailable && cap.isPluginAvailable('OtherAudio') ? cap.Plugins.OtherAudio : null;
+  let yielding = false;
+  function setYielding(playing) {
+    if (yielding === !!playing) return;
+    yielding = !!playing;
+    window.dispatchEvent(new Event('otheraudiochange'));
+  }
+  // Resolves once it's known (straight away outside the app), so the music isn't fetched and decoded for nothing
+  const known = !otherAudio ? Promise.resolve() : otherAudio.check().then(({ playing }) => setYielding(playing)).catch(() => {});
+  if (otherAudio) otherAudio.addListener('change', ({ playing }) => setYielding(playing));
 
   function context() {
     if (!ctx) {
@@ -37,14 +53,31 @@ const sfx = (() => {
   // The mute button's own presses are left to its click (audio.js): woken here, the press that was meant to start the
   // sound would find it on already, and mute it.
   function wake(event) {
-    if (muted() || event?.target?.closest?.('#mute-button')) return;
+    if (away || muted() || event?.target?.closest?.('#mute-button')) return;
     const c = context();
     if (c && c.state !== 'running') c.resume().catch(() => {});
   }
   ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(evt => window.addEventListener(evt, wake, { capture: true, passive: true }));
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') wake();
-  });
+
+  // Out of sight, out of earshot: the sound stops the moment the page isn't the one in front - the app closed or
+  // swapped for another, the phone locked, another tab - and picks up where it was on coming back. Left alone, an
+  // iPhone keeps a page's sound going after the app has gone. (The app also says so itself, with 'pause' and 'resume'
+  // on the document, which covers a phone that's slow to call the page hidden.)
+  let away = document.hidden;
+  function leave() {
+    away = true;
+    if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {});
+  }
+  function comeBack() {
+    if (document.hidden) return;
+    away = false;
+    if (ctx) wake();
+  }
+  document.addEventListener('visibilitychange', () => (document.hidden ? leave() : comeBack()));
+  document.addEventListener('pause', leave);
+  document.addEventListener('resume', comeBack);
+  window.addEventListener('pagehide', leave);
+  window.addEventListener('pageshow', comeBack);
 
   // Muted, the context is suspended rather than left running in silence: on a phone, a running one keeps other
   // apps' audio paused
@@ -125,6 +158,9 @@ const sfx = (() => {
     muted,
     sounding,
     setMuted,
+    // The phone is playing something of its own, so the music leaves it be (iPhone app only) - and once that's known
+    yielding: () => yielding,
+    known,
     tap: () => play([[520, 0, 0.05, 'sine', 0.04]]),
     tick: () => play([[880, 0, 0.05, 'square', 0.03]]),
     beep: () => play([[660, 0, 0.14, 'sine', 0.15]]),

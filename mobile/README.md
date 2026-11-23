@@ -7,14 +7,15 @@ shows whatever is live, and a site deploy updates the app without an App Store r
 
 ## What's where
 
-- `capacitor.config.json`: the app's settings (site address, colours, status bar, launch screen timing).
+- `capacitor.config.json`: the app's settings (site address, colours, status bar).
 - `www/index.html`: the only page inside the app. Shown when a page of the site can't load. It tries the site every few
   seconds and goes back by itself, to the page that failed (a room, say) rather than home.
 - `ios/`: the Xcode project. `ios/App/App/AppViewController.swift` decides when the offline page shows: when a page
   fails to load, when the server answers with a 5xx error (a broken deploy would otherwise leave the player on an
   error page with no reload button), or when nothing has shown 10 seconds after launch. Not when a load was only
   replaced by another, like a button tapped twice.
-- On the site: `shared/app.js` (on every page: hides the launch screen once the page is ready), haptics in
+- `ios/App/App/LaunchView.swift`: the loading screen (see "The loading screen" below).
+- On the site: `shared/app.js` (on every page: tells the app the page is ready, so the loading screen can go), haptics in
   `shared/sfx.js` (`buzz`), and `home/install.js` hides its "add to home screen" hint in the app. Each one checks
   for `window.Capacitor`, so they do nothing in a browser.
 
@@ -83,6 +84,47 @@ setup. Simulators can't get an address from Apple without that either, so turnin
 
 Build 5 is version 1.0.1: build 4 was 1.0, and 1.0 went out on the App Store with build 3 (without reminders), so a
 build with reminders needed a version number of its own. Nothing else changed between 4 and 5.
+
+## The loading screen
+
+Build 6 opens on a loading screen drawn by the app itself (`LaunchView.swift`), so it's there before anything has come
+from the site: letter tiles fall in jumbled and sort themselves into ANAGRAM JAM. It always plays through (about a
+second and a half) and then waits, with a little wave along the tiles, until the first page says it's ready
+(`Launch.ready()` in `shared/app.js`, through `LaunchPlugin.swift`). On the home page the tiles then glide onto the
+page's own title: the app asks the page where its title tiles are (`window.launchTitle`), so the two must keep looking
+alike. If the site's tiles change (`.tile` in `shared/theme.css`: size, corners, shadow, font), change `TileView` to
+match. Any other first page (a room from a link, the offline page) gets a plain fade.
+
+iOS only allows a still picture for the first moment (`LaunchScreen.storyboard`), which is the game's plain dark
+background, so the tiles fall into an empty screen. The SplashScreen plugin is still installed but no longer shows
+anything (`launchShowDuration: 0`). The tiles' font is `Rubik-Black.ttf` (Rubik 900, the site's font, under the SIL
+Open Font License: `Rubik-OFL.txt`). With Reduce Motion on, the name appears in place and fades to the page.
+
+## Links that open the app
+
+Build 6 opens links to the site in the app (universal links): a room link from a friend goes straight to that room.
+Three things make it work, and all three have to agree:
+
+- The site's `/.well-known/apple-app-site-association` (in `index.js` at the project root) names the app
+  (`UXXL68D688.com.krishchavan.anagramjam`) and the addresses it takes: rooms, Daily Jam, solo, practice, home and
+  `/app`. Not signing in, help or privacy.
+- `App.entitlements` names the site (`applinks:www.anagramjam.com`), and the App ID has Associated Domains turned on
+  in Apple's developer portal (the "Anagram Jam App Store" profile has to be made again after turning it on).
+- `AppViewController.swift` (`open(link:)`) takes the link to its page in the web view.
+
+iPhones fetch that file through Apple's servers when the app is installed or updated, so a change to it can take a day
+to reach phones. The room and Daily Jam pages also carry Safari's app banner (`apple-itunes-app` in their `<head>`):
+"Open" for someone who has the app, the App Store for someone who doesn't. A link only opens the app when it's tapped
+somewhere else (Messages, Notes, another app); typed into Safari, or followed from a page of the site itself, it stays
+in Safari, and that banner is the way across.
+
+## Sound
+
+The game's sound is set up by the site (`shared/sfx.js`): the 'ambient' kind, like a game's, so the silent switch
+silences it, it stops when the app isn't in front, and the phone shows no media player for it. Build 6 adds
+`OtherAudioPlugin.swift`, which tells the page whether the phone is already playing something of its own (a song, a
+podcast); then the game's music stays off and only its sound effects play over it. The simulator always says nothing
+else is playing, so this part can only be tried on a real iPhone.
 
 ## Sharing the app
 
